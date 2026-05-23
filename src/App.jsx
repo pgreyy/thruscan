@@ -21,7 +21,7 @@ function CopyButton({ text }) {
 }
 
 function CodeBlock({ code, color }) {
-  return <div style={{ background: '#1a202c', borderRadius: '4px', padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}><code style={{ fontSize: '12px', color: color || '#68d391', fontFamily: 'monospace' }}>{code}</code><CopyButton text={code} /></div>
+  return <div style={{ background: '#1a202c', borderRadius: '4px', padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', overflowX: 'auto' }}><code style={{ fontSize: '12px', color: color || '#68d391', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{code}</code><CopyButton text={code} /></div>
 }
 
 function ExternalLink({ url, label }) {
@@ -76,9 +76,7 @@ function DevAccountCard({ onLookup }) {
     }
   }
 
-  useEffect(() => {
-    if (savedKey) fetchAccount(savedKey)
-  }, [])
+  useEffect(() => { if (savedKey) fetchAccount(savedKey) }, [])
 
   const handleSave = async () => {
     const key = input.trim()
@@ -103,27 +101,20 @@ function DevAccountCard({ onLookup }) {
   }
 
   const handleChange = () => { setEditing(true); setInput(savedKey); setAccount(null); setError(null) }
-
   const handleClear = () => { localStorage.removeItem(STORAGE_KEY); setSavedKey(''); setInput(''); setEditing(true); setAccount(null); setError(null); setLastUpdated(null) }
 
   const meta = account?.meta
   const flags = meta?.flags
 
-  const linkBtn = (label, onClick, color) => (
-    <button onClick={onClick} style={{ fontSize: '12px', color: color || '#3182ce', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{label}</button>
-  )
-
   return (
     <div style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginTop: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
         <p style={{ margin: 0 }}><strong>My Dev Account (CLI Generated)</strong></p>
         {savedKey && !editing && (
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button onClick={() => fetchAccount(savedKey, true)} disabled={refreshing} style={{ fontSize: '12px', color: '#38a169', background: 'none', border: '1px solid #38a169', borderRadius: '4px', cursor: 'pointer', padding: '2px 8px' }}>
-              {refreshing ? '↻ Refreshing...' : '↻ Refresh'}
-            </button>
-            {linkBtn('Edit', handleChange)}
-            {linkBtn('Clear', handleClear, '#e53e3e')}
+            <button onClick={() => fetchAccount(savedKey, true)} disabled={refreshing} style={{ fontSize: '12px', color: '#38a169', background: 'none', border: '1px solid #38a169', borderRadius: '4px', cursor: 'pointer', padding: '2px 8px' }}>{refreshing ? '↻ Refreshing...' : '↻ Refresh'}</button>
+            <button onClick={handleChange} style={{ fontSize: '12px', color: '#3182ce', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Edit</button>
+            <button onClick={handleClear} style={{ fontSize: '12px', color: '#e53e3e', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Clear</button>
           </div>
         )}
       </div>
@@ -131,9 +122,9 @@ function DevAccountCard({ onLookup }) {
       {editing ? (
         <div>
           <p style={{ fontSize: '13px', color: '#718096', margin: '0 0 10px' }}>Enter your CLI-generated public key. It will be saved in your browser for future visits.</p>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSave()} placeholder="ta..." style={{ flex: 1, padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', fontFamily: 'monospace', outline: 'none' }} />
-            <button onClick={handleSave} disabled={loading || !input.trim()} style={{ padding: '8px 16px', fontSize: '13px', backgroundColor: '#38a169', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: (!input.trim() || loading) ? 0.6 : 1 }}>{loading ? 'Saving...' : 'Save Account'}</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSave()} placeholder="ta..." style={{ width: '100%', padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }} />
+            <button onClick={handleSave} disabled={loading || !input.trim()} style={{ padding: '10px 16px', fontSize: '13px', backgroundColor: '#38a169', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', opacity: (!input.trim() || loading) ? 0.6 : 1 }}>{loading ? 'Saving...' : 'Save Account'}</button>
           </div>
           {error && <p style={{ fontSize: '13px', color: '#e53e3e', margin: '8px 0 0', background: '#fff5f5', padding: '8px', borderRadius: '6px' }}>❌ {error}</p>}
         </div>
@@ -144,15 +135,10 @@ function DevAccountCard({ onLookup }) {
             <div>
               {lastUpdated && <p style={{ fontSize: '11px', color: '#a0aec0', margin: '0 0 8px' }}>Last updated: {lastUpdated}</p>}
               <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px 12px' }}>
-                {[
-                  ['Public Key', <span style={{ fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{savedKey}</span>],
-                  ['Balance', <span style={{ color: '#38a169', fontWeight: 600 }}>{meta.balance?.toString()} THRU</span>],
-                  ['Nonce', meta.nonce?.toString()],
-                  ['Seq', meta.seq?.toString()],
-                ].map(([label, value]) => (
-                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
-                    <span style={{ fontSize: '13px', color: '#4a5568', fontWeight: 500 }}>{label}</span>
-                    <span style={{ fontSize: '13px', color: '#1a202c', textAlign: 'right', maxWidth: '65%' }}>{value}</span>
+                {[['Public Key', <span style={{ fontSize: '11px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{savedKey}</span>], ['Balance', <span style={{ color: '#38a169', fontWeight: 600 }}>{meta.balance?.toString()} THRU</span>], ['Nonce', meta.nonce?.toString()], ['Seq', meta.seq?.toString()]].map(([label, value]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', color: '#4a5568', fontWeight: 500, flexShrink: 0 }}>{label}</span>
+                    <span style={{ fontSize: '13px', color: '#1a202c', textAlign: 'right' }}>{value}</span>
                   </div>
                 ))}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
@@ -184,12 +170,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
     if (prefillKey) { setInput(prefillKey); lookup(prefillKey); onPrefillUsed() }
   }, [prefillKey])
 
-  const handleInputChange = (e) => {
-    setInput(e.target.value)
-    setAccount(null)
-    setError(null)
-  }
-
+  const handleInputChange = (e) => { setInput(e.target.value); setAccount(null); setError(null) }
   const handleClear = () => { setInput(''); setAccount(null); setError(null) }
 
   const lookup = async (key) => {
@@ -214,9 +195,9 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
   const flags = meta?.flags
 
   const row = (label, value) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #e2e8f0' }}>
-      <span style={{ fontSize: '13px', color: '#4a5568', fontWeight: 500 }}>{label}</span>
-      <span style={{ fontSize: '13px', color: '#1a202c', textAlign: 'right', maxWidth: '60%', wordBreak: 'break-all' }}>{value ?? '—'}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #e2e8f0', gap: '8px' }}>
+      <span style={{ fontSize: '13px', color: '#4a5568', fontWeight: 500, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: '13px', color: '#1a202c', textAlign: 'right', wordBreak: 'break-all' }}>{value ?? '—'}</span>
     </div>
   )
 
@@ -231,12 +212,12 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
     <div style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginTop: '16px' }}>
       <p style={{ margin: '0 0 4px' }}><strong>Account Lookup</strong></p>
       <p style={{ fontSize: '13px', color: '#718096', margin: '0 0 12px' }}>Paste any Thru public key to see full live on-chain account details.</p>
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-        <input value={input} onChange={handleInputChange} onKeyDown={(e) => e.key === 'Enter' && lookup()} placeholder="ta..." style={{ flex: 1, padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', fontFamily: 'monospace', outline: 'none' }} />
-        {input && (
-          <button onClick={handleClear} style={{ padding: '8px 12px', fontSize: '13px', backgroundColor: '#e2e8f0', color: '#4a5568', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>✕</button>
-        )}
-        <button onClick={() => lookup()} disabled={loading || !input.trim()} style={{ padding: '8px 16px', fontSize: '13px', backgroundColor: '#3182ce', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: (!input.trim() || loading) ? 0.6 : 1 }}>{loading ? 'Loading...' : 'Look Up'}</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input value={input} onChange={handleInputChange} onKeyDown={(e) => e.key === 'Enter' && lookup()} placeholder="ta..." style={{ flex: 1, padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', fontFamily: 'monospace', outline: 'none', minWidth: 0 }} />
+          {input && <button onClick={handleClear} style={{ padding: '8px 12px', fontSize: '13px', backgroundColor: '#e2e8f0', color: '#4a5568', border: 'none', borderRadius: '6px', cursor: 'pointer', flexShrink: 0 }}>✕</button>}
+        </div>
+        <button onClick={() => lookup()} disabled={loading || !input.trim()} style={{ padding: '10px 16px', fontSize: '13px', backgroundColor: '#3182ce', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', opacity: (!input.trim() || loading) ? 0.6 : 1 }}>{loading ? 'Loading...' : 'Look Up'}</button>
       </div>
 
       {error && <p style={{ fontSize: '13px', color: '#e53e3e', margin: '8px 0 0', background: '#fff5f5', padding: '10px', borderRadius: '6px' }}>❌ {error}</p>}
@@ -266,7 +247,7 @@ function GuidePanel() {
   const [open, setOpen] = useState(false)
   const [openStep, setOpenStep] = useState(null)
   return (
-    <div style={{ width: '340px', flexShrink: 0, background: 'linear-gradient(135deg, #1a202c 0%, #2d3748 100%)', border: '1px solid #4a5568', borderRadius: '12px', padding: '20px', alignSelf: 'flex-start', position: 'sticky', top: '40px' }}>
+    <div style={{ background: 'linear-gradient(135deg, #1a202c 0%, #2d3748 100%)', border: '1px solid #4a5568', borderRadius: '12px', padding: '20px', marginTop: '16px' }}>
       <button onClick={() => setOpen(!open)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 0 }}>
         <span style={{ fontWeight: 700, fontSize: '15px', color: '#90cdf4' }}>How to Create a CLI Wallet</span>
         <span style={{ fontSize: '16px', color: '#90cdf4' }}>{open ? '▲' : '▼'}</span>
@@ -316,41 +297,40 @@ function App() {
   const btnStyle = (color) => ({ padding: '10px 20px', fontSize: '15px', backgroundColor: color, color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', marginTop: '12px', marginRight: '10px' })
 
   return (
-    <div style={{ padding: '40px', fontFamily: 'sans-serif', display: 'flex', gap: '60px', alignItems: 'flex-start', maxWidth: '1100px' }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <h1 style={{ marginBottom: '4px' }}>ThruScan</h1>
-        <p style={{ color: '#718096', marginTop: 0 }}>Connected to Thru Alphanet</p>
+    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '680px', margin: '0 auto', boxSizing: 'border-box' }}>
+      <h1 style={{ marginBottom: '4px', fontSize: 'clamp(24px, 5vw, 32px)' }}>ThruScan</h1>
+      <p style={{ color: '#718096', marginTop: 0, fontSize: '14px' }}>Connected to Thru Alphanet</p>
 
-        <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
+      <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
 
-        <div style={cardStyle}>
-          <p style={{ margin: '0 0 8px' }}><strong>Embedded Wallet (Browser)</strong></p>
-          {isConnected ? (
-            <div>
-              <p style={{ color: '#38a169', margin: '0 0 12px' }}>✅ Connected</p>
-              {signingContext ? (
-                <div style={{ fontSize: '13px', lineHeight: 1.8 }}>
-                  <p style={{ margin: 0 }}><strong>Fee Payer:</strong></p>
-                  <p style={{ fontSize: '12px', wordBreak: 'break-all', background: '#edf2f7', padding: '8px', borderRadius: '4px', margin: '4px 0 8px' }}>{signingContext.feePayerPublicKey}</p>
-                  <p style={{ margin: 0 }}><strong>Mode:</strong> {signingContext.mode}</p>
-                </div>
-              ) : (
-                <button onClick={handleGetSigningContext} disabled={loadingContext} style={btnStyle('#38a169')}>{loadingContext ? 'Loading...' : 'Load Wallet Details'}</button>
-              )}
-              <br />
-              <button onClick={disconnect} style={btnStyle('#e53e3e')}>Disconnect</button>
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: '13px', color: '#555', margin: '0 0 4px' }}>Connect to interact with the Thru network from your browser.</p>
-              <p style={{ fontSize: '13px', color: '#555', margin: '0 0 8px' }}>{"Don't have a wallet yet? "}<WalletLink /></p>
-              <button onClick={() => connect({ metadata: { appId: window.location.origin, appName: 'My Thru App', appUrl: window.location.origin } })} disabled={isConnecting} style={btnStyle('#3182ce')}>{isConnecting ? 'Connecting...' : 'Connect Thru Wallet'}</button>
-            </div>
-          )}
-        </div>
-
-        <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
+      <div style={cardStyle}>
+        <p style={{ margin: '0 0 8px' }}><strong>Embedded Wallet (Browser)</strong></p>
+        {isConnected ? (
+          <div>
+            <p style={{ color: '#38a169', margin: '0 0 12px' }}>✅ Connected</p>
+            {signingContext ? (
+              <div style={{ fontSize: '13px', lineHeight: 1.8 }}>
+                <p style={{ margin: 0 }}><strong>Fee Payer:</strong></p>
+                <p style={{ fontSize: '11px', wordBreak: 'break-all', background: '#edf2f7', padding: '8px', borderRadius: '4px', margin: '4px 0 8px', fontFamily: 'monospace' }}>{signingContext.feePayerPublicKey}</p>
+                <p style={{ margin: 0 }}><strong>Mode:</strong> {signingContext.mode}</p>
+              </div>
+            ) : (
+              <button onClick={handleGetSigningContext} disabled={loadingContext} style={btnStyle('#38a169')}>{loadingContext ? 'Loading...' : 'Load Wallet Details'}</button>
+            )}
+            <br />
+            <button onClick={disconnect} style={btnStyle('#e53e3e')}>Disconnect</button>
+          </div>
+        ) : (
+          <div>
+            <p style={{ fontSize: '13px', color: '#555', margin: '0 0 4px' }}>Connect to interact with the Thru network from your browser.</p>
+            <p style={{ fontSize: '13px', color: '#555', margin: '0 0 8px' }}>{"Don't have a wallet yet? "}<WalletLink /></p>
+            <button onClick={() => connect({ metadata: { appId: window.location.origin, appName: 'ThruScan', appUrl: window.location.origin } })} disabled={isConnecting} style={{ ...btnStyle('#3182ce'), marginRight: 0, width: '100%' }}>{isConnecting ? 'Connecting...' : 'Connect Thru Wallet'}</button>
+          </div>
+        )}
       </div>
+
+      <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
+
       <GuidePanel />
     </div>
   )
