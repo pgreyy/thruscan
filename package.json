@@ -13,7 +13,8 @@
     "@thru/react-sdk": "^0.2.21",
     "@thru/thru-sdk": "^0.2.21",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
