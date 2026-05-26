@@ -16,23 +16,39 @@ const steps = [
   { number: 6, title: 'Get Faucet Tokens', description: 'Once your account is created, withdraw test tokens from the faucet to fund your wallet. The faucet gives up to 10,000 THRU per wallet. Replace "default" with your wallet name if you used a different label.', note: null, noteCommand: null, linkLabel: null, linkUrl: null, command: 'thru.exe faucet withdraw default 50', verify: 'thru getaccountinfo default' },
 ]
 
+const FEATURED_CONTENT = [
+  {
+    id: 1,
+    type: 'Article',
+    title: 'Introducing ThruScan: The First Community Explorer for Thru Alphanet',
+    description: 'A deep dive into what Thru is building, why RISC-V matters, and how ThruScan was built on Thru\'s alphanet SDK.',
+    link: 'https://greyy.substack.com',
+    author: 'pgreyy',
+    twitter: 'pgreyy',
+    featured: true,
+  },
+]
+
 function NavBar() {
   const location = useLocation()
-  const isUpdates = location.pathname === '/updates'
+  const path = location.pathname
+  const links = [
+    { to: '/', label: 'Explorer' },
+    { to: '/updates', label: 'Network Updates' },
+    { to: '/projects', label: 'Projects' },
+    { to: '/community', label: 'Community' },
+  ]
   return (
     <div style={{ background: '#0d1117', borderBottom: '1px solid #30363d', padding: '0 20px', position: 'sticky', top: 0, zIndex: 100 }}>
-      <div style={{ maxWidth: '680px', margin: '0 auto', display: 'flex', alignItems: 'center', gap: '24px', height: '52px' }}>
-        <Link to="/" style={{ textDecoration: 'none' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', alignItems: 'center', gap: '8px', height: '52px', overflowX: 'auto' }}>
+        <Link to="/" style={{ textDecoration: 'none', marginRight: '12px', flexShrink: 0 }}>
           <span style={{ fontWeight: 800, fontSize: '16px', color: '#e6edf3', letterSpacing: '-0.3px' }}>ThruScan</span>
         </Link>
-        <div style={{ display: 'flex', gap: '4px' }}>
-          <Link to="/" style={{ textDecoration: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, color: !isUpdates ? '#e6edf3' : '#8b949e', background: !isUpdates ? '#21262d' : 'none' }}>
-            Explorer
+        {links.map(l => (
+          <Link key={l.to} to={l.to} style={{ textDecoration: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, color: path === l.to ? '#e6edf3' : '#8b949e', background: path === l.to ? '#21262d' : 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {l.label}
           </Link>
-          <Link to="/updates" style={{ textDecoration: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', fontWeight: 500, color: isUpdates ? '#e6edf3' : '#8b949e', background: isUpdates ? '#21262d' : 'none' }}>
-            Network Updates
-          </Link>
-        </div>
+        ))}
       </div>
     </div>
   )
@@ -61,6 +77,18 @@ function Badge({ value }) {
   return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, backgroundColor: yes ? '#c6f6d5' : '#fed7d7', color: yes ? '#276749' : '#9b2c2c' }}>{yes ? 'Yes' : 'No'}</span>
 }
 
+function TagBadge({ label, color }) {
+  const colors = {
+    blue: { bg: '#dbeafe', text: '#1e40af' },
+    green: { bg: '#d1fae5', text: '#065f46' },
+    purple: { bg: '#ede9fe', text: '#5b21b6' },
+    orange: { bg: '#ffedd5', text: '#9a3412' },
+    gray: { bg: '#f3f4f6', text: '#374151' },
+  }
+  const c = colors[color] || colors.gray
+  return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, backgroundColor: c.bg, color: c.text }}>{label}</span>
+}
+
 function useThruClient() {
   const clientRef = useRef(null)
   useEffect(() => {
@@ -77,6 +105,276 @@ function timeAgo(dateStr) {
   if (days < 7) return `${days} days ago`
   if (days < 30) return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? 's' : ''} ago`
   return `${Math.floor(days / 30)} months ago`
+}
+
+function FormInput({ label, value, onChange, placeholder, required, type }) {
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>
+        {label}{required && <span style={{ color: '#e53e3e' }}> *</span>}
+      </label>
+      {type === 'textarea' ? (
+        <textarea value={value} onChange={onChange} placeholder={placeholder} rows={3} style={{ width: '100%', padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'sans-serif', resize: 'vertical' }} />
+      ) : (
+        <input type={type || 'text'} value={value} onChange={onChange} placeholder={placeholder} style={{ width: '100%', padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' }} />
+      )}
+    </div>
+  )
+}
+
+function ProjectsPage() {
+  const PROJECTS = []
+
+  const [form, setForm] = useState({ name: '', yourTwitter: '', projectName: '', projectTwitter: '', projectWebsite: '', founderDetails: '', yourRelationship: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+
+  const handleSubmit = async () => {
+    if (!form.name || !form.projectName) { setError('Your name and project name are required.'); return }
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/submit-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (data.success) { setSubmitted(true); setForm({ name: '', yourTwitter: '', projectName: '', projectTwitter: '', projectWebsite: '', founderDetails: '', yourRelationship: '' }) }
+      else setError(data.error || 'Submission failed.')
+    } catch (err) {
+      setError('Something went wrong. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: '24px 20px', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
+      <div style={{ marginBottom: '24px' }}>
+        <h1 style={{ margin: '0 0 4px', fontSize: 'clamp(20px, 5vw, 26px)' }}>Projects on Thru</h1>
+        <p style={{ margin: 0, fontSize: '13px', color: '#718096' }}>Teams and tools building on the Thru network. Know a project? Suggest it below.</p>
+      </div>
+
+      {PROJECTS.length === 0 ? (
+        <div style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '48px 24px', textAlign: 'center', marginBottom: '24px' }}>
+          <p style={{ fontSize: '32px', margin: '0 0 12px' }}>🔭</p>
+          <p style={{ fontWeight: 600, fontSize: '15px', color: '#2d3748', margin: '0 0 8px' }}>No projects listed yet</p>
+          <p style={{ fontSize: '13px', color: '#718096', margin: '0 0 16px' }}>Thru is in alphanet — the ecosystem is just getting started. Know something being built? Suggest it below.</p>
+          <button onClick={() => setShowForm(true)} style={{ padding: '10px 20px', fontSize: '13px', backgroundColor: '#3182ce', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+            Suggest a Project
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          {PROJECTS.map(p => (
+            <div key={p.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <p style={{ fontWeight: 700, fontSize: '15px', margin: 0, color: '#1a202c' }}>{p.name}</p>
+                <TagBadge label={p.category} color={p.color} />
+              </div>
+              <p style={{ fontSize: '13px', color: '#4a5568', margin: '0 0 12px', lineHeight: 1.5 }}>{p.description}</p>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {p.twitter && <a href={`https://twitter.com/${p.twitter}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#3182ce', textDecoration: 'none' }}>Twitter ↗</a>}
+                {p.website && <a href={p.website} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#3182ce', textDecoration: 'none' }}>Website ↗</a>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '20px' }}>
+        <button onClick={() => setShowForm(!showForm)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 0 }}>
+          <span style={{ fontWeight: 700, fontSize: '15px', color: '#90cdf4' }}>Suggest a Project</span>
+          <span style={{ fontSize: '16px', color: '#90cdf4' }}>{showForm ? '▲' : '▼'}</span>
+        </button>
+        <p style={{ fontSize: '12px', color: '#8b949e', margin: '6px 0 0' }}>Know a team or tool building on Thru? Submit it for review.</p>
+
+        {showForm && (
+          <div style={{ marginTop: '16px' }}>
+            {submitted ? (
+              <div style={{ background: '#1a4731', border: '1px solid #38a169', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
+                <p style={{ color: '#68d391', fontWeight: 600, margin: '0 0 4px' }}>✅ Suggestion submitted!</p>
+                <p style={{ color: '#9ae6b4', fontSize: '13px', margin: 0 }}>Thanks for the tip. We'll review and add it if it checks out.</p>
+                <button onClick={() => setSubmitted(false)} style={{ marginTop: '12px', fontSize: '12px', color: '#68d391', background: 'none', border: '1px solid #38a169', borderRadius: '4px', cursor: 'pointer', padding: '4px 12px' }}>Submit another</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <div><FormInput label="Your Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Your name" required /></div>
+                  <div><FormInput label="Your Twitter" value={form.yourTwitter} onChange={e => setForm(p => ({ ...p, yourTwitter: e.target.value }))} placeholder="pgreyy (no @)" /></div>
+                  <div><FormInput label="Project Name" value={form.projectName} onChange={e => setForm(p => ({ ...p, projectName: e.target.value }))} placeholder="Project name" required /></div>
+                  <div><FormInput label="Project Twitter" value={form.projectTwitter} onChange={e => setForm(p => ({ ...p, projectTwitter: e.target.value }))} placeholder="project (no @)" /></div>
+                </div>
+                <FormInput label="Project Website" value={form.projectWebsite} onChange={e => setForm(p => ({ ...p, projectWebsite: e.target.value }))} placeholder="https://..." type="url" />
+                <FormInput label="Founder Details" value={form.founderDetails} onChange={e => setForm(p => ({ ...p, founderDetails: e.target.value }))} placeholder="Founder name(s), Twitter, background..." type="textarea" />
+                <FormInput label="Your Relationship to the Project" value={form.yourRelationship} onChange={e => setForm(p => ({ ...p, yourRelationship: e.target.value }))} placeholder="e.g. Founder, Community member, Observer..." />
+                {error && <p style={{ fontSize: '13px', color: '#fc8181', margin: '0 0 12px', background: '#742a2a', padding: '8px', borderRadius: '6px' }}>❌ {error}</p>}
+                <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '10px', fontSize: '14px', backgroundColor: submitting ? '#4a5568' : '#3182ce', color: 'white', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                  {submitting ? 'Submitting...' : 'Submit Suggestion'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CommunityPage() {
+  const [records, setRecords] = useState([])
+  const [loadingRecords, setLoadingRecords] = useState(true)
+  const [form, setForm] = useState({ name: '', yourTwitter: '', contentTitle: '', contentLink: '', description: '', contentType: 'Article' })
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [activeTab, setActiveTab] = useState('featured')
+
+  useEffect(() => {
+    fetch('/api/get-community')
+      .then(r => r.json())
+      .then(data => { setRecords(data.records || []); setLoadingRecords(false) })
+      .catch(() => setLoadingRecords(false))
+  }, [])
+
+  const handleSubmit = async () => {
+    if (!form.name || !form.contentTitle || !form.contentLink) { setError('Name, title and link are required.'); return }
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/submit-community', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (data.success) { setSubmitted(true); setForm({ name: '', yourTwitter: '', contentTitle: '', contentLink: '', description: '', contentType: 'Article' }) }
+      else setError(data.error || 'Submission failed.')
+    } catch (err) {
+      setError('Something went wrong. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const typeColor = { Article: 'blue', Thread: 'purple', Video: 'green', Tool: 'orange', Other: 'gray' }
+
+  const ContentCard = ({ item }) => (
+    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '8px' }}>
+        <a href={item.link} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600, fontSize: '14px', color: '#1a202c', textDecoration: 'none', lineHeight: 1.4 }}>{item.title}</a>
+        <TagBadge label={item.type} color={typeColor[item.type] || 'gray'} />
+      </div>
+      {item.description && <p style={{ fontSize: '13px', color: '#4a5568', margin: '0 0 10px', lineHeight: 1.5 }}>{item.description}</p>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <a href={`https://twitter.com/${item.twitter || item.author}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#718096', textDecoration: 'none' }}>@{item.twitter || item.author}</a>
+        <a href={item.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#3182ce', textDecoration: 'none' }}>Read ↗</a>
+      </div>
+    </div>
+  )
+
+  const tabStyle = (active) => ({
+    padding: '8px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    border: 'none',
+    borderBottom: active ? '2px solid #3182ce' : '2px solid transparent',
+    background: 'none',
+    color: active ? '#3182ce' : '#718096',
+    cursor: 'pointer',
+  })
+
+  return (
+    <div style={{ padding: '24px 20px', maxWidth: '900px', margin: '0 auto', boxSizing: 'border-box' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <h1 style={{ margin: '0 0 4px', fontSize: 'clamp(20px, 5vw, 26px)' }}>Community</h1>
+        <p style={{ margin: 0, fontSize: '13px', color: '#718096' }}>Educational content, threads, tools, and community work around the Thru ecosystem.</p>
+      </div>
+
+      <div style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '20px', display: 'flex', gap: '4px' }}>
+        <button style={tabStyle(activeTab === 'featured')} onClick={() => setActiveTab('featured')}>Featured & Evergreen</button>
+        <button style={tabStyle(activeTab === 'community')} onClick={() => setActiveTab('community')}>Community Picks</button>
+      </div>
+
+      {activeTab === 'featured' && (
+        <div>
+          <p style={{ fontSize: '12px', color: '#a0aec0', margin: '0 0 16px' }}>Curated content from the Thru team and standout community pieces. Updated periodically.</p>
+          {FEATURED_CONTENT.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+              {FEATURED_CONTENT.map(item => <ContentCard key={item.id} item={item} />)}
+            </div>
+          ) : (
+            <div style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '32px', textAlign: 'center' }}>
+              <p style={{ color: '#718096', fontSize: '13px', margin: 0 }}>No featured content yet. Check back soon.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'community' && (
+        <div>
+          <p style={{ fontSize: '12px', color: '#a0aec0', margin: '0 0 16px' }}>Approved community submissions. Submit yours below.</p>
+          {loadingRecords ? (
+            <p style={{ fontSize: '13px', color: '#718096', textAlign: 'center', padding: '32px 0' }}>Loading...</p>
+          ) : records.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+              {records.map(item => <ContentCard key={item.id} item={item} />)}
+            </div>
+          ) : (
+            <div style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '32px', textAlign: 'center' }}>
+              <p style={{ fontWeight: 600, fontSize: '14px', color: '#2d3748', margin: '0 0 8px' }}>No community picks yet</p>
+              <p style={{ fontSize: '13px', color: '#718096', margin: '0 0 16px' }}>Be the first to submit something worth reading.</p>
+              <button onClick={() => setShowForm(true)} style={{ padding: '8px 16px', fontSize: '13px', backgroundColor: '#3182ce', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Submit Content</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '20px', marginTop: '24px' }}>
+        <button onClick={() => setShowForm(!showForm)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 0 }}>
+          <span style={{ fontWeight: 700, fontSize: '15px', color: '#90cdf4' }}>Submit Content</span>
+          <span style={{ fontSize: '16px', color: '#90cdf4' }}>{showForm ? '▲' : '▼'}</span>
+        </button>
+        <p style={{ fontSize: '12px', color: '#8b949e', margin: '6px 0 0' }}>Articles, threads, videos, tools — anything valuable about Thru. Reviewed weekly.</p>
+
+        {showForm && (
+          <div style={{ marginTop: '16px' }}>
+            {submitted ? (
+              <div style={{ background: '#1a4731', border: '1px solid #38a169', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
+                <p style={{ color: '#68d391', fontWeight: 600, margin: '0 0 4px' }}>✅ Submitted!</p>
+                <p style={{ color: '#9ae6b4', fontSize: '13px', margin: 0 }}>Thanks for contributing. We review weekly and will feature the best ones.</p>
+                <button onClick={() => setSubmitted(false)} style={{ marginTop: '12px', fontSize: '12px', color: '#68d391', background: 'none', border: '1px solid #38a169', borderRadius: '4px', cursor: 'pointer', padding: '4px 12px' }}>Submit another</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <div><FormInput label="Your Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Your name" required /></div>
+                  <div><FormInput label="Your Twitter" value={form.yourTwitter} onChange={e => setForm(p => ({ ...p, yourTwitter: e.target.value }))} placeholder="pgreyy (no @)" /></div>
+                </div>
+                <FormInput label="Content Title" value={form.contentTitle} onChange={e => setForm(p => ({ ...p, contentTitle: e.target.value }))} placeholder="Title of your article, thread or tool" required />
+                <FormInput label="Content Link" value={form.contentLink} onChange={e => setForm(p => ({ ...p, contentLink: e.target.value }))} placeholder="https://..." type="url" required />
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Content Type</label>
+                  <select value={form.contentType} onChange={e => setForm(p => ({ ...p, contentType: e.target.value }))} style={{ width: '100%', padding: '8px 12px', fontSize: '13px', border: '1px solid #cbd5e0', borderRadius: '6px', outline: 'none', boxSizing: 'border-box' }}>
+                    {['Article', 'Thread', 'Video', 'Tool', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <FormInput label="Brief Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="What is this about? Why should people read it?" type="textarea" />
+                {error && <p style={{ fontSize: '13px', color: '#fc8181', margin: '0 0 12px', background: '#742a2a', padding: '8px', borderRadius: '6px' }}>❌ {error}</p>}
+                <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '10px', fontSize: '14px', backgroundColor: submitting ? '#4a5568' : '#3182ce', color: 'white', border: 'none', borderRadius: '6px', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                  {submitting ? 'Submitting...' : 'Submit'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function UpdatesPage() {
@@ -98,7 +396,7 @@ function UpdatesPage() {
       const data = await r.json()
       setReleases(data)
     } catch (err) {
-      setError('Could not load releases. GitHub API may be rate limited.')
+      setError('Could not load releases.')
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -114,18 +412,10 @@ function UpdatesPage() {
       const res = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tagName: release.tag_name,
-          publishedAt: release.published_at,
-          releaseName: release.name,
-        }),
+        body: JSON.stringify({ tagName: release.tag_name, publishedAt: release.published_at, releaseName: release.name }),
       })
       const data = await res.json()
-      if (data.summary) {
-        setSummaries(prev => ({ ...prev, [release.id]: data.summary }))
-      } else {
-        setSummaries(prev => ({ ...prev, [release.id]: 'Summary unavailable.' }))
-      }
+      setSummaries(prev => ({ ...prev, [release.id]: data.summary || 'Summary unavailable.' }))
     } catch {
       setSummaries(prev => ({ ...prev, [release.id]: 'Could not generate summary.' }))
     } finally {
@@ -143,16 +433,12 @@ function UpdatesPage() {
     <div style={{ padding: '24px 20px', maxWidth: '680px', margin: '0 auto', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ margin: '0 0 4px', fontSize: 'clamp(20px, 5vw, 26px)', color: '#e6edf3' }}>Thru Network Updates</h1>
-          <p style={{ margin: 0, fontSize: '13px', color: '#8b949e' }}>Live releases from the Unto Labs public GitHub — auto-updated on every visit</p>
+          <h1 style={{ margin: '0 0 4px', fontSize: 'clamp(20px, 5vw, 26px)' }}>Thru Network Updates</h1>
+          <p style={{ margin: 0, fontSize: '13px', color: '#8b949e' }}>Live releases from Unto Labs GitHub — auto-updated on every visit</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button onClick={() => fetchReleases(true)} disabled={refreshing} style={{ fontSize: '12px', color: '#58a6ff', background: 'none', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', padding: '6px 12px' }}>
-            {refreshing ? '↻ Refreshing...' : '↻ Refresh'}
-          </button>
-          <a href="https://github.com/Unto-Labs/thru/releases" target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#58a6ff', textDecoration: 'none', border: '1px solid #30363d', borderRadius: '6px', padding: '6px 12px' }}>
-            GitHub ↗
-          </a>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => fetchReleases(true)} disabled={refreshing} style={{ fontSize: '12px', color: '#58a6ff', background: 'none', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', padding: '6px 12px' }}>{refreshing ? '↻ Refreshing...' : '↻ Refresh'}</button>
+          <a href="https://github.com/Unto-Labs/thru/releases" target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#58a6ff', textDecoration: 'none', border: '1px solid #30363d', borderRadius: '6px', padding: '6px 12px' }}>GitHub ↗</a>
         </div>
       </div>
 
@@ -161,21 +447,15 @@ function UpdatesPage() {
 
       {!loading && !error && releases.map((release, i) => (
         <div key={release.id} style={{ marginBottom: '10px', border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden', background: '#161b22' }}>
-          <button
-            onClick={() => handleToggle(release)}
-            style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left', gap: '8px' }}
-          >
+          <button onClick={() => handleToggle(release)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               {i === 0 && <span style={{ fontSize: '10px', fontWeight: 700, backgroundColor: '#238636', color: 'white', padding: '2px 7px', borderRadius: '12px' }}>LATEST</span>}
               <span style={{ fontSize: '14px', fontWeight: 600, color: '#58a6ff', fontFamily: 'monospace' }}>{release.tag_name}</span>
-              {release.name && release.name !== release.tag_name && (
-                <span style={{ fontSize: '13px', color: '#c9d1d9' }}>{release.name}</span>
-              )}
+              {release.name && release.name !== release.tag_name && <span style={{ fontSize: '13px', color: '#c9d1d9' }}>{release.name}</span>}
               <span style={{ fontSize: '12px', color: '#8b949e' }}>{timeAgo(release.published_at)}</span>
             </div>
             <span style={{ fontSize: '12px', color: '#8b949e', flexShrink: 0 }}>{openRelease === release.id ? '▲' : '▼'}</span>
           </button>
-
           {openRelease === release.id && (
             <div style={{ padding: '0 16px 16px', borderTop: '1px solid #30363d' }}>
               <div style={{ marginTop: '12px', background: '#0d1117', borderRadius: '6px', padding: '12px' }}>
@@ -183,26 +463,19 @@ function UpdatesPage() {
                 {loadingSummary[release.id] ? (
                   <p style={{ fontSize: '13px', color: '#8b949e', margin: 0 }}>Generating summary...</p>
                 ) : (
-                  <p style={{ fontSize: '13px', color: '#c9d1d9', margin: 0, lineHeight: 1.7 }}>
-                    {summaries[release.id] || 'Loading...'}
-                  </p>
+                  <p style={{ fontSize: '13px', color: '#c9d1d9', margin: 0, lineHeight: 1.7 }}>{summaries[release.id] || 'Loading...'}</p>
                 )}
               </div>
               <div style={{ marginTop: '10px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <a href={release.html_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#58a6ff', textDecoration: 'underline' }}>
-                  View on GitHub ↗
-                </a>
-                <span style={{ fontSize: '12px', color: '#8b949e' }}>
-                  {new Date(release.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                </span>
+                <a href={release.html_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#58a6ff', textDecoration: 'underline' }}>View on GitHub ↗</a>
+                <span style={{ fontSize: '12px', color: '#8b949e' }}>{new Date(release.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
               </div>
             </div>
           )}
         </div>
       ))}
-
-      <div style={{ marginTop: '24px', textAlign: 'center' }}>
-        <p style={{ fontSize: '11px', color: '#8b949e', margin: '0 0 4px' }}>Summaries are AI-generated based on version and release date. They may not reflect exact changes.</p>
+      <div style={{ marginTop: '16px', textAlign: 'center' }}>
+        <p style={{ fontSize: '11px', color: '#8b949e', margin: 0 }}>Summaries are AI-generated based on version and release date. They may not reflect exact changes.</p>
       </div>
     </div>
   )
@@ -265,7 +538,6 @@ function DevAccountCard({ onLookup }) {
 
   const handleChange = () => { setEditing(true); setInput(savedKey); setAccount(null); setError(null) }
   const handleClear = () => { localStorage.removeItem(STORAGE_KEY); setSavedKey(''); setInput(''); setEditing(true); setAccount(null); setError(null); setLastUpdated(null) }
-
   const meta = account?.meta
   const flags = meta?.flags
 
@@ -281,7 +553,6 @@ function DevAccountCard({ onLookup }) {
           </div>
         )}
       </div>
-
       {editing ? (
         <div>
           <p style={{ fontSize: '13px', color: '#718096', margin: '0 0 10px' }}>Enter your CLI-generated public key. It will be saved in your browser for future visits.</p>
@@ -348,7 +619,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
       if (!result) throw new Error('No account data returned')
       setAccount(result)
     } catch (err) {
-      setError(err.message || 'Could not fetch account. Make sure the public key is correct.')
+      setError(err.message || 'Could not fetch account.')
     } finally {
       setLoading(false)
     }
@@ -509,6 +780,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/community" element={<CommunityPage />} />
         </Routes>
       </div>
     </BrowserRouter>
