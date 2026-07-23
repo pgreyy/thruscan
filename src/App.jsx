@@ -1,6 +1,5 @@
 ﻿import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { useWallet } from '@thru/react-sdk'
 import { createThruClient } from '@thru/thru-sdk'
 
 const RPC_ENDPOINTS = [
@@ -677,52 +676,29 @@ function CommunityPage() {
 }
 
 function ExplorerPage() {
-  const { connect, disconnect, isConnected, isConnecting, wallet } = useWallet()
-  const [signingContext, setSigningContext] = useState(null)
-  const [loadingContext, setLoadingContext] = useState(false)
   const [lookupPrefill, setLookupPrefill] = useState(null)
-
-  const handleGetSigningContext = async () => {
-    try { setLoadingContext(true); const context = await wallet.getSigningContext(); setSigningContext(context) }
-    catch (err) { console.error(err) }
-    finally { setLoadingContext(false) }
-  }
-
   const cardStyle = { background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginTop: '16px' }
-  const btnStyle = (color) => ({ padding: '10px 20px', fontSize: '15px', backgroundColor: color, color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', marginTop: '12px', marginRight: '10px' })
 
   return (
     <div style={{ padding: '20px', maxWidth: '680px', margin: '0 auto', boxSizing: 'border-box' }}>
       <h1 style={{ marginBottom: '4px', fontSize: 'clamp(22px, 5vw, 28px)' }}>ThruScan</h1>
       <p style={{ color: '#718096', marginTop: 0, fontSize: '14px' }}>Connected to Thru Alphanet</p>
+
       <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
+
       <div style={cardStyle}>
         <p style={{ margin: '0 0 8px' }}><strong>Embedded Wallet (Browser)</strong></p>
-        {isConnected ? (
-          <div>
-            <p style={{ color: '#38a169', margin: '0 0 12px' }}>Connected</p>
-            {signingContext ? (
-              <div style={{ fontSize: '13px', lineHeight: 1.8 }}>
-                <p style={{ margin: 0 }}><strong>Fee Payer:</strong></p>
-                <p style={{ fontSize: '11px', wordBreak: 'break-all', background: '#edf2f7', padding: '8px', borderRadius: '4px', margin: '4px 0 8px', fontFamily: 'monospace' }}>{signingContext.feePayerPublicKey}</p>
-                <p style={{ margin: 0 }}><strong>Mode:</strong> {signingContext.mode}</p>
-              </div>
-            ) : (
-              <button onClick={handleGetSigningContext} disabled={loadingContext} style={btnStyle('#38a169')}>{loadingContext ? 'Loading...' : 'Load Wallet Details'}</button>
-            )}
-            <br />
-            <button onClick={disconnect} style={btnStyle('#e53e3e')}>Disconnect</button>
-          </div>
-        ) : (
-          <div>
-            <p style={{ fontSize: '13px', color: '#555', margin: '0 0 4px' }}>Connect to interact with the Thru network from your browser.</p>
-            <p style={{ fontSize: '13px', color: '#555', margin: '0 0 8px' }}>{"Don't have a wallet yet? "}<WalletLink /></p>
-            <button onClick={() => connect({ metadata: { appId: window.location.origin, appName: 'ThruScan', appUrl: window.location.origin } })} disabled={isConnecting} style={{ ...btnStyle('#3182ce'), marginRight: 0, width: '100%' }}>{isConnecting ? 'Connecting...' : 'Connect Thru Wallet'}</button>
-          </div>
-        )}
+        <p style={{ fontSize: '13px', color: '#555', margin: '0 0 8px', lineHeight: 1.6 }}>
+          Thru is building a passkey-based browser wallet that needs no seed phrase or extension. The React SDK that powers it is temporarily unavailable on npm, so the connect button is disabled here until it is republished.
+        </p>
+        <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>
+          In the meantime you can explore the hosted wallet directly. <WalletLink />
+        </p>
       </div>
+
       <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
       <GuidePanel />
+
       <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
         <p style={{ fontSize: '12px', color: '#a0aec0', margin: '0 0 4px' }}>Built by <a href="https://twitter.com/pgreyy" target="_blank" rel="noopener noreferrer" style={{ color: '#3182ce', textDecoration: 'none' }}>pgreyy</a> and open source on <a href="https://github.com/pgreyy/thruscan" target="_blank" rel="noopener noreferrer" style={{ color: '#3182ce', textDecoration: 'none' }}>GitHub</a></p>
         <p style={{ fontSize: '11px', color: '#cbd5e0', margin: 0 }}>ThruScan is a community explorer for Thru alphanet, not affiliated with Unto Labs</p>
@@ -730,7 +706,6 @@ function ExplorerPage() {
     </div>
   )
 }
-
 export default function App() {
   return (
     <BrowserRouter>
@@ -746,3 +721,5 @@ export default function App() {
     </BrowserRouter>
   )
 }
+
+
