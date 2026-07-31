@@ -1,33 +1,22 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { createThruClient } from '@thru/thru-sdk'
+import { getAccount } from './lib/rpcClient'
+import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 
-const RPC_ENDPOINTS = [
-  'https://rpc.alphanet.thru.org',
-  'https://grpc-web.alphanet.thru.org',
-  'https://grpc-web.alphanet.thruput.org',
-]
-
-let cachedWorkingUrl = null
-
+// All chain reads now go through /api/rpc, a serverless function that talks to
+// the Thru node server to server. The node sends no CORS headers, so a browser
+// can never call it directly.
+//
+// Two bugs lived in the code this replaced:
+//   1. createThruClient({ url }) passed the wrong key. The SDK reads `baseUrl`,
+//      so every endpoint in the fallback list was silently ignored and every
+//      request went to the SDK's hardcoded DEFAULT_HOST, which still points at
+//      the long-dead grpc-web.alphanet.thruput.org.
+//   2. Even with a correct host, gRPC-Web from the browser was blocked by CORS.
+//
+// Both are gone. The proxy picks a live endpoint on its own and caches it.
 async function fetchAccountFromChain(address) {
-  const ordered = cachedWorkingUrl
-    ? [cachedWorkingUrl, ...RPC_ENDPOINTS.filter(u => u !== cachedWorkingUrl)]
-    : RPC_ENDPOINTS
-  let lastErr = null
-  for (const url of ordered) {
-    try {
-      const ctx = createThruClient({ url })
-      const result = await ctx.accounts.get(address)
-      if (result) {
-        cachedWorkingUrl = url
-        return result
-      }
-    } catch (e) {
-      lastErr = e
-    }
-  }
-  throw lastErr || new Error('Could not reach any Thru RPC endpoint')
+  return getAccount(address)
 }
 
 const STORAGE_KEY = 'thru_dev_account_pubkey'
@@ -259,6 +248,77 @@ function DevAccountCard({ onLookup }) {
   )
 }
 
+function NameServiceCard({ account }) {
+  const [decoded, setDecoded] = useState(null)
+
+  useEffect(() => {
+    setDecoded(null)
+    const b64 = account?.data?.base64
+    if (!b64) return
+    try {
+      setDecoded(decodeNameServiceAccount(b64))
+    } catch {
+      // Most accounts are not name service accounts. Stay quiet rather than
+      // showing an error for the ordinary case.
+      setDecoded(null)
+    }
+  }, [account])
+
+  if (!decoded) return null
+
+  const isDomain = decoded.kindLabel === 'domain'
+
+  const row = (label, value, mono) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #e2e8f0', gap: '8px' }}>
+      <span style={{ fontSize: '13px', color: '#4a5568', fontWeight: 500, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: mono ? '11px' : '13px', fontFamily: mono ? 'monospace' : 'inherit', color: '#1a202c', textAlign: 'right', wordBreak: 'break-all' }}>{value ?? '-'}</span>
+    </div>
+  )
+
+  return (
+    <div style={{ marginTop: '12px', background: 'white', border: '1px solid #9ae6b4', borderLeft: '4px solid #38a169', borderRadius: '6px', padding: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', flexWrap: 'wrap' }}>
+        <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#22543d' }}>Name Service Record</p>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: '#22543d', background: '#f0fff4', border: '1px solid #9ae6b4', borderRadius: '999px', padding: '2px 10px' }}>{isDomain ? 'Domain' : 'Root Registrar'}</span>
+      </div>
+
+      {isDomain ? (
+        <div>
+          {row('Name', decoded.domainName)}
+          {row('Owner', decoded.owner, true)}
+          {row('Parent', decoded.parent, true)}
+          {row('Registered', registrationDate(decoded)?.toLocaleString())}
+          {row('Records', decoded.recordCount)}
+
+          {decoded.records.length > 0 && (
+            <div style={{ marginTop: '12px' }}>
+              <p style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: 600, color: '#4a5568' }}>Records</p>
+              {decoded.records.map((r) => (
+                <div key={r.key} style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px 10px', marginBottom: '6px' }}>
+                  <p style={{ margin: 0, fontSize: '11px', fontFamily: 'monospace', color: '#718096' }}>{r.key}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#1a202c', wordBreak: 'break-all' }}>
+                    {r.key === 'url' && /^https?:\/\//.test(r.display)
+                      ? <a href={r.display} target="_blank" rel="noreferrer" style={{ color: '#3182ce' }}>{r.display}</a>
+                      : r.key === 'com.twitter'
+                        ? <a href={'https://x.com/' + r.display.replace(/^@/, '')} target="_blank" rel="noreferrer" style={{ color: '#3182ce' }}>@{r.display.replace(/^@/, '')}</a>
+                        : r.display}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          {row('Root Name', decoded.rootName)}
+          {row('Authority', decoded.authority, true)}
+          {row('Total Subdomains', decoded.totalSubdomains?.toString())}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AccountLookup({ prefillKey, onPrefillUsed }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -320,7 +380,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
       {account && meta && (
         <div style={{ marginTop: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px' }}>
           <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 700, color: '#2d3748' }}>Account Found</p>
-          {row('Public Key', input.trim())}
+          {row('Public Key', account.address ?? input.trim())}
           {row('Balance', meta.balance?.toString() + ' THRU')}
           {row('Data Size', meta.dataSize?.toString())}
           {row('Nonce', meta.nonce?.toString())}
@@ -334,6 +394,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
           {flags && boolRow('Is Compressed', flags.isCompressed)}
         </div>
       )}
+      {account && <NameServiceCard account={account} />}
     </div>
   )
 }
