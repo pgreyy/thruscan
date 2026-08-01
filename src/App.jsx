@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { getAccount, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
+import { decodeTokenProgramAccount, formatAmount } from './lib/token'
 import './styles.css'
 
 // All chain reads go through /api/rpc, a serverless function that talks to the
@@ -377,6 +378,66 @@ function NameServiceCard({ account }) {
   )
 }
 
+function TokenCard({ account }) {
+  const [decoded, setDecoded] = useState(null)
+
+  useEffect(() => {
+    setDecoded(null)
+    const b64 = account?.data?.base64
+    if (!b64) return
+    try {
+      // Returns null unless the data is exactly 115 or 73 bytes, so ordinary
+      // accounts fall through without an error.
+      setDecoded(decodeTokenProgramAccount(b64))
+    } catch {
+      setDecoded(null)
+    }
+  }, [account])
+
+  if (!decoded) return null
+
+  const isMint = decoded.kindLabel === 'mint'
+
+  return (
+    <section className="card accent">
+      <div className="card-head">
+        <div>
+          <p className="eyebrow">Token program</p>
+          <h2 className="h2">{isMint ? (decoded.ticker || 'Unnamed token') : 'Token balance'}</h2>
+        </div>
+        <span className="pill tag">{isMint ? 'Mint' : 'Token account'}</span>
+      </div>
+
+      {isMint ? (
+        <div className="rows">
+          <Row k="Ticker" v={decoded.ticker || '-'} />
+          <Row k="Supply" v={`${decoded.supplyDisplay} ${decoded.ticker}`.trim()} mono />
+          <Row k="Decimals" v={decoded.decimals} mono />
+          <Row k="Base units" v={decoded.supply.toString()} mono />
+          <AddrRow k="Mint authority" v={decoded.mintAuthority} />
+          <AddrRow k="Creator" v={decoded.creator} />
+          {decoded.hasFreezeAuthority
+            ? <AddrRow k="Freeze authority" v={decoded.freezeAuthority} />
+            : <Row k="Freeze authority" v="None, balances cannot be frozen" />}
+        </div>
+      ) : (
+        <div className="rows">
+          <Row k="Amount" v={formatAmount(decoded.amount, 0)} mono />
+          <AddrRow k="Mint" v={decoded.mint} />
+          <AddrRow k="Owner" v={decoded.owner} />
+          <FlagRow k="Frozen" v={decoded.isFrozen} />
+        </div>
+      )}
+
+      {!isMint && (
+        <p className="fine" style={{ marginBottom: 0 }}>
+          Amount is in base units. Look up the mint above to see its decimals and ticker.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function AccountLookup({ prefillKey, onPrefillUsed }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -446,6 +507,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
       </section>
 
       {account && <NameServiceCard account={account} />}
+      {account && <TokenCard account={account} />}
     </>
   )
 }
@@ -515,7 +577,7 @@ function ExplorerPage() {
     <div className="wrap">
       <p className="eyebrow">Community explorer</p>
       <h1 className="h1">Read anything on Thru alphanet</h1>
-      <p className="lede">Accounts, balances, and name service records, decoded straight from the chain.</p>
+      <p className="lede">Accounts, tokens, and name service records, decoded straight from the chain.</p>
 
       <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
       <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
