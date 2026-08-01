@@ -123,13 +123,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .wrap { max-width: 720px; margin: 0 auto; }
 .wrap-wide { max-width: 940px; margin: 0 auto; }
 
-@media (min-width: 900px) {
-  .rail { display: flex; }
-  .main { margin-left: var(--rail); padding: 34px 32px 56px; }
-  .topbar { display: none; }
-  .tabbar { display: none; }
-}
-
 /* ---------- mobile chrome ---------- */
 
 .topbar {
@@ -172,6 +165,16 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .tab[aria-current='page'] { color: var(--signal); border-top-color: var(--signal); font-weight: 600; }
+
+/* Desktop overrides live AFTER the mobile rules on purpose. These selectors
+   have the same specificity as the ones above, so source order decides the
+   winner. Move this block earlier and both navigations render at once. */
+@media (min-width: 900px) {
+  .rail { display: flex; }
+  .main { margin-left: var(--rail); padding: 34px 32px 56px; }
+  .topbar { display: none; }
+  .tabbar { display: none; }
+}
 
 /* ---------- status ---------- */
 
