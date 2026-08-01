@@ -386,9 +386,9 @@ function TokenCard({ account }) {
     const b64 = account?.data?.base64
     if (!b64) return
     try {
-      // Returns null unless the data is exactly 115 or 73 bytes, so ordinary
-      // accounts fall through without an error.
-      setDecoded(decodeTokenProgramAccount(b64))
+      // Returns null unless the account is owned by the token program AND is
+      // exactly 115 or 73 bytes, so ordinary accounts fall through silently.
+      setDecoded(decodeTokenProgramAccount(b64, account?.meta?.owner))
     } catch {
       setDecoded(null)
     }

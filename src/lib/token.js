@@ -41,6 +41,20 @@ import { Pubkey } from '@thru/thru-sdk'
 export const MINT_ACCOUNT_SIZE = 115
 export const TOKEN_ACCOUNT_SIZE = 73
 
+/**
+ * Size alone is NOT enough to identify these accounts. A managed program's
+ * meta account is also exactly 73 bytes, so decoding purely by length would
+ * render a deployed program as a token balance.
+ *
+ * Every Thru system program has an address of the form ta + A-padding + a
+ * short tag. The token program ends in Kqq; the program manager ends in QE.
+ * Matching the shape rather than a hardcoded 46-character literal avoids
+ * transcription mistakes in an address that is almost entirely repeated As.
+ */
+export function isTokenProgram(owner) {
+  return typeof owner === 'string' && /^taA+Kqq$/.test(owner)
+}
+
 export class TokenDecodeError extends Error {
   constructor(message) {
     super(message)
@@ -129,11 +143,16 @@ export function decodeTokenAccount(input) {
 }
 
 /**
- * Decode whichever token program account this is, by size.
- * Returns null rather than throwing when the data is neither, since most
- * accounts looked up in the explorer belong to other programs.
+ * Decode whichever token program account this is.
+ * Requires the account's owner program, and returns null rather than throwing
+ * when the account does not belong to the token program or the size matches
+ * neither variant.
  */
-export function decodeTokenProgramAccount(input) {
+export function decodeTokenProgramAccount(input, owner) {
+  // Owner is required. Callers that cannot supply it get nothing back, since
+  // a size-only match produces false positives on program meta accounts.
+  if (!isTokenProgram(owner)) return null
+
   let bytes
   try {
     bytes = base64ToBytes(input)
