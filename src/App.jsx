@@ -1615,6 +1615,11 @@ function CommunityPage() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
+  // Remembered per browser, since it is a reading preference rather than
+  // something worth re-choosing on every visit.
+  const [view, setView] = useState(() => localStorage.getItem('thruscan_view') || 'grid')
+
+  const setViewMode = (mode) => { setView(mode); localStorage.setItem('thruscan_view', mode) }
 
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
 
@@ -1650,6 +1655,13 @@ function CommunityPage() {
         everything else rises as readers open it.
       </p>
 
+      {records.length > 0 && (
+        <div className="view-toggle">
+          <button aria-pressed={view === 'grid'} onClick={() => setViewMode('grid')}>Grid</button>
+          <button aria-pressed={view === 'list'} onClick={() => setViewMode('list')}>List</button>
+        </div>
+      )}
+
       {loadingRecords && <p className="fine">Loading</p>}
 
       {!loadingRecords && records.length === 0 && (
@@ -1659,7 +1671,11 @@ function CommunityPage() {
         </div>
       )}
 
-      {records.length > 0 && <div className="grid">{records.map((item) => <ContentCard key={item.id} item={item} />)}</div>}
+      {records.length > 0 && (
+        <div className={view === 'list' ? 'feed-list' : 'grid'}>
+          {records.map((item) => <ContentCard key={item.id} item={item} />)}
+        </div>
+      )}
 
       <section className="card" style={{ marginTop: 22 }}>
         <button className="disclose" onClick={() => setShowForm(!showForm)}>

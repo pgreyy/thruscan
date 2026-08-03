@@ -513,7 +513,10 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 
-@media (min-width: 700px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+/* auto-fill rather than a fixed count, so the row count follows the width
+   instead of needing a breakpoint per size. At the 940px content width this
+   lands on three across. */
+@media (min-width: 560px) { .grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; } }
 
 .post {
   display: flex;
@@ -528,7 +531,7 @@ textarea.field { resize: vertical; min-height: 84px; }
 .post-img {
   display: block;
   width: 100%;
-  aspect-ratio: 1.91 / 1;
+  aspect-ratio: 16 / 9;
   object-fit: cover;
   background: var(--canvas);
   border-bottom: 1px solid var(--line);
@@ -540,7 +543,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 1.91 / 1;
+  aspect-ratio: 16 / 9;
   background: var(--ink);
   color: var(--canvas);
   font-family: var(--mono);
@@ -550,11 +553,74 @@ textarea.field { resize: vertical; min-height: 84px; }
   border-bottom: 1px solid var(--line);
 }
 
-.post-body { padding: 16px 18px 18px; display: flex; flex-direction: column; flex: 1; }
-.post-body h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
+.post-body { padding: 13px 15px 15px; display: flex; flex-direction: column; flex: 1; }
+.post-body h3 { margin: 0 0 5px; font-size: 14.5px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
+
+/* Titles and blurbs are clamped so every card in a row is the same height,
+   however long the source title happens to be. */
+.post-body h3 a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.post-body .fine {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .post-body h3 a { color: var(--ink); text-decoration: none; }
 .post-body h3 a:hover { color: var(--signal); }
-.post-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 12px; }
+.post-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; font-size: 12px; }
+
+/* ---------- list view ---------- */
+
+.feed-list { display: flex; flex-direction: column; gap: 10px; }
+
+.feed-list .post { flex-direction: row; align-items: stretch; }
+
+.feed-list .post > a { flex-shrink: 0; width: 116px; }
+
+.feed-list .post-img,
+.feed-list .post-alt {
+  aspect-ratio: auto;
+  height: 100%;
+  min-height: 84px;
+  border-bottom: 0;
+  border-right: 1px solid var(--line);
+  font-size: 10px;
+}
+
+.feed-list .post-body { padding: 12px 15px; }
+.feed-list .post-body h3 a { -webkit-line-clamp: 1; }
+.feed-list .post-body .fine { -webkit-line-clamp: 2; }
+
+@media (max-width: 559px) {
+  .feed-list .post > a { width: 92px; }
+  .feed-list .post-body .fine { display: none; }
+}
+
+.view-toggle { display: flex; gap: 4px; margin-bottom: 16px; }
+
+.view-toggle button {
+  padding: 6px 13px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+
+.view-toggle button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--ink);
+  font-weight: 600;
+}
 
 .rec {
   padding: 11px 13px;
