@@ -146,7 +146,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   right: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
@@ -156,7 +156,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .tab {
   padding: 10px 2px 12px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 500;
   color: var(--muted);
   text-decoration: none;
@@ -481,7 +481,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   border: 0;
   background: rgba(255, 255, 255, 0.12);
   color: #e8e6e1;
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 500;
   padding: 4px 9px;
   border-radius: 5px;

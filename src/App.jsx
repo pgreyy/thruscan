@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
+import { decodeWall, buildPostInstruction, toHex, MESSAGE_CHARS, NAME_CHARS, HANDLE_CHARS } from './lib/wall'
 import './styles.css'
 
 // All chain reads go through /api/rpc, a serverless function that talks to the
@@ -15,8 +16,14 @@ async function fetchAccountFromChain(address) {
 const STORAGE_KEY = 'thru_dev_account_pubkey'
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Unto-Labs/thru/releases?per_page=10'
 
+// Set in Vercel once the program and wall account exist. Until then the Wall
+// page renders an honest "not live yet" state instead of erroring.
+const WALL_PROGRAM = import.meta.env.VITE_THRU_WALL_PROGRAM || ''
+const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
+
 const NAV = [
   { to: '/', label: 'Explorer' },
+  { to: '/wall', label: 'Wall' },
   { to: '/guides', label: 'Guides' },
   { to: '/updates', label: 'Updates' },
   { to: '/projects', label: 'Projects' },
@@ -876,6 +883,255 @@ function ExplorerPage() {
   )
 }
 
+/* ---------- the wall ---------- */
+
+function WallEntry({ entry }) {
+  return (
+    <article className="card" style={{ marginBottom: 12 }}>
+      <div className="card-head" style={{ marginBottom: 10 }}>
+        <div>
+          <h3 className="h2" style={{ fontSize: 14 }}>
+            {entry.name || 'Anonymous'}
+            {entry.handle && (
+              <> <a href={'https://x.com/' + entry.handle} target="_blank" rel="noreferrer" style={{ fontWeight: 400 }}>@{entry.handle}</a></>
+            )}
+          </h3>
+          <p className="sub">{entry.postedAt.toLocaleString()}</p>
+        </div>
+        <span className={entry.verified ? 'pill on' : 'pill off'}>
+          {entry.verified ? 'Signed by author' : 'Sponsored'}
+        </span>
+      </div>
+
+      <p style={{ margin: '0 0 12px', fontSize: 15, lineHeight: 1.6, wordBreak: 'break-word' }}>{entry.message}</p>
+
+      {entry.verified && <Address value={entry.poster} />}
+    </article>
+  )
+}
+
+function BrowserPostForm({ onPosted }) {
+  const [name, setName] = useState('')
+  const [handle, setHandle] = useState('')
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState(null)
+  const [signature, setSignature] = useState(null)
+
+  const used = [...message].length
+  const over = used > MESSAGE_CHARS
+
+  const post = async () => {
+    setSending(true)
+    setError(null)
+    setSignature(null)
+    try {
+      const res = await fetch('/api/post-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, handle, message }),
+      })
+      const data = await res.json()
+      if (!data.ok) { setError(data.error || 'That did not post.'); return }
+      setSignature(data.signature)
+      setMessage('')
+      onPosted()
+    } catch {
+      setError('Could not reach the server. Try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (signature) {
+    return (
+      <div className="notice">
+        <p style={{ margin: '0 0 6px', fontWeight: 600 }}>Posted to the chain</p>
+        <p className="fine" style={{ margin: '0 0 10px' }}>Your message is now stored on Thru. Here is the transaction it created.</p>
+        <Address value={signature} />
+        <div className="inline" style={{ marginTop: 12 }}>
+          <button className="btn ghost" onClick={() => setSignature(null)}>Post another</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
+        ThruScan pays the fee for you, so you need no wallet and no tokens. Your message goes on chain exactly as typed
+        and cannot be deleted afterwards.
+      </p>
+
+      <div className="form-row">
+        <label className="label">Name</label>
+        <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" maxLength={NAME_CHARS} />
+      </div>
+
+      <div className="form-row">
+        <label className="label">X handle</label>
+        <input className="field" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="Optional, without the at sign" maxLength={HANDLE_CHARS} />
+      </div>
+
+      <div className="form-row">
+        <label className="label">Message<span className="req"> *</span></label>
+        <textarea className="field" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Say something" />
+        <p className="fine" style={{ margin: '6px 0 0', color: over ? 'var(--signal)' : 'var(--muted)' }}>
+          {used} of {MESSAGE_CHARS} characters
+        </p>
+      </div>
+
+      {error && <p className="notice bad" style={{ marginBottom: 14 }}>{error}</p>}
+
+      <button className="btn full" onClick={post} disabled={sending || over || message.trim().length === 0}>
+        {sending ? 'Posting' : 'Post to the wall'}
+      </button>
+    </div>
+  )
+}
+
+function CliPostForm() {
+  const [name, setName] = useState('')
+  const [handle, setHandle] = useState('')
+  const [message, setMessage] = useState('')
+
+  let command = null
+  let problem = null
+  try {
+    if (message.trim().length > 0) {
+      const hex = toHex(buildPostInstruction({ name, handle, message }))
+      command = `thru txn execute ${WALL_PROGRAM} ${hex} --readwrite-accounts ${WALL_ACCOUNT} --fee-payer default`
+    }
+  } catch (e) {
+    problem = e.message
+  }
+
+  return (
+    <div>
+      <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
+        Post signed with your own key instead of ours. Your entry gets marked as signed by the author, and your account
+        address is recorded from the transaction itself rather than typed in, so it is proven rather than claimed.
+        You need a CLI wallet first, which the <Link to="/guides">wallet guide</Link> covers.
+      </p>
+
+      <div className="form-row">
+        <label className="label">Name</label>
+        <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" maxLength={NAME_CHARS} />
+      </div>
+
+      <div className="form-row">
+        <label className="label">X handle</label>
+        <input className="field" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="Optional, without the at sign" maxLength={HANDLE_CHARS} />
+      </div>
+
+      <div className="form-row">
+        <label className="label">Message<span className="req"> *</span></label>
+        <textarea className="field" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Say something" />
+        <p className="fine" style={{ margin: '6px 0 0' }}>{[...message].length} of {MESSAGE_CHARS} characters</p>
+      </div>
+
+      {problem && <p className="notice bad">{problem}</p>}
+
+      {command && (
+        <>
+          <p className="caption">Run this in your terminal</p>
+          <Code code={command} />
+          <p className="fine" style={{ marginBottom: 0 }}>
+            Replace default with your key name if it is called something else. The long hex string is your message
+            encoded the way the program reads it.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function WallPage() {
+  const [wall, setWall] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [tab, setTab] = useState('browser')
+
+  const load = async () => {
+    if (!WALL_ACCOUNT) { setLoading(false); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const account = await getAccount(WALL_ACCOUNT)
+      setWall(decodeWall(account.data?.base64))
+    } catch {
+      setError('Could not read the wall right now. It may be mid-reset.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const notLive = !WALL_ACCOUNT || !WALL_PROGRAM
+
+  return (
+    <div className="wrap">
+      <p className="eyebrow">On chain</p>
+      <h1 className="h1">The Thru Wall</h1>
+      <p className="lede">
+        Leave a message and it gets written into an account on Thru by a program written in C. Not a database, not a
+        server. The words below are stored on the chain itself.
+      </p>
+
+      {notLive ? (
+        <div className="empty">
+          <p style={{ fontWeight: 600 }}>Not live yet</p>
+          <p className="fine" style={{ maxWidth: '46ch', margin: '0 auto' }}>
+            The program is written and compiled, but alphanet is currently rejecting program deployments. The wall opens
+            as soon as that clears.
+          </p>
+        </div>
+      ) : (
+        <>
+          <section className="card">
+            <div className="tabs" role="tablist" style={{ marginBottom: 18 }}>
+              <button className="tab-btn" role="tab" aria-selected={tab === 'browser'} onClick={() => setTab('browser')}>Post here</button>
+              <button className="tab-btn" role="tab" aria-selected={tab === 'cli'} onClick={() => setTab('cli')}>Post from the CLI</button>
+            </div>
+            {tab === 'browser' ? <BrowserPostForm onPosted={load} /> : <CliPostForm />}
+          </section>
+
+          <div className="card-head" style={{ marginTop: 26 }}>
+            <div>
+              <h2 className="h2">Messages</h2>
+              {wall && (
+                <p className="sub">
+                  {wall.totalPosted.toLocaleString()} posted in total, showing the most recent {wall.entries.length}
+                </p>
+              )}
+            </div>
+            <button className="btn ghost" onClick={load} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
+          </div>
+
+          {error && <p className="notice bad">{error}</p>}
+          {loading && !wall && <p className="fine">Reading the wall</p>}
+
+          {wall && wall.entries.length === 0 && (
+            <div className="empty">
+              <p style={{ fontWeight: 600 }}>Nothing here yet</p>
+              <p className="fine">Be the first to write on it.</p>
+            </div>
+          )}
+
+          {wall && wall.entries.map((e) => <WallEntry key={`${e.slot}-${e.postedAtNs}`} entry={e} />)}
+        </>
+      )}
+
+      <footer className="foot">
+        <p className="fine">
+          The wall holds the most recent 128 messages. Older ones are overwritten, and alphanet resets clear it entirely.
+        </p>
+      </footer>
+    </div>
+  )
+}
+
 /* ---------- guides ---------- */
 
 function GuideDetail({ guide, onBack }) {
@@ -1270,6 +1526,7 @@ export default function App() {
       <Shell>
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
+          <Route path="/wall" element={<WallPage />} />
           <Route path="/guides" element={<GuidesPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
