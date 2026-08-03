@@ -1,15 +1,16 @@
 // api/get-content.js
 //
-// Serves the Community page. Reads approved items from Community Submissions
-// and splits them into two lists: featured, and everyone else.
+// Serves the Community page as a single ranked feed.
 //
-// This replaces the older get-community endpoint for the page's own reads,
-// mostly so the field names live in one file you can see rather than being
-// split across two that disagree with each other.
+// Ranking, in order:
+//   1. Pinned items, newest first — your editorial picks
+//   2. Everything else by click count, so what readers actually open rises
+//   3. Ties broken by recency, so new items are not buried at zero clicks
 //
 // Expected fields in Community Submissions:
 //   Name, Your Twitter, Content Title, Content Link, Content Type,
-//   Description, Status, Featured (checkbox), Submitted At
+//   Description, Image, Status, Pinned (checkbox), Clicks (number),
+//   Submitted At
 
 export const config = { runtime: 'nodejs' }
 
@@ -37,8 +38,6 @@ export default async function handler(req, res) {
     const url = new URL(`${AIRTABLE_API}/${AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}`)
     url.searchParams.set('filterByFormula', "{Status} = 'Approved'")
     url.searchParams.set('pageSize', '100')
-    url.searchParams.set('sort[0][field]', 'Submitted At')
-    url.searchParams.set('sort[0][direction]', 'desc')
 
     const r = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
@@ -62,23 +61,26 @@ export default async function handler(req, res) {
           description: f['Description'] ?? '',
           author: f['Name'] ?? '',
           twitter: (f['Your Twitter'] ?? '').replace(/^@/, ''),
-          featured: Boolean(f['Featured']),
+          image: f['Image'] ?? null,
+          pinned: Boolean(f['Pinned']),
+          clicks: Number(f['Clicks'] ?? 0),
+          submittedAt: f['Submitted At'] ?? null,
         }
       })
-      // A row with no link cannot be rendered as anything useful, and blank
-      // rows are what a half-failed write leaves behind.
+      // A row with no link renders as nothing useful, and blank rows are what
+      // a half-failed write leaves behind.
       .filter((i) => i.link && i.title)
 
-    return json(
-      res,
-      200,
-      {
-        ok: true,
-        featured: items.filter((i) => i.featured),
-        community: items.filter((i) => !i.featured),
-      },
-      60
-    )
+    const time = (i) => (i.submittedAt ? new Date(i.submittedAt).getTime() : 0)
+
+    items.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      if (a.pinned && b.pinned) return time(b) - time(a)
+      if (b.clicks !== a.clicks) return b.clicks - a.clicks
+      return time(b) - time(a)
+    })
+
+    return json(res, 200, { ok: true, items }, 60)
   } catch {
     return json(res, 502, { ok: false, error: 'could not read the list' })
   }

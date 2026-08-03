@@ -515,6 +515,47 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 @media (min-width: 700px) { .grid { grid-template-columns: repeat(2, 1fr); } }
 
+.post {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.post-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.91 / 1;
+  object-fit: cover;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+}
+
+/* No image on the page? Fall back to a typographic block rather than a broken
+   picture or an empty gap. */
+.post-alt {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1.91 / 1;
+  background: var(--ink);
+  color: var(--canvas);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+
+.post-body { padding: 16px 18px 18px; display: flex; flex-direction: column; flex: 1; }
+.post-body h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
+.post-body h3 a { color: var(--ink); text-decoration: none; }
+.post-body h3 a:hover { color: var(--signal); }
+.post-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 12px; }
+
 .rec {
   padding: 11px 13px;
   border: 1px solid var(--line);

@@ -919,7 +919,7 @@ function ModeratePage() {
 
   useEffect(() => { if (password) load(password) }, [])
 
-  const decide = async (item, action, featured = false) => {
+  const decide = async (item, action, pinned = false) => {
     setBusy(item.id)
     try {
       const res = await fetch('/api/moderate', {
@@ -929,7 +929,7 @@ function ModeratePage() {
           password,
           id: item.id,
           action,
-          featured,
+          pinned,
           summary: edits[item.id]?.summary ?? item.summary,
           type: edits[item.id]?.type ?? item.type,
         }),
@@ -1035,7 +1035,7 @@ function ModeratePage() {
                 {busy === item.id ? 'Working' : 'Approve'}
               </button>
               <button className="btn ghost" onClick={() => decide(item, 'approve', true)} disabled={busy === item.id}>
-                Approve and feature
+                Approve and pin
               </button>
               <button className="btn ghost" onClick={() => decide(item, 'reject')} disabled={busy === item.id}>
                 Reject
@@ -1561,23 +1561,53 @@ function ProjectsPage() {
 const EMPTY_CONTENT = { name: '', yourTwitter: '', contentTitle: '', contentLink: '', description: '', contentType: 'Article' }
 
 function ContentCard({ item }) {
+  // Counting is fire and forget with keepalive, so the browser finishes the
+  // request even as it navigates away. The link never waits on it.
+  const countClick = () => {
+    if (!item.id) return
+    try {
+      fetch('/api/click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id }),
+        keepalive: true,
+      })
+    } catch { /* counting is optional */ }
+  }
+
   return (
-    <article className="card" style={{ marginBottom: 0 }}>
-      <div className="card-head" style={{ marginBottom: 8 }}>
-        <a href={item.link} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', textDecoration: 'none', lineHeight: 1.35 }}>{item.title}</a>
-        <span className="pill tag">{item.type}</span>
-      </div>
-      {item.description && <p className="fine" style={{ lineHeight: 1.6, marginTop: 0 }}>{item.description}</p>}
-      <div className="inline" style={{ justifyContent: 'space-between', marginTop: 12 }}>
-        <a className="fine" href={'https://x.com/' + (item.twitter || item.author)} target="_blank" rel="noreferrer">{item.twitter || item.author}</a>
-        <a className="btn plain" href={item.link} target="_blank" rel="noreferrer">Read</a>
+    <article className="post">
+      <a href={item.link} target="_blank" rel="noreferrer" onClick={countClick}>
+        {item.image
+          ? <img className="post-img" src={item.image} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+          : <span className="post-alt">{item.type || 'Link'}</span>}
+      </a>
+
+      <div className="post-body">
+        <h3>
+          <a href={item.link} target="_blank" rel="noreferrer" onClick={countClick}>{item.title}</a>
+        </h3>
+
+        {item.description && (
+          <p className="fine" style={{ margin: 0, lineHeight: 1.6 }}>{item.description}</p>
+        )}
+
+        <div className="post-meta">
+          {item.pinned && <span className="pill on">Pinned</span>}
+          <span className="pill tag">{item.type}</span>
+          {(item.twitter || item.author) && (
+            item.twitter
+              ? <a className="fine" href={'https://x.com/' + item.twitter} target="_blank" rel="noreferrer">@{item.twitter}</a>
+              : <span className="fine">{item.author}</span>
+          )}
+          {item.clicks > 0 && <span className="fine" style={{ marginLeft: 'auto' }}>{item.clicks} opened</span>}
+        </div>
       </div>
     </article>
   )
 }
 
 function CommunityPage() {
-  const [featured, setFeatured] = useState([])
   const [records, setRecords] = useState([])
   const [loadingRecords, setLoadingRecords] = useState(true)
   const [form, setForm] = useState(EMPTY_CONTENT)
@@ -1585,18 +1615,13 @@ function CommunityPage() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [activeTab, setActiveTab] = useState('featured')
 
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
 
   useEffect(() => {
     fetch('/api/get-content')
       .then((r) => r.json())
-      .then((data) => {
-        setFeatured(data.featured || [])
-        setRecords(data.community || [])
-        setLoadingRecords(false)
-      })
+      .then((data) => { setRecords(data.items || []); setLoadingRecords(false) })
       .catch(() => setLoadingRecords(false))
   }, [])
 
@@ -1620,36 +1645,21 @@ function CommunityPage() {
     <div className="wrap-wide">
       <p className="eyebrow">Community</p>
       <h1 className="h1">Worth reading</h1>
-      <p className="lede">Articles, threads, videos and tools from people figuring out Thru in public.</p>
+      <p className="lede">
+        Articles, threads, videos and tools from people figuring out Thru in public. Pinned items sit at the top;
+        everything else rises as readers open it.
+      </p>
 
-      <div className="tabs" role="tablist">
-        <button className="tab-btn" role="tab" aria-selected={activeTab === 'featured'} onClick={() => setActiveTab('featured')}>Featured</button>
-        <button className="tab-btn" role="tab" aria-selected={activeTab === 'community'} onClick={() => setActiveTab('community')}>Community picks</button>
-      </div>
+      {loadingRecords && <p className="fine">Loading</p>}
 
-      {activeTab === 'featured' && (
-        loadingRecords ? <p className="fine">Loading</p> : (
-          <div className="grid">
-            {/* FEATURED_CONTENT is the original hardcoded entry, kept so the
-                page is never empty. Anything marked featured in moderation
-                appears alongside it without needing a deploy. */}
-            {[...FEATURED_CONTENT, ...featured].map((item) => <ContentCard key={item.id} item={item} />)}
-          </div>
-        )
+      {!loadingRecords && records.length === 0 && (
+        <div className="empty">
+          <p style={{ fontWeight: 600 }}>Nothing here yet</p>
+          <p className="fine" style={{ marginBottom: 18 }}>Know something worth reading? Add it below.</p>
+        </div>
       )}
 
-      {activeTab === 'community' && (
-        loadingRecords ? <p className="fine">Loading</p>
-          : records.length > 0 ? (
-            <div className="grid">{records.map((item) => <ContentCard key={item.id} item={item} />)}</div>
-          ) : (
-            <div className="empty">
-              <p style={{ fontWeight: 600 }}>No picks yet</p>
-              <p className="fine" style={{ marginBottom: 18 }}>Be the first to add something.</p>
-              <button className="btn" onClick={() => setShowForm(true)}>Submit content</button>
-            </div>
-          )
-      )}
+      {records.length > 0 && <div className="grid">{records.map((item) => <ContentCard key={item.id} item={item} />)}</div>}
 
       <section className="card" style={{ marginTop: 22 }}>
         <button className="disclose" onClick={() => setShowForm(!showForm)}>

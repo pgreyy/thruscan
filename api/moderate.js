@@ -11,11 +11,14 @@
 //
 // Actions:
 //   GET  /api/moderate?password=...              list pending items
-//   POST /api/moderate  { password, id, action: 'approve'|'reject', summary?, type?, featured? }
+//   POST /api/moderate  { password, id, action: 'approve'|'reject', summary?, type?, pinned? }
 //
 // Approving writes directly into Community Submissions with status Approved,
-// so there is no second approval step inside Airtable. Passing featured: true
-// puts it in the Featured row on the site instead of Community picks.
+// so there is no second approval step inside Airtable. Passing pinned: true
+// keeps the item at the top of the feed regardless of how many clicks it has.
+//
+// Approval also tries to find a header image for the card by reading the
+// page's own Open Graph tags, the same way a link preview works anywhere else.
 
 export const config = { runtime: 'nodejs' }
 
@@ -94,6 +97,49 @@ async function setStatus(id, status) {
   })
 }
 
+/**
+ * Read a page's Open Graph image so cards can have a header picture instead of
+ * being plain text. Returns null on anything unexpected — a missing image is a
+ * plainer card, never a failed approval.
+ */
+async function findHeaderImage(link) {
+  if (!link) return null
+
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 6000)
+
+    const res = await fetch(link, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'ThruScan/1.0 (link preview)' },
+    })
+    clearTimeout(timer)
+    if (!res.ok) return null
+
+    // Only the head matters, and some pages are enormous.
+    const html = (await res.text()).slice(0, 200000)
+
+    const patterns = [
+      /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+      /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+    ]
+
+    for (const re of patterns) {
+      const found = html.match(re)?.[1]
+      if (!found) continue
+
+      // Some sites give a path rather than a full URL.
+      const absolute = found.startsWith('http') ? found : new URL(found, link).toString()
+      if (absolute.length <= 500) return absolute
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
 export default async function handler(req, res) {
   const password =
     req.method === 'GET'
@@ -118,7 +164,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'use GET or POST' })
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}
-  const { id, action, summary, type, featured } = body
+  const { id, action, summary, type, pinned } = body
 
   if (!id || !['approve', 'reject'].includes(action)) {
     return json(res, 400, { ok: false, error: 'need an id and an action' })
@@ -136,6 +182,8 @@ export default async function handler(req, res) {
     const fields = await getRecord(id)
     if (!fields) return json(res, 404, { ok: false, error: 'not found' })
 
+    const image = await findHeaderImage(fields.Link ?? '')
+
     // Write straight to Airtable rather than bouncing through
     // submit-community. That endpoint hardcodes a Pending status, which would
     // mean approving something here and then approving it again in Airtable.
@@ -152,7 +200,9 @@ export default async function handler(req, res) {
             'Content Type': type ?? fields.Type ?? 'Other',
             Description: summary ?? fields.Summary ?? '',
             Status: 'Approved',
-            Featured: Boolean(featured),
+            Pinned: Boolean(pinned),
+            Clicks: 0,
+            ...(image ? { Image: image } : {}),
           },
         }),
       }
