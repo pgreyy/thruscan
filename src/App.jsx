@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { getAccount, getBlockHeight } from './lib/rpcClient'
+import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
 import './styles.css'
@@ -17,21 +17,258 @@ const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Unto-Labs/thru/release
 
 const NAV = [
   { to: '/', label: 'Explorer' },
+  { to: '/guides', label: 'Guides' },
   { to: '/updates', label: 'Updates' },
   { to: '/projects', label: 'Projects' },
   { to: '/community', label: 'Community' },
 ]
 
-const steps = [
-  { number: 1, title: 'Install Node.js', description: 'The Thru CLI now ships as an npm package, so Node.js is the only prerequisite. Download the LTS installer, run it, then close and reopen your terminal.', note: null, noteCommand: null, linkLabel: 'Download Node.js', linkUrl: 'https://nodejs.org', command: null, verify: 'node -v' },
-  { number: 2, title: 'Install the Thru CLI', description: 'One command, no compiling. If you previously installed Thru with cargo, that older binary may still shadow this one in your PATH. Check the version after installing, and if it looks stale, run cargo uninstall thru to remove the old one.', note: 'Check which binary is actually running:', noteCommand: 'Get-Command thru -All', linkLabel: null, linkUrl: null, command: 'npm install -g thru', verify: 'thru --version' },
-  { number: 3, title: 'Check your connection', description: 'The CLI auto-configures on first run and writes a config file to ~/.thru/cli/. This command confirms you can reach the network. If it returns a DNS error, pass the endpoint directly with --url https://rpc.alphanet.thru.org', note: null, noteCommand: null, linkLabel: null, linkUrl: null, command: 'thru --json getversion', verify: null },
-  { number: 4, title: 'Generate a keypair', description: 'Creates a cryptographic key pair stored locally. The name is just a label, use anything you like. Your private key is written to the config file in plaintext, so treat that file like a seed phrase and never share or commit it.', note: 'Need to retrieve an existing private key? Run:', noteCommand: 'thru keys get default', linkLabel: null, linkUrl: null, command: 'thru keys generate default', verify: 'thru --json keys list' },
-  { number: 5, title: 'Create your on-chain account', description: 'Registers your keypair as a real account on alphanet. If the command times out, check with the verify command before retrying, since the transaction often lands anyway.', note: null, noteCommand: null, linkLabel: null, linkUrl: null, command: 'thru --json account create default', verify: 'thru --json getaccountinfo default' },
-  { number: 6, title: 'Get faucet tokens', description: 'Funds your account with test tokens. Max is 10,000 per call, and these tokens have no value outside alphanet. Send them back with: thru faucet deposit default 1000', note: null, noteCommand: null, linkLabel: null, linkUrl: null, command: 'thru --json faucet withdraw default 10000', verify: 'thru --json getaccountinfo default' },
-  { number: 7, title: 'Using a non-default key', description: 'Most commands assume a key literally named "default" as the fee payer and signer. If you generated a key under any other name, pass it explicitly or you will hit a "creator must match the fee payer" error.', note: 'Example, minting a token with a key named newkey:', noteCommand: 'thru --json token initialize-mint PUBKEY CAT SEED --fee-payer newkey', linkLabel: null, linkUrl: null, command: null, verify: null },
-  { number: 8, title: 'Register a name', description: 'The name service maps a readable name to an account. Claim a root, then register subdomains under it. Look the resulting account up in the Explorer to see its records decoded.', note: 'Then add records to it:', noteCommand: 'thru nameservice append-record DOMAIN_ACCOUNT url https://example.com --fee-payer newkey', linkLabel: null, linkUrl: null, command: 'thru nameservice init-root yourname --fee-payer newkey', verify: 'thru nameservice resolve DOMAIN_ACCOUNT --json' },
-  { number: 9, title: 'Beyond the basics', description: 'Building and deploying C programs to ThruVM requires the RISC-V toolchain, which is Linux and macOS only. On Windows you will need WSL2 first. Token minting and name service registration both work from plain PowerShell.', note: null, noteCommand: null, linkLabel: 'Thru Docs', linkUrl: 'https://docs.thru.org', command: null, verify: null },
+/* ---------- guide content ----------
+   Written for someone who has never used a terminal for this before. Every
+   step says what it does, what to expect, and how to tell it worked. Where a
+   command differs between Windows and macOS/Linux, both are given rather than
+   assuming the reader is on one of them. */
+
+const GUIDES = [
+  {
+    id: 'cli-wallet',
+    title: 'Create a wallet',
+    blurb: 'Install the Thru command line tool, make a key, and get test tokens',
+    minutes: '15 minutes',
+    intro:
+      'Everything on Thru starts with an account. This guide installs the Thru CLI, creates a key on your computer, registers it on the network, and funds it with free test tokens. Works the same on Windows, macOS and Linux.',
+    steps: [
+      {
+        title: 'Install Node.js',
+        description:
+          'The Thru tool is distributed through npm, which comes with Node.js. Download the LTS version, run the installer, then close your terminal and open a new one so it picks up the change.',
+        linkLabel: 'Download Node.js',
+        linkUrl: 'https://nodejs.org',
+        verify: 'node -v',
+        verifyNote: 'Prints a version number like v22.14.0. If it says "not recognized", reopen your terminal.',
+      },
+      {
+        title: 'Install the Thru CLI',
+        description:
+          'One command, nothing to compile. If you installed Thru before using Rust and cargo, that older copy can hide this one. Check the version afterwards, and if it looks older than you expect, remove the old one with: cargo uninstall thru',
+        command: 'npm install -g thru',
+        note: 'On Windows, if the version looks wrong, this shows every copy on your system:',
+        noteCommand: 'Get-Command thru -All',
+        verify: 'thru --version',
+        verifyNote: 'Should print 0.3.2 or newer.',
+      },
+      {
+        title: 'Check you can reach the network',
+        description:
+          'The CLI sets itself up the first time you run it and saves a config file in your home folder. This command asks the network what version it is running, which proves you can talk to it.',
+        command: 'thru --json getversion',
+        note: 'If you get a DNS error, point at the endpoint directly:',
+        noteCommand: 'thru --json getversion --url https://rpc.alphanet.thru.org',
+      },
+      {
+        title: 'Create your key',
+        description:
+          'This makes a key pair on your computer. "default" is just a label, you can use any name. Your private key is saved in plain text in the config file, so treat that file like a bank password: never share it, never put it in a screenshot, never commit it to GitHub.',
+        command: 'thru keys generate default',
+        verify: 'thru --json keys list',
+        verifyNote: 'Your new key name appears in the list.',
+      },
+      {
+        title: 'Register the account on the network',
+        description:
+          'Your key exists on your computer, but the network does not know about it yet. This step registers it. If the command seems to hang, check with the verify command before running it again, because the transaction often went through anyway.',
+        command: 'thru account create default',
+        verify: 'thru --json getaccountinfo default',
+        verifyNote: 'Returns account details instead of "not found".',
+      },
+      {
+        title: 'Get free test tokens',
+        description:
+          'The faucet hands out THRU for testing. The limit is 10,000 per request, and you can ask more than once. These tokens only exist on alphanet and are not worth anything. You can send them back with: thru faucet deposit default 1000',
+        command: 'thru faucet withdraw default 10000',
+        verify: 'thru getbalance default',
+        verifyNote: 'Shows a balance of 10,000.',
+      },
+      {
+        title: 'If your key is not named "default"',
+        description:
+          'Most commands assume a key literally named "default" pays the fee. If you named yours something else, add --fee-payer followed by your key name to every command that writes to the chain, or you will get a "creator must match the fee payer" error.',
+        note: 'Example, using a key named mykey:',
+        noteCommand: 'thru faucet withdraw mykey 10000 --fee-payer mykey',
+      },
+      {
+        title: 'See yourself in the explorer',
+        description:
+          'Copy your public key and paste it into the Explorer tab on this site. You should see your balance and account flags read straight from the chain. That is the same data the CLI sees, just easier to read.',
+        command: 'thru --json keys list',
+        verifyNote: 'Copy the public key, the long string starting with ta.',
+      },
+    ],
+  },
+
+  {
+    id: 'mint-token',
+    title: 'Mint your own token',
+    blurb: 'Create $JOAT, give yourself a supply, and view it on ThruScan',
+    minutes: '10 minutes',
+    intro:
+      'A token on Thru has two parts. The mint holds the rules: the name, how divisible it is, and who is allowed to create more. A token account holds a balance for one owner. You need both. This guide makes a token called JOAT and mints some to yourself. Finish the wallet guide first.',
+    steps: [
+      {
+        title: 'Check your account is funded',
+        description:
+          'Every step here costs a small fee, so make sure you have a balance before starting. If it is zero, run the faucet command from the wallet guide.',
+        command: 'thru getbalance default',
+      },
+      {
+        title: 'Make a seed',
+        description:
+          'A seed is 32 random bytes written as 64 characters. Thru uses it to work out your token addresses, which means the same seed always gives the same addresses. Save it somewhere. Without it you cannot recreate these addresses later.',
+        command: '-join ((1..32) | ForEach-Object { \'{0:x2}\' -f (Get-Random -Max 256) })',
+        commandLabel: 'Windows PowerShell',
+        note: 'On macOS or Linux:',
+        noteCommand: 'openssl rand -hex 32',
+      },
+      {
+        title: 'Create the mint',
+        description:
+          'This creates the token itself. Replace YOUR_PUBKEY with your own public key and SEED with the seed you just made. Decimals set how divisible the token is: 6 means the smallest piece is one millionth of a JOAT, the same as USDC. The command prints a mint address, which is your token\'s permanent ID.',
+        command: 'thru token initialize-mint YOUR_PUBKEY JOAT SEED --decimals 6',
+        note: 'Save the mint address it prints. You need it for every step after this.',
+      },
+      {
+        title: 'Create a token account',
+        description:
+          'A mint cannot hold a balance, it only defines the token. To actually own JOAT you need a token account, which is like a wallet for this one token. Replace MINT with the address from the last step, and reuse the same seed.',
+        command: 'thru token initialize-account MINT YOUR_PUBKEY SEED',
+        note: 'Save the token account address it prints.',
+      },
+      {
+        title: 'Mint the supply',
+        description:
+          'Now create the tokens. Amounts are given in the smallest unit, so with 6 decimals you multiply by a million: 1,000 JOAT is 1000000000. The authority is your public key, since you created the mint and only you can add more.',
+        command: 'thru token mint-to MINT TOKEN_ACCOUNT YOUR_PUBKEY 1000000000',
+        verify: 'thru token balance TOKEN_ACCOUNT --json',
+        verifyNote: 'Shows an amount of 1000000000, which is 1,000 JOAT.',
+      },
+      {
+        title: 'View it on ThruScan',
+        description:
+          'Paste the mint address into the Explorer tab. You will see a Token card showing the ticker, supply, decimals and who holds the mint authority. Paste the token account address instead and you get the balance view. Both are decoded from the raw bytes the chain stores.',
+      },
+    ],
+  },
+
+  {
+    id: 'name-service',
+    title: 'Register a name',
+    blurb: 'Claim a root name, add a subdomain, and attach records to it',
+    minutes: '10 minutes',
+    intro:
+      'Thru has a built-in name service, similar to ENS. It works in two layers: you claim a root name, then create subdomains under it. Each subdomain can hold records, which are key and value pairs like a website or a social handle. Finish the wallet guide first.',
+    steps: [
+      {
+        title: 'Claim a root name',
+        description:
+          'Pick something nobody else has taken. This is yours, and every subdomain lives under it. The command prints a registrar address, which represents ownership of the root.',
+        command: 'thru nameservice init-root yourname',
+        note: 'If your key is not named "default", add --fee-payer yourkey to this and every command below.',
+      },
+      {
+        title: 'Create a subdomain',
+        description:
+          'Subdomains are the part people actually use, like alice.yourname. Replace REGISTRAR with the address from the previous step. Watch the order here: the name comes first, then the registrar.',
+        command: 'thru nameservice register-subdomain alice REGISTRAR',
+        note: 'Save the domain account address it prints.',
+      },
+      {
+        title: 'Attach records',
+        description:
+          'Records are labelled pieces of information attached to your name. Common ones are url for a website, com.twitter for a handle, and thru.pubkey so the name points at your account. You can add as many as you like, with any key names you want.',
+        command: 'thru nameservice append-record DOMAIN url https://example.com',
+        note: 'Add more the same way:',
+        noteCommand: 'thru nameservice append-record DOMAIN com.twitter yourhandle',
+      },
+      {
+        title: 'Check it worked',
+        description:
+          'This shows everything attached to the name: the owner, the parent, and all records. You can also add --key url to look at just one record.',
+        command: 'thru nameservice resolve DOMAIN --json',
+        note: 'Made a mistake? Remove a record with:',
+        noteCommand: 'thru nameservice delete-record DOMAIN url',
+      },
+      {
+        title: 'View it on ThruScan',
+        description:
+          'Paste the domain account address into the Explorer tab. You get a Name Service card with the name, owner, when it was registered, and every record laid out. Links and handles become clickable.',
+      },
+    ],
+  },
+
+  {
+    id: 'c-program',
+    title: 'Deploy a program',
+    blurb: 'Write a program in C, compile it to RISC-V, and put it on chain',
+    minutes: '1 hour, mostly downloading',
+    intro:
+      'Thru programs are ordinary C compiled to RISC-V. This walks through the built-in starter program and deploys it. Most of the time is spent downloading a 1.1GB compiler. Windows users need WSL2, because the compiler is Linux and macOS only, and the notes below cover two traps that are not documented anywhere else.',
+    steps: [
+      {
+        title: 'Windows only: install WSL2',
+        description:
+          'The Thru toolchain installer looks up your operating system using a Unix command that Windows does not have, so it fails immediately with "Failed to detect OS". WSL2 gives you a real Linux environment inside Windows. Run this in PowerShell as Administrator, then restart. Ubuntu opens on its own and asks you to pick a username and password. On macOS or Linux, skip this step.',
+        command: 'wsl --install',
+        commandLabel: 'PowerShell as Administrator',
+        verify: 'wsl --list --verbose',
+        verifyNote: 'Ubuntu appears with version 2.',
+      },
+      {
+        title: 'Install the build tools',
+        description:
+          'Run everything from here on inside Linux, which for Windows users means the Ubuntu terminal rather than PowerShell. This installs make and the standard compiler tools, then Node.js so you can install the Thru CLI here too. Your Linux side is a separate machine as far as software is concerned.',
+        command: 'sudo apt update && sudo apt install -y build-essential curl xz-utils',
+        note: 'Then Node.js and the Thru CLI:',
+        noteCommand: 'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs && sudo npm install -g thru',
+      },
+      {
+        title: 'Install the compiler and SDK',
+        description:
+          'The toolchain is the RISC-V compiler, around 1.1GB, so this takes a while. The SDK is the Thru header files your program includes. You need both.',
+        command: 'thru dev toolchain install && thru dev sdk install c',
+        verify: 'thru dev toolchain path && thru dev sdk path c',
+        verifyNote: 'Both report installed and verified.',
+      },
+      {
+        title: 'Create a project',
+        description:
+          'This generates a working starter program: a makefile and a C file with an entry point that does nothing but return successfully. Small on purpose, so you can confirm the whole pipeline works before writing real logic.',
+        command: 'thru dev init c hello-thru',
+      },
+      {
+        title: 'Build it',
+        description:
+          'Two things commonly go wrong here, both specific to Windows. First, the build looks for the compiler by searching upward from your project folder, so if your project sits on the Windows drive it never finds it. Setting RISCV_TOOLCHAIN_ROOT skips that search. Second, building on the Windows drive fails at the final linking step with a "file truncated" error, so keep the project in your Linux home folder instead.',
+        command: 'echo \'export RISCV_TOOLCHAIN_ROOT=$HOME/.thru/sdk/toolchain\' >> ~/.bashrc && source ~/.bashrc',
+        note: 'Then build, from your Linux home folder and not /mnt/c:',
+        noteCommand: 'cd ~/hello-thru && make -j',
+        verify: 'ls -la build/thruvm/bin/',
+        verifyNote: 'hello_thru_c.bin appears, around 138 bytes.',
+      },
+      {
+        title: 'Deploy it',
+        description:
+          'One command uploads the compiled program and registers it on the network. The seed is plain text here, not hex: a hex seed is too long and the deploy fails halfway through, after the upload has already been paid for. Windows users can copy the .bin to the Windows side and run this from PowerShell, so your keys never need to exist inside Linux.',
+        command: 'thru program create hello-thru build/thruvm/bin/hello_thru_c.bin',
+        verify: 'thru program status hello-thru --json',
+        verifyNote: 'Status reads deployed, and program_deployed is true.',
+      },
+      {
+        title: 'View it on ThruScan',
+        description:
+          'Paste the program account address into the Explorer tab. It shows Is program: Yes, and the data size matches your compiled file byte for byte. That is your own code, stored on a blockchain.',
+      },
+    ],
+  },
 ]
 
 const FEATURED_CONTENT = [
@@ -58,9 +295,9 @@ function timeAgo(dateStr) {
 
 /* ---------- primitives ---------- */
 
-// The signature element. A Thru address is 46 characters of base64url behind a
-// ta prefix, and it is the thing you spend the most time reading on this site,
-// so it gets a real treatment instead of being dumped as plain text.
+// A Thru address is 46 characters of base64url behind a ta prefix, and it is
+// the thing you spend the most time reading here, so it gets a real treatment
+// instead of being dumped as plain text.
 function Address({ value }) {
   const [copied, setCopied] = useState(false)
   if (!value) return <span className="row-v">-</span>
@@ -72,7 +309,7 @@ function Address({ value }) {
   }
 
   return (
-    <button className="addr" onClick={copy} title="Copy address">
+    <button className="addr" onClick={copy} title="Copy">
       <span className="addr-body"><span className="addr-pre">{value.slice(0, 2)}</span>{value.slice(2)}</span>
       <span className="addr-note">{copied ? 'copied' : 'copy'}</span>
     </button>
@@ -106,7 +343,7 @@ function FlagRow({ k, v }) {
   )
 }
 
-function Code({ code }) {
+function Code({ code, label }) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
     navigator.clipboard?.writeText(code)
@@ -114,10 +351,13 @@ function Code({ code }) {
     setTimeout(() => setCopied(false), 1600)
   }
   return (
-    <div className="code">
-      <code>{code}</code>
-      <button className="copy" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-    </div>
+    <>
+      {label && <p className="caption">{label}</p>}
+      <div className="code">
+        <code>{code}</code>
+        <button className="copy" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+    </>
   )
 }
 
@@ -144,8 +384,6 @@ function NetworkStatus() {
     const tick = async () => {
       try {
         const h = await getBlockHeight()
-        // The exact response shape is not pinned down, so pull the first
-        // number-like value out of whatever comes back rather than guessing.
         const n = (h && typeof h === 'object')
           ? Object.values(h).find((v) => typeof v === 'string' || typeof v === 'number')
           : h
@@ -169,6 +407,15 @@ function NetworkStatus() {
   )
 }
 
+function Brand() {
+  return (
+    <>
+      <span className="brand-mark">T</span>
+      <span className="brand-name">ThruScan</span>
+    </>
+  )
+}
+
 function Shell({ children }) {
   const { pathname } = useLocation()
   const current = (to) => (pathname === to ? 'page' : undefined)
@@ -176,10 +423,7 @@ function Shell({ children }) {
   return (
     <div className="shell">
       <nav className="rail">
-        <Link to="/" className="brand">
-          <span className="brand-mark">T</span>
-          <span className="brand-name">ThruScan</span>
-        </Link>
+        <Link to="/" className="brand"><Brand /></Link>
         {NAV.map((l) => (
           <Link key={l.to} to={l.to} className="rail-link" aria-current={current(l.to)}>{l.label}</Link>
         ))}
@@ -187,10 +431,7 @@ function Shell({ children }) {
       </nav>
 
       <header className="topbar">
-        <Link to="/" className="brand" style={{ margin: 0 }}>
-          <span className="brand-mark">T</span>
-          <span className="brand-name">ThruScan</span>
-        </Link>
+        <Link to="/" className="brand" style={{ margin: 0 }}><Brand /></Link>
         <NetworkStatus />
       </header>
 
@@ -322,13 +563,11 @@ function NameServiceCard({ account }) {
     try {
       setDecoded(decodeNameServiceAccount(b64))
     } catch {
-      // Most accounts are not name service accounts. Stay quiet.
       setDecoded(null)
     }
   }, [account])
 
   if (!decoded) return null
-
   const isDomain = decoded.kindLabel === 'domain'
 
   return (
@@ -395,7 +634,6 @@ function TokenCard({ account }) {
   }, [account])
 
   if (!decoded) return null
-
   const isMint = decoded.kindLabel === 'mint'
 
   return (
@@ -421,18 +659,17 @@ function TokenCard({ account }) {
             : <Row k="Freeze authority" v="None, balances cannot be frozen" />}
         </div>
       ) : (
-        <div className="rows">
-          <Row k="Amount" v={formatAmount(decoded.amount, 0)} mono />
-          <AddrRow k="Mint" v={decoded.mint} />
-          <AddrRow k="Owner" v={decoded.owner} />
-          <FlagRow k="Frozen" v={decoded.isFrozen} />
-        </div>
-      )}
-
-      {!isMint && (
-        <p className="fine" style={{ marginBottom: 0 }}>
-          Amount is in base units. Look up the mint above to see its decimals and ticker.
-        </p>
+        <>
+          <div className="rows">
+            <Row k="Amount" v={formatAmount(decoded.amount, 0)} mono />
+            <AddrRow k="Mint" v={decoded.mint} />
+            <AddrRow k="Owner" v={decoded.owner} />
+            <FlagRow k="Frozen" v={decoded.isFrozen} />
+          </div>
+          <p className="fine" style={{ marginBottom: 0 }}>
+            Amount is in base units. Look up the mint to see its decimals and ticker.
+          </p>
+        </>
       )}
     </section>
   )
@@ -451,8 +688,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
     setError(null)
     setAccount(null)
     try {
-      const result = await fetchAccountFromChain(target)
-      setAccount(result)
+      setAccount(await fetchAccountFromChain(target))
     } catch {
       setError('No account at that address on alphanet. Check the key, and note that 0 and O look alike in these addresses.')
     } finally {
@@ -473,7 +709,7 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
         <div className="card-head">
           <div>
             <h2 className="h2">Look up an account</h2>
-            <p className="sub">Any public key, token mint, or name service account</p>
+            <p className="sub">Any public key, token mint, program, or name</p>
           </div>
         </div>
 
@@ -512,58 +748,97 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
   )
 }
 
-function GuidePanel() {
-  const [open, setOpen] = useState(false)
-  const [openStep, setOpenStep] = useState(null)
+function AccountChips({ label, list }) {
+  if (!list || list.length === 0) return null
+  return (
+    <div style={{ marginTop: 14 }}>
+      <p className="eyebrow">{label} ({list.length})</p>
+      <div className="chips">
+        {list.map((a) => <Address key={a} value={a} />)}
+      </div>
+    </div>
+  )
+}
+
+function TransactionLookup() {
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [tx, setTx] = useState(null)
+  const [error, setError] = useState(null)
+
+  const lookup = async () => {
+    const target = input.trim()
+    if (!target) return
+    setLoading(true)
+    setError(null)
+    setTx(null)
+    try {
+      setTx(await getTransaction(target))
+    } catch {
+      setError('No transaction with that signature. Alphanet prunes history on network resets, so older transactions may be gone.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const exec = tx?.execution
+  // Both codes read zero when nothing went wrong. vmError is an enum where the
+  // zero value means no error, so treat missing and zero the same way.
+  const failed = exec && (exec.userErrorCode !== '0' || (exec.vmError ?? 0) !== 0)
 
   return (
     <section className="card">
-      <button className="disclose" onClick={() => setOpen(!open)}>
+      <div className="card-head">
         <div>
-          <h2 className="h2">Create a CLI wallet</h2>
-          <p className="sub">Nine steps, works on Windows, macOS and Linux</p>
+          <h2 className="h2">Look up a transaction</h2>
+          <p className="sub">Paste a signature from any CLI command that wrote to the chain</p>
         </div>
-        <span className="chev">{open ? '\u2212' : '+'}</span>
-      </button>
+      </div>
 
-      {open && (
-        <div style={{ marginTop: 16 }}>
-          {steps.map((step) => {
-            const isOpen = openStep === step.number
-            return (
-              <div className="step" key={step.number} data-open={isOpen}>
-                <button className="step-head" onClick={() => setOpenStep(isOpen ? null : step.number)}>
-                  <span className="step-n">{step.number}</span>
-                  <span className="step-t">{step.title}</span>
-                  <span className="chev">{isOpen ? '\u2212' : '+'}</span>
-                </button>
-                {isOpen && (
-                  <div className="step-body">
-                    <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>{step.description}</p>
-                    {step.linkUrl && <p><a href={step.linkUrl} target="_blank" rel="noreferrer" className="fine">{step.linkLabel}</a></p>}
-                    {step.note && (
-                      <>
-                        <p className="caption">{step.note}</p>
-                        <Code code={step.noteCommand} />
-                      </>
-                    )}
-                    {step.command && (
-                      <>
-                        <p className="caption">Run this</p>
-                        <Code code={step.command} />
-                      </>
-                    )}
-                    {step.verify && (
-                      <>
-                        <p className="caption">Check it worked</p>
-                        <Code code={step.verify} />
-                      </>
-                    )}
-                  </div>
-                )}
+      <div className="stack">
+        <div className="inline">
+          <input className="field mono" value={input} onChange={(e) => { setInput(e.target.value); setTx(null); setError(null) }} onKeyDown={(e) => e.key === 'Enter' && lookup()} placeholder="ts..." />
+          {input && <button className="btn ghost" onClick={() => { setInput(''); setTx(null); setError(null) }}>Clear</button>}
+        </div>
+        <button className="btn" onClick={lookup} disabled={loading || !input.trim()}>{loading ? 'Looking up' : 'Look up'}</button>
+      </div>
+
+      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+
+      {tx && (
+        <div style={{ marginTop: 18 }}>
+          <div className="card-head" style={{ marginBottom: 4 }}>
+            <span className={failed ? 'pill off' : 'pill on'}>{failed ? 'Failed' : 'Succeeded'}</span>
+            {tx.status?.label && <span className="pill tag">{tx.status.label}</span>}
+          </div>
+
+          <div className="rows">
+            <AddrRow k="Signature" v={tx.signature ?? input.trim()} />
+            <Row k="Slot" v={tx.slot ? Number(tx.slot).toLocaleString() : '-'} mono />
+            <AddrRow k="Fee payer" v={tx.feePayer} />
+            <AddrRow k="Program" v={tx.program} />
+            <Row k="Fee" v={`${Number(tx.fee ?? 0).toLocaleString()} THRU`} mono />
+            <Row k="Nonce" v={tx.nonce} mono />
+            <Row k="Instruction data" v={`${Number(tx.instructionDataSize ?? 0).toLocaleString()} bytes`} mono />
+          </div>
+
+          {exec && (
+            <div style={{ marginTop: 16 }}>
+              <p className="eyebrow">Resources used</p>
+              <div className="rows">
+                <Row k="Compute units" v={`${Number(exec.consumedCompute ?? 0).toLocaleString()} of ${Number(tx.requested?.compute ?? 0).toLocaleString()}`} mono />
+                <Row k="State units" v={`${Number(exec.consumedState ?? 0).toLocaleString()} of ${Number(tx.requested?.state ?? 0).toLocaleString()}`} mono />
+                <Row k="Memory units" v={`${Number(exec.consumedMemory ?? 0).toLocaleString()} of ${Number(tx.requested?.memory ?? 0).toLocaleString()}`} mono />
+                <Row k="Memory pages" v={exec.pagesUsed} mono />
+                <Row k="Events" v={exec.eventsCount} mono />
+                {failed && <Row k="VM error" v={exec.vmError} mono />}
+                {failed && <Row k="Program error code" v={exec.userErrorCode} mono />}
               </div>
-            )
-          })}
+            </div>
+          )}
+
+          <AccountChips label="Accounts written" list={tx.readWriteAccounts} />
+          <AccountChips label="Accounts read" list={tx.readOnlyAccounts} />
         </div>
       )}
     </section>
@@ -577,26 +852,100 @@ function ExplorerPage() {
     <div className="wrap">
       <p className="eyebrow">Community explorer</p>
       <h1 className="h1">Read anything on Thru alphanet</h1>
-      <p className="lede">Accounts, tokens, and name service records, decoded straight from the chain.</p>
+      <p className="lede">Accounts, tokens, names and transactions, decoded straight from the chain.</p>
 
       <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
       <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
+      <TransactionLookup />
 
       <section className="card">
         <h2 className="h2">Browser wallet</h2>
         <p className="sub" style={{ marginBottom: 10 }}>Passkey based, no seed phrase or extension</p>
         <p className="fine" style={{ lineHeight: 1.65 }}>
-          The React SDK behind the embedded wallet is unpublished on npm, so the connect button is off here until it returns.
-          The hosted wallet still works: <a href="https://wallet.thru.org" target="_blank" rel="noreferrer">open it directly</a>.
+          Thru's hosted wallet is pre-alpha and currently cannot create accounts, because the fee payer it relies on does not
+          exist on chain. The React SDK behind the embedded wallet is also unpublished on npm, so the connect button stays off
+          here until both are fixed. In the meantime the <Link to="/guides">CLI wallet guide</Link> works today.
         </p>
       </section>
-
-      <GuidePanel />
 
       <footer className="foot">
         <p className="fine">Built by <a href="https://x.com/pgreyy" target="_blank" rel="noreferrer">pgreyy</a>, open source on <a href="https://github.com/pgreyy/thruscan" target="_blank" rel="noreferrer">GitHub</a></p>
         <p className="fine">A community project, not affiliated with Unto Labs</p>
       </footer>
+    </div>
+  )
+}
+
+/* ---------- guides ---------- */
+
+function GuideDetail({ guide, onBack }) {
+  const [openStep, setOpenStep] = useState(0)
+
+  return (
+    <div className="wrap">
+      <button className="back" onClick={onBack}>← All guides</button>
+
+      <p className="eyebrow">{guide.minutes}</p>
+      <h1 className="h1">{guide.title}</h1>
+      <p className="lede">{guide.intro}</p>
+
+      {guide.steps.map((step, i) => {
+        const isOpen = openStep === i
+        return (
+          <div className="step" key={step.title} data-open={isOpen}>
+            <button className="step-head" onClick={() => setOpenStep(isOpen ? null : i)}>
+              <span className="step-n">{i + 1}</span>
+              <span className="step-t">{step.title}</span>
+              <span className="chev">{isOpen ? '\u2212' : '+'}</span>
+            </button>
+            {isOpen && (
+              <div className="step-body">
+                <p className="fine" style={{ marginTop: 0, lineHeight: 1.7 }}>{step.description}</p>
+                {step.linkUrl && <p><a href={step.linkUrl} target="_blank" rel="noreferrer" className="fine">{step.linkLabel} →</a></p>}
+                {step.command && <Code code={step.command} label={step.commandLabel || 'Run this'} />}
+                {step.note && <p className="caption">{step.note}</p>}
+                {step.noteCommand && <Code code={step.noteCommand} />}
+                {step.verify && <Code code={step.verify} label="Check it worked" />}
+                {step.verifyNote && <p className="fine" style={{ marginBottom: 0 }}>{step.verifyNote}</p>}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      <footer className="foot">
+        <p className="fine">Something unclear or out of date? <a href="https://x.com/pgreyy" target="_blank" rel="noreferrer">Let me know</a> and I will fix it.</p>
+      </footer>
+    </div>
+  )
+}
+
+function GuidesPage() {
+  const [active, setActive] = useState(null)
+  const guide = GUIDES.find((g) => g.id === active)
+
+  if (guide) return <GuideDetail guide={guide} onBack={() => setActive(null)} />
+
+  return (
+    <div className="wrap">
+      <p className="eyebrow">Guides</p>
+      <h1 className="h1">How to do things on Thru</h1>
+      <p className="lede">Step by step, written for people who have not done this before. Every command can be copied, and every step tells you how to check it worked.</p>
+
+      {GUIDES.map((g, i) => (
+        <button className="guide" key={g.id} onClick={() => setActive(g.id)}>
+          <span className="guide-n">{i + 1}</span>
+          <span className="guide-body">
+            <h3>{g.title}</h3>
+            <p>{g.blurb}</p>
+          </span>
+          <span className="chev">→</span>
+        </button>
+      ))}
+
+      <p className="fine" style={{ marginTop: 18 }}>
+        Guides are tested against the current Thru CLI. More will be added as the network grows.
+      </p>
     </div>
   )
 }
@@ -921,6 +1270,7 @@ export default function App() {
       <Shell>
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
+          <Route path="/guides" element={<GuidesPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/community" element={<CommunityPage />} />

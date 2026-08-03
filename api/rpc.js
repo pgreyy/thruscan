@@ -17,6 +17,7 @@
 //
 // Routes (GET or POST):
 //   /api/rpc?action=account&address=ta...
+//   /api/rpc?action=transaction&signature=ts...
 //   /api/rpc?action=status
 //   /api/rpc?action=height
 //   /api/rpc?action=version
@@ -122,6 +123,60 @@ function serializeAccount(account) {
   }
 }
 
+// Transactions carry bigints, Pubkey/Signature instances and raw byte arrays,
+// none of which survive JSON.stringify. Flatten to what the UI actually shows.
+function serializeTransaction(tx, statusSnapshot) {
+  const exec = tx.executionResult
+  const sig = typeof tx.getSignature === 'function' ? tx.getSignature() : undefined
+
+  return {
+    signature: sig?.toThruFmt?.() ?? null,
+    slot: tx.slot?.toString() ?? null,
+    blockOffset: tx.blockOffset ?? null,
+    version: tx.version ?? null,
+    chainId: tx.chainId ?? null,
+
+    feePayer: tx.feePayer?.toThruFmt?.() ?? null,
+    program: tx.program?.toThruFmt?.() ?? null,
+    fee: tx.fee?.toString() ?? null,
+    nonce: tx.nonce?.toString() ?? null,
+    startSlot: tx.startSlot?.toString() ?? null,
+    expiryAfter: tx.expiryAfter ?? null,
+
+    requested: {
+      compute: tx.requestedComputeUnits ?? null,
+      state: tx.requestedStateUnits ?? null,
+      memory: tx.requestedMemoryUnits ?? null,
+    },
+
+    readWriteAccounts: (tx.readWriteAccounts ?? []).map((a) => a.toThruFmt()),
+    readOnlyAccounts: (tx.readOnlyAccounts ?? []).map((a) => a.toThruFmt()),
+
+    instructionData: tx.instructionData ? toBase64(tx.instructionData) : null,
+    instructionDataSize: tx.instructionDataSize ?? tx.instructionData?.length ?? 0,
+
+    status: statusSnapshot
+      ? { label: statusSnapshot.status ?? null, code: statusSnapshot.statusCode ?? null }
+      : null,
+
+    execution: exec
+      ? {
+          consumedCompute: exec.consumedComputeUnits ?? null,
+          consumedState: exec.consumedStateUnits ?? null,
+          consumedMemory: exec.consumedMemoryUnits ?? null,
+          pagesUsed: exec.pagesUsed ?? null,
+          eventsCount: exec.eventsCount ?? null,
+          eventsSize: exec.eventsSize ?? null,
+          // 0 on both of these means the program ran without raising an error.
+          userErrorCode: exec.userErrorCode?.toString() ?? null,
+          executionResult: exec.executionResult?.toString() ?? null,
+          vmError: exec.vmError ?? null,
+          errorProgramAccIdx: exec.errorProgramAccIdx ?? null,
+        }
+      : null,
+  }
+}
+
 function json(res, status, body, { cacheSeconds = 0 } = {}) {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -192,6 +247,31 @@ export default async function handler(req, res) {
           200,
           { ok: true, endpoint, account: serializeAccount(account) },
           { cacheSeconds: 5 }
+        )
+      }
+
+      case 'transaction': {
+        const signature = params.signature
+        if (!signature) {
+          return json(res, 400, { ok: false, error: 'missing signature' })
+        }
+        const target = signature.trim()
+        const tx = await withTimeout(client.transactions.get(target), CALL_TIMEOUT_MS)
+
+        // Status is a separate call and is allowed to fail on its own — a
+        // transaction that resolves is still worth showing without it.
+        let statusSnapshot = null
+        try {
+          statusSnapshot = await withTimeout(client.transactions.getStatus(target), CALL_TIMEOUT_MS)
+        } catch {
+          statusSnapshot = null
+        }
+
+        return json(
+          res,
+          200,
+          { ok: true, endpoint, transaction: serializeTransaction(tx, statusSnapshot) },
+          { cacheSeconds: 10 }
         )
       }
 

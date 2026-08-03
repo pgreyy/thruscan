@@ -82,6 +82,18 @@ export function getAccount(address, opts) {
   return call('account', { address: address.trim() }, opts).then((b) => b.account)
 }
 
+/**
+ * Fetch a transaction by signature. Returns a flattened, JSON-safe shape:
+ *   { signature, slot, feePayer, program, fee, nonce, requested{}, execution{},
+ *     readWriteAccounts[], readOnlyAccounts[], instructionData, status{} }
+ */
+export function getTransaction(signature, opts) {
+  if (!signature || typeof signature !== 'string') {
+    return Promise.reject(new RpcError('signature is required'))
+  }
+  return call('transaction', { signature: signature.trim() }, opts).then((b) => b.transaction)
+}
+
 /** True if the account looks like a name service account (kind byte 1 or 2). */
 export function isNameServiceAccount(account) {
   const b64 = account?.data?.base64
