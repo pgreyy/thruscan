@@ -134,23 +134,34 @@ export default async function handler(req, res) {
     const fields = await getRecord(id)
     if (!fields) return json(res, 404, { ok: false, error: 'not found' })
 
-    const origin = `https://${req.headers['x-forwarded-host'] ?? req.headers.host}`
-    const submit = await fetch(`${origin}/api/submit-community`, {
+    const host = req.headers['x-forwarded-host'] ?? req.headers.host
+    const proto = req.headers['x-forwarded-proto'] ?? 'https'
+    const payload = {
+      name: fields.Source || 'Discovered',
+      yourTwitter: '',
+      contentTitle: fields.Title ?? '',
+      contentLink: fields.Link ?? '',
+      description: summary ?? fields.Summary ?? '',
+      contentType: type ?? fields.Type ?? 'Other',
+    }
+
+    const submit = await fetch(`${proto}://${host}/api/submit-community`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: fields.Source || 'Discovered',
-        yourTwitter: '',
-        contentTitle: fields.Title ?? '',
-        contentLink: fields.Link ?? '',
-        description: summary ?? fields.Summary ?? '',
-        contentType: type ?? fields.Type ?? 'Other',
-      }),
+      body: JSON.stringify(payload),
     })
 
-    const result = await submit.json().catch(() => ({}))
+    const bodyText = await submit.text()
+    let result = {}
+    try { result = JSON.parse(bodyText) } catch { /* non-JSON response */ }
+
+    // Pass the real response through. A generic failure message here means
+    // guessing at whether it was the URL, the payload or Airtable.
     if (!result.success) {
-      return json(res, 502, { ok: false, error: 'could not add it to the community list' })
+      return json(res, 502, {
+        ok: false,
+        error: `submit-community said ${submit.status}: ${bodyText.slice(0, 300) || '(empty response)'}`,
+      })
     }
 
     await setStatus(id, 'approved')
