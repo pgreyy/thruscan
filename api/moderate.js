@@ -53,7 +53,12 @@ async function listPending() {
   url.searchParams.set('sort[0][direction]', 'desc')
 
   const res = await fetch(url.toString(), { headers: airtableHeaders() })
-  if (!res.ok) throw new Error('airtable list failed')
+  if (!res.ok) {
+    // Airtable says exactly what is wrong (unknown field, missing table, bad
+    // key). Passing it through beats a generic message you cannot act on.
+    const detail = await res.text().catch(() => '')
+    throw new Error(`Airtable ${res.status}: ${detail.slice(0, 300)}`)
+  }
 
   const data = await res.json()
   return (data.records ?? []).map((r) => ({
@@ -103,8 +108,8 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
       return json(res, 200, { ok: true, items: await listPending() })
-    } catch {
-      return json(res, 502, { ok: false, error: 'could not read the queue' })
+    } catch (err) {
+      return json(res, 502, { ok: false, error: err.message || 'could not read the queue' })
     }
   }
 

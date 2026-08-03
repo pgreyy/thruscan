@@ -202,14 +202,24 @@ async function fetchSeenLinks() {
 }
 
 async function insertDiscoveries(rows) {
-  // Airtable caps creates at 10 per request.
+  const errors = []
+
+  // Airtable caps creates at 10 per request. Airtable rejects the whole batch
+  // if a single field name does not match, so failures are reported rather
+  // than swallowed — otherwise a typo looks like a successful empty run.
   for (let i = 0; i < rows.length; i += 10) {
-    await fetch(`${AIRTABLE_API}/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}`, {
+    const res = await fetch(`${AIRTABLE_API}/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(TABLE)}`, {
       method: 'POST',
       headers: airtableHeaders(),
       body: JSON.stringify({ records: rows.slice(i, i + 10).map((fields) => ({ fields })) }),
     })
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      errors.push(`${res.status}: ${detail.slice(0, 300)}`)
+    }
   }
+
+  return errors
 }
 
 /* ---------- classification ---------- */
@@ -327,7 +337,7 @@ export default async function handler(req, res) {
     })
   }
 
-  if (queued.length > 0) await insertDiscoveries(queued)
+  const writeErrors = queued.length > 0 ? await insertDiscoveries(queued) : []
 
   res.setHeader('Content-Type', 'application/json')
   res.status(200).send(
@@ -338,6 +348,8 @@ export default async function handler(req, res) {
       classified: candidates.length,
       queued: queued.length,
       dropped,
+      // Non-empty means nothing reached Airtable, whatever the queued count says.
+      writeErrors,
     })
   )
 }
