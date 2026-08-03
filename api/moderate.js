@@ -3,10 +3,7 @@
 // The approval queue behind the discovery agent. Lists what the agent found,
 // and lets you approve or reject each item.
 //
-// Approving does not write to the Community table directly. It posts to the
-// existing /api/submit-community endpoint instead, so the Airtable field names
-// stay defined in exactly one place and this file never needs to know them.
-//
+
 // Environment variables:
 //   MODERATOR_PASSWORD  anything long and random
 //   AIRTABLE_API_KEY    already set
@@ -14,11 +11,16 @@
 //
 // Actions:
 //   GET  /api/moderate?password=...              list pending items
-//   POST /api/moderate  { password, id, action: 'approve'|'reject', summary?, type? }
+//   POST /api/moderate  { password, id, action: 'approve'|'reject', summary?, type?, featured? }
+//
+// Approving writes directly into Community Submissions with status Approved,
+// so there is no second approval step inside Airtable. Passing featured: true
+// puts it in the Featured row on the site instead of Community picks.
 
 export const config = { runtime: 'nodejs' }
 
 const TABLE = 'Discoveries'
+const COMMUNITY_TABLE = 'Community Submissions'
 const AIRTABLE_API = 'https://api.airtable.com/v0'
 
 function json(res, status, body) {
@@ -116,7 +118,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'use GET or POST' })
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}
-  const { id, action, summary, type } = body
+  const { id, action, summary, type, featured } = body
 
   if (!id || !['approve', 'reject'].includes(action)) {
     return json(res, 400, { ok: false, error: 'need an id and an action' })
@@ -134,34 +136,31 @@ export default async function handler(req, res) {
     const fields = await getRecord(id)
     if (!fields) return json(res, 404, { ok: false, error: 'not found' })
 
-    const host = req.headers['x-forwarded-host'] ?? req.headers.host
-    const proto = req.headers['x-forwarded-proto'] ?? 'https'
-    const payload = {
-      name: fields.Source || 'Discovered',
-      yourTwitter: '',
-      contentTitle: fields.Title ?? '',
-      contentLink: fields.Link ?? '',
-      description: summary ?? fields.Summary ?? '',
-      contentType: type ?? fields.Type ?? 'Other',
-    }
+    // Write straight to Airtable rather than bouncing through
+    // submit-community. That endpoint hardcodes a Pending status, which would
+    // mean approving something here and then approving it again in Airtable.
+    const create = await fetch(
+      `${AIRTABLE_API}/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(COMMUNITY_TABLE)}`,
+      {
+        method: 'POST',
+        headers: airtableHeaders(),
+        body: JSON.stringify({
+          fields: {
+            Name: fields.Source || 'Discovered',
+            'Content Title': fields.Title ?? '',
+            'Content Link': fields.Link ?? '',
+            'Content Type': type ?? fields.Type ?? 'Other',
+            Description: summary ?? fields.Summary ?? '',
+            Status: 'Approved',
+            Featured: Boolean(featured),
+          },
+        }),
+      }
+    )
 
-    const submit = await fetch(`${proto}://${host}/api/submit-community`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-
-    const bodyText = await submit.text()
-    let result = {}
-    try { result = JSON.parse(bodyText) } catch { /* non-JSON response */ }
-
-    // Pass the real response through. A generic failure message here means
-    // guessing at whether it was the URL, the payload or Airtable.
-    if (!result.success) {
-      return json(res, 502, {
-        ok: false,
-        error: `submit-community said ${submit.status}: ${bodyText.slice(0, 300) || '(empty response)'}`,
-      })
+    if (!create.ok) {
+      const detail = await create.text().catch(() => '')
+      return json(res, 502, { ok: false, error: `Airtable ${create.status}: ${detail.slice(0, 300)}` })
     }
 
     await setStatus(id, 'approved')

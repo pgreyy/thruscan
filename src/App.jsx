@@ -919,7 +919,7 @@ function ModeratePage() {
 
   useEffect(() => { if (password) load(password) }, [])
 
-  const decide = async (item, action) => {
+  const decide = async (item, action, featured = false) => {
     setBusy(item.id)
     try {
       const res = await fetch('/api/moderate', {
@@ -929,6 +929,7 @@ function ModeratePage() {
           password,
           id: item.id,
           action,
+          featured,
           summary: edits[item.id]?.summary ?? item.summary,
           type: edits[item.id]?.type ?? item.type,
         }),
@@ -1029,9 +1030,12 @@ function ModeratePage() {
               </select>
             </div>
 
-            <div className="inline">
+            <div className="inline" style={{ flexWrap: 'wrap' }}>
               <button className="btn" onClick={() => decide(item, 'approve')} disabled={busy === item.id}>
                 {busy === item.id ? 'Working' : 'Approve'}
+              </button>
+              <button className="btn ghost" onClick={() => decide(item, 'approve', true)} disabled={busy === item.id}>
+                Approve and feature
               </button>
               <button className="btn ghost" onClick={() => decide(item, 'reject')} disabled={busy === item.id}>
                 Reject
@@ -1573,6 +1577,7 @@ function ContentCard({ item }) {
 }
 
 function CommunityPage() {
+  const [featured, setFeatured] = useState([])
   const [records, setRecords] = useState([])
   const [loadingRecords, setLoadingRecords] = useState(true)
   const [form, setForm] = useState(EMPTY_CONTENT)
@@ -1585,9 +1590,13 @@ function CommunityPage() {
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
 
   useEffect(() => {
-    fetch('/api/get-community')
+    fetch('/api/get-content')
       .then((r) => r.json())
-      .then((data) => { setRecords(data.records || []); setLoadingRecords(false) })
+      .then((data) => {
+        setFeatured(data.featured || [])
+        setRecords(data.community || [])
+        setLoadingRecords(false)
+      })
       .catch(() => setLoadingRecords(false))
   }, [])
 
@@ -1619,9 +1628,14 @@ function CommunityPage() {
       </div>
 
       {activeTab === 'featured' && (
-        <div className="grid">
-          {FEATURED_CONTENT.map((item) => <ContentCard key={item.id} item={item} />)}
-        </div>
+        loadingRecords ? <p className="fine">Loading</p> : (
+          <div className="grid">
+            {/* FEATURED_CONTENT is the original hardcoded entry, kept so the
+                page is never empty. Anything marked featured in moderation
+                appears alongside it without needing a deploy. */}
+            {[...FEATURED_CONTENT, ...featured].map((item) => <ContentCard key={item.id} item={item} />)}
+          </div>
+        )
       )}
 
       {activeTab === 'community' && (
