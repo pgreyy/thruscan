@@ -883,6 +883,168 @@ function ExplorerPage() {
   )
 }
 
+/* ---------- moderation ----------
+   Not in the nav on purpose. Reachable at /moderate, gated by a password held
+   in a Vercel environment variable and checked server side. The password is
+   kept in sessionStorage so a page refresh does not log you out, and is gone
+   when the tab closes. */
+
+function ModeratePage() {
+  const [password, setPassword] = useState(() => sessionStorage.getItem('thruscan_mod') || '')
+  const [authed, setAuthed] = useState(false)
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(null)
+  const [edits, setEdits] = useState({})
+
+  const load = async (pw) => {
+    const secret = pw ?? password
+    if (!secret) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/moderate?password=${encodeURIComponent(secret)}`)
+      const data = await res.json()
+      if (!data.ok) { setError(data.error || 'Could not load the queue.'); setAuthed(false); return }
+      sessionStorage.setItem('thruscan_mod', secret)
+      setItems(data.items)
+      setAuthed(true)
+    } catch {
+      setError('Could not reach the server.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { if (password) load(password) }, [])
+
+  const decide = async (item, action) => {
+    setBusy(item.id)
+    try {
+      const res = await fetch('/api/moderate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          password,
+          id: item.id,
+          action,
+          summary: edits[item.id]?.summary ?? item.summary,
+          type: edits[item.id]?.type ?? item.type,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) { setError(data.error || 'That did not go through.'); return }
+      // Drop it from the list rather than reloading, so the queue does not
+      // jump around while you are working through it.
+      setItems((prev) => prev.filter((i) => i.id !== item.id))
+    } catch {
+      setError('Could not reach the server.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const editItem = (id, patch) => setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
+
+  if (!authed) {
+    return (
+      <div className="wrap">
+        <p className="eyebrow">Private</p>
+        <h1 className="h1">Moderation</h1>
+        <p className="lede">Approve or reject what the discovery agent found.</p>
+
+        <section className="card">
+          <div className="stack">
+            <input
+              className="field"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && load()}
+              placeholder="Password"
+            />
+            <button className="btn" onClick={() => load()} disabled={loading || !password}>
+              {loading ? 'Checking' : 'Unlock'}
+            </button>
+            {error && <p className="notice bad">{error}</p>}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="wrap">
+      <p className="eyebrow">Private</p>
+      <h1 className="h1">Moderation</h1>
+      <p className="lede">
+        {items.length === 0
+          ? 'Nothing waiting. The agent runs daily and anything it finds shows up here.'
+          : `${items.length} item${items.length === 1 ? '' : 's'} waiting. Approved items go straight to the Community page.`}
+      </p>
+
+      <div className="inline" style={{ marginBottom: 18 }}>
+        <button className="btn ghost" onClick={() => load()} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
+      </div>
+
+      {error && <p className="notice bad">{error}</p>}
+
+      {items.map((item) => {
+        const edit = edits[item.id] ?? {}
+        const confident = item.confidence >= 0.8
+        return (
+          <section className="card" key={item.id}>
+            <div className="card-head">
+              <div style={{ minWidth: 0 }}>
+                <a href={item.link} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', textDecoration: 'none' }}>
+                  {item.title}
+                </a>
+                <p className="sub">{item.source} · {item.foundAt ? new Date(item.foundAt).toLocaleDateString() : ''}</p>
+              </div>
+              <span className={confident ? 'pill on' : 'pill off'}>
+                {Math.round((item.confidence ?? 0) * 100)}% sure
+              </span>
+            </div>
+
+            <p className="fine" style={{ fontStyle: 'italic', marginTop: 0 }}>{item.reason}</p>
+
+            <div className="form-row">
+              <label className="label">Summary shown on the site</label>
+              <textarea
+                className="field"
+                value={edit.summary ?? item.summary}
+                onChange={(e) => editItem(item.id, { summary: e.target.value })}
+              />
+            </div>
+
+            <div className="form-row">
+              <label className="label">Type</label>
+              <select className="field" value={edit.type ?? item.type} onChange={(e) => editItem(item.id, { type: e.target.value })}>
+                <option value="Article">Article</option>
+                <option value="Thread">Thread</option>
+                <option value="Video">Video</option>
+                <option value="Tool">Tool</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div className="inline">
+              <button className="btn" onClick={() => decide(item, 'approve')} disabled={busy === item.id}>
+                {busy === item.id ? 'Working' : 'Approve'}
+              </button>
+              <button className="btn ghost" onClick={() => decide(item, 'reject')} disabled={busy === item.id}>
+                Reject
+              </button>
+              <a className="btn plain" href={item.link} target="_blank" rel="noreferrer" style={{ marginLeft: 'auto' }}>Open</a>
+            </div>
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ---------- the wall ---------- */
 
 function WallEntry({ entry }) {
@@ -1527,6 +1689,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
           <Route path="/wall" element={<WallPage />} />
+          <Route path="/moderate" element={<ModeratePage />} />
           <Route path="/guides" element={<GuidesPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
