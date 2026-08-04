@@ -581,24 +581,40 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .feed-list .post { flex-direction: row; align-items: stretch; }
 
-.feed-list .post > a { flex-shrink: 0; width: 116px; }
+/* The thumbnail sits in a padded box and is centred rather than filling the
+   whole edge. Cropping a wide preview image into a tall narrow slot is what
+   made these unreadable. */
+.feed-list .post > a {
+  flex-shrink: 0;
+  width: 138px;
+  display: flex;
+  align-items: center;
+  padding: 12px 0 12px 12px;
+}
 
 .feed-list .post-img,
 .feed-list .post-alt {
-  aspect-ratio: auto;
-  height: 100%;
-  min-height: 84px;
-  border-bottom: 0;
-  border-right: 1px solid var(--line);
-  font-size: 10px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  /* contain, not cover: show the whole image scaled down, whatever shape it
+     came in as. Letterboxing against the canvas colour reads as intentional;
+     a cropped sliver does not. */
+  object-fit: contain;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 9.5px;
 }
 
-.feed-list .post-body { padding: 12px 15px; }
+.feed-list .post-alt { background: var(--ink); border-color: var(--ink); }
+
+.feed-list .post-body { padding: 13px 15px 13px 13px; justify-content: center; }
 .feed-list .post-body h3 a { -webkit-line-clamp: 1; }
 .feed-list .post-body .fine { -webkit-line-clamp: 2; }
 
 @media (max-width: 559px) {
-  .feed-list .post > a { width: 92px; }
+  .feed-list .post > a { width: 104px; padding: 10px 0 10px 10px; }
   .feed-list .post-body .fine { display: none; }
 }
 

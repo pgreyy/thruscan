@@ -25,9 +25,9 @@ const NAV = [
   { to: '/', label: 'Explorer' },
   { to: '/wall', label: 'Wall' },
   { to: '/guides', label: 'Guides' },
-  { to: '/updates', label: 'Updates' },
   { to: '/projects', label: 'Projects' },
   { to: '/community', label: 'Community' },
+  { to: '/updates', label: 'Updates' },
 ]
 
 /* ---------- guide content ----------
