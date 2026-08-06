@@ -146,7 +146,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   right: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
@@ -156,7 +156,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .tab {
   padding: 10px 2px 12px;
   text-align: center;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 500;
   color: var(--muted);
   text-decoration: none;
@@ -647,7 +647,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   background: var(--canvas);
   border: 1px solid var(--line);
   border-radius: 7px;
-  font-size: 9.5px;
+  font-size: 9px;
 }
 
 .feed-list .post-alt { background: var(--ink); border-color: var(--ink); }
@@ -822,6 +822,110 @@ textarea.field { resize: vertical; min-height: 84px; }
 .board-who span { font-size: 11.5px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
 .board-count { font-family: var(--mono); font-size: 14px; font-weight: 600; flex-shrink: 0; }
 .board-count span { font-size: 11px; color: var(--muted); font-weight: 400; font-family: var(--sans); }
+
+/* ---------- wordle ---------- */
+
+.tiles { display: grid; gap: 6px; justify-content: center; margin: 0 auto 18px; }
+.tile-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+
+.tile {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--sans);
+  font-size: 24px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.tile.filled { border-color: #c9c6bf; }
+
+/* Two colours only, matching the rest of the site: signal blue for a letter
+   in the right place, ink for one that is in the word but misplaced, and a
+   flat grey for letters that are out. */
+.tile.correct { background: var(--signal); border-color: var(--signal); color: #fff; }
+.tile.present { background: var(--ink); border-color: var(--ink); color: var(--canvas); }
+.tile.absent { background: #d9d6d0; border-color: #d9d6d0; color: #7a7871; }
+
+@media (max-width: 419px) {
+  .tile { width: 46px; height: 46px; font-size: 20px; }
+}
+
+.keys { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.key-row { display: flex; gap: 5px; }
+
+.key {
+  min-width: 30px;
+  height: 46px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.key:hover { background: #fbfaf8; }
+.key.wide { min-width: 54px; font-size: 11px; }
+.key.correct { background: var(--signal); color: #fff; }
+.key.present { background: var(--ink); color: var(--canvas); }
+.key.absent { background: #d9d6d0; color: #8a887f; box-shadow: none; }
+
+@media (max-width: 419px) {
+  .key { min-width: 26px; padding: 0 6px; height: 42px; font-size: 12px; }
+  .key.wide { min-width: 46px; font-size: 10px; }
+}
+
+.result {
+  text-align: center;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
+}
+
+.result h3 { margin: 0 0 4px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.result .answer { font-family: var(--mono); font-size: 15px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+.board { border-top: 1px solid var(--line); }
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.board-rank {
+  width: 26px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.board-row:nth-child(-n+3) .board-rank { color: var(--signal); }
+.board-row.you { background: var(--signal-soft); margin: 0 -10px; padding: 11px 10px; border-radius: 8px; }
+
+.board-who { flex: 1; min-width: 0; }
+.board-who strong { display: block; font-size: 14px; font-weight: 600; }
+.board-who span { font-size: 11.5px; color: var(--muted); }
+.board-count { font-family: var(--mono); font-size: 14px; font-weight: 600; flex-shrink: 0; text-align: right; }
+.board-count span { display: block; font-size: 10.5px; color: var(--muted); font-weight: 400; font-family: var(--sans); }
 
 .foot { margin-top: 34px; text-align: center; }
 .foot p { margin: 0 0 4px; }

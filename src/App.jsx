@@ -4,6 +4,10 @@ import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
 import { decodeWall, buildPostInstruction, toHex, MESSAGE_CHARS, NAME_CHARS, HANDLE_CHARS } from './lib/wall'
+import {
+  WORDS, WORD_LEN, MAX_GUESSES, randomWord, scoreGuess, keyboardState, pointsFor,
+  getPlayerId, decodeBoard, rankByPoints, rankByStreak,
+} from './lib/wordle'
 import './styles.css'
 
 // All chain reads go through /api/rpc, a serverless function that talks to the
@@ -20,10 +24,12 @@ const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Unto-Labs/thru/release
 // page renders an honest "not live yet" state instead of erroring.
 const WALL_PROGRAM = import.meta.env.VITE_THRU_WALL_PROGRAM || ''
 const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
+const WORDLE_BOARD = import.meta.env.VITE_THRU_WORDLE_BOARD || ''
 
 const NAV = [
   { to: '/', label: 'Explorer' },
   { to: '/wall', label: 'Wall' },
+  { to: '/games', label: 'Games' },
   { to: '/guides', label: 'Guides' },
   { to: '/projects', label: 'Projects' },
   { to: '/community', label: 'Community' },
@@ -1395,6 +1401,287 @@ function WallPage() {
   )
 }
 
+/* ---------- games ---------- */
+
+const KEY_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
+
+function WordleGame({ onFinished }) {
+  const [answer, setAnswer] = useState(randomWord)
+  const [guesses, setGuesses] = useState([])
+  const [current, setCurrent] = useState('')
+  const [status, setStatus] = useState('playing')
+  const [shake, setShake] = useState(false)
+  const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
+  const [sending, setSending] = useState(false)
+  const [signature, setSignature] = useState(null)
+  const [error, setError] = useState(null)
+
+  const finish = async (allGuesses, solved) => {
+    setStatus(solved ? 'won' : 'lost')
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/submit-game', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId: getPlayerId(),
+          name: name.trim(),
+          answer,
+          guesses: allGuesses,
+          solved,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) { setError(data.error || 'Could not record that game.'); return }
+      setSignature(data.signature)
+      onFinished()
+    } catch {
+      setError('Could not reach the server. Your game still counts, it just was not recorded.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const submitGuess = () => {
+    if (current.length !== WORD_LEN) {
+      setShake(true)
+      setTimeout(() => setShake(false), 400)
+      return
+    }
+    const next = [...guesses, current]
+    setGuesses(next)
+    setCurrent('')
+
+    if (current === answer) finish(next, true)
+    else if (next.length === MAX_GUESSES) finish(next, false)
+  }
+
+  const press = (key) => {
+    if (status !== 'playing') return
+    if (key === 'enter') submitGuess()
+    else if (key === 'back') setCurrent((c) => c.slice(0, -1))
+    else if (/^[a-z]$/.test(key) && current.length < WORD_LEN) setCurrent((c) => c + key)
+  }
+
+  // Physical keyboard, because anyone playing on a laptop will type rather
+  // than click, and a word game that ignores the keyboard feels broken.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (document.activeElement?.tagName === 'INPUT') return
+      if (e.key === 'Enter') press('enter')
+      else if (e.key === 'Backspace') press('back')
+      else if (/^[a-zA-Z]$/.test(e.key)) press(e.key.toLowerCase())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const newGame = () => {
+    setAnswer(randomWord())
+    setGuesses([])
+    setCurrent('')
+    setStatus('playing')
+    setSignature(null)
+    setError(null)
+  }
+
+  const keyState = keyboardState(guesses, answer)
+
+  const rows = []
+  for (let r = 0; r < MAX_GUESSES; r++) {
+    const guess = guesses[r]
+    const marks = guess ? scoreGuess(guess, answer) : null
+    const letters = guess ?? (r === guesses.length ? current : '')
+
+    rows.push(
+      <div className="tile-row" key={r}>
+        {Array.from({ length: WORD_LEN }, (_, c) => {
+          const letter = letters[c] ?? ''
+          const cls = marks ? marks[c] : letter ? 'filled' : ''
+          return <div className={`tile ${cls}`} key={c}>{letter}</div>
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Guess the word</h2>
+          <p className="sub">Six tries. Blue means right place, black means right letter wrong place.</p>
+        </div>
+      </div>
+
+      <div className="form-row">
+        <label className="label">Your name</label>
+        <input
+          className="field"
+          value={name}
+          onChange={(e) => { setName(e.target.value); localStorage.setItem('thruscan_player_name', e.target.value) }}
+          placeholder="Shown on the leaderboard"
+          maxLength={24}
+        />
+      </div>
+
+      <div className="tiles" style={shake ? { animation: 'none' } : undefined}>{rows}</div>
+
+      {status === 'playing' ? (
+        <div className="keys">
+          {KEY_ROWS.map((row, i) => (
+            <div className="key-row" key={i}>
+              {i === 2 && <button className="key wide" onClick={() => press('enter')}>Enter</button>}
+              {row.split('').map((letter) => (
+                <button className={`key ${keyState[letter] ?? ''}`} key={letter} onClick={() => press(letter)}>
+                  {letter}
+                </button>
+              ))}
+              {i === 2 && <button className="key wide" onClick={() => press('back')}>Del</button>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="result">
+          <h3>{status === 'won' ? `Solved in ${guesses.length}` : 'Out of guesses'}</h3>
+          <p className="answer">{answer}</p>
+          <p className="fine" style={{ margin: '8px 0 0' }}>
+            {status === 'won' ? `${pointsFor(true, guesses.length)} points` : 'No points this time'}
+            {sending && ' · recording on chain'}
+          </p>
+
+          {error && <p className="notice bad" style={{ marginTop: 12, textAlign: 'left' }}>{error}</p>}
+
+          {signature && (
+            <div style={{ marginTop: 12 }}>
+              <p className="fine" style={{ margin: '0 0 6px' }}>Recorded on chain</p>
+              <Address value={signature} />
+            </div>
+          )}
+
+          <button className="btn" onClick={newGame} style={{ marginTop: 14 }} disabled={sending}>
+            {sending ? 'Saving' : 'Play again'}
+          </button>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function WordleBoard({ board, refresh, loading }) {
+  const [tab, setTab] = useState('points')
+  const me = getPlayerId()
+
+  const ranked = tab === 'points' ? rankByPoints(board.entries) : rankByStreak(board.entries)
+
+  return (
+    <>
+      <div className="stats">
+        <div className="stat">
+          <b>{board.games.toLocaleString()}</b>
+          <span>games played</span>
+        </div>
+        <div className="stat">
+          <b>{board.entries.length}</b>
+          <span>players</span>
+        </div>
+        <div className="stat">
+          <b>{board.entries.reduce((n, p) => n + p.won, 0).toLocaleString()}</b>
+          <span>words solved</span>
+        </div>
+      </div>
+
+      <section className="card">
+        <div className="card-head">
+          <div className="tabs" role="tablist" style={{ marginBottom: 0, borderBottom: 0 }}>
+            <button className="tab-btn" role="tab" aria-selected={tab === 'points'} onClick={() => setTab('points')}>Points</button>
+            <button className="tab-btn" role="tab" aria-selected={tab === 'streak'} onClick={() => setTab('streak')}>Streaks</button>
+          </div>
+          <button className="btn ghost" onClick={refresh} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
+        </div>
+
+        {ranked.length === 0 ? (
+          <p className="fine" style={{ marginBottom: 0 }}>Nobody has played yet. Solve one and the board is yours.</p>
+        ) : (
+          <div className="board">
+            {ranked.slice(0, 50).map((p, i) => (
+              <div className={`board-row${p.id === me ? ' you' : ''}`} key={p.id}>
+                <span className="board-rank">{i + 1}</span>
+                <span className="board-who">
+                  <strong>{p.name || 'Anonymous'}{p.id === me && ' (you)'}</strong>
+                  <span>{p.won} of {p.played} solved</span>
+                </span>
+                <span className="board-count">
+                  {tab === 'points' ? p.points.toLocaleString() : p.bestStreak}
+                  <span>{tab === 'points' ? 'points' : `best streak, ${p.streak} now`}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  )
+}
+
+function GamesPage() {
+  const [board, setBoard] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const load = async () => {
+    if (!WORDLE_BOARD) { setLoading(false); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const account = await getAccount(WORDLE_BOARD)
+      setBoard(decodeBoard(account.data?.base64))
+    } catch {
+      setError('Could not read the scoreboard right now.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  if (!WORDLE_BOARD) {
+    return (
+      <div className="wrap">
+        <p className="eyebrow">Games</p>
+        <h1 className="h1">Not live yet</h1>
+        <p className="lede">The game is built and the program is deployed, but the scoreboard is still being wired up.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="wrap">
+      <p className="eyebrow">Games</p>
+      <h1 className="h1">Thru Wordle</h1>
+      <p className="lede">
+        Guess a five letter word in six tries. Every finished game is written to Thru by a program running on chain, and
+        the scoreboard below is read straight back out of it. No wallet needed, ThruScan pays.
+      </p>
+
+      <WordleGame onFinished={load} />
+
+      {error && <p className="notice bad">{error}</p>}
+      {loading && !board && <p className="fine">Reading the scoreboard</p>}
+      {board && <WordleBoard board={board} refresh={load} loading={loading} />}
+
+      <footer className="foot">
+        <p className="fine">
+          The program recomputes your score from the word and your guesses, so a claimed win has to come with the guess
+          that proves it. It cannot check which word you were given, since the game runs in your browser.
+        </p>
+        <p className="fine">Scores reset whenever alphanet resets. Think of them as seasons.</p>
+      </footer>
+    </div>
+  )
+}
+
 /* ---------- guides ---------- */
 
 function GuideDetail({ guide, onBack }) {
@@ -1830,6 +2117,7 @@ export default function App() {
           <Route path="/" element={<ExplorerPage />} />
           <Route path="/wall" element={<WallPage />} />
           <Route path="/moderate" element={<ModeratePage />} />
+          <Route path="/games" element={<GamesPage />} />
           <Route path="/guides" element={<GuidesPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
