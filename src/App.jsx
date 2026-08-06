@@ -352,21 +352,36 @@ function FlagRow({ k, v }) {
   )
 }
 
-function Code({ code, label }) {
+function useCopy(text) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
-    navigator.clipboard?.writeText(code)
+    navigator.clipboard?.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 1600)
   }
+  return [copied, copy]
+}
+
+function Code({ code, label }) {
+  const [copied, copy] = useCopy(code)
   return (
-    <>
-      {label && <p className="caption">{label}</p>}
-      <div className="code">
-        <code>{code}</code>
+    <div className="codeblock">
+      <div className="codebar">
+        <span className="codelabel">{label || 'Command'}</span>
         <button className="copy" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
       </div>
-    </>
+      <pre className="codebody"><code>{code}</code></pre>
+    </div>
+  )
+}
+
+/** A command mentioned inside a sentence, copyable in one click. */
+function InlineCode({ children }) {
+  const [copied, copy] = useCopy(String(children))
+  return (
+    <button className="inline-code" onClick={copy} title="Copy">
+      {children}<span className="mark">{copied ? 'copied' : 'copy'}</span>
+    </button>
   )
 }
 
@@ -1201,9 +1216,9 @@ function CliPostForm() {
         <label className="label">Your key name</label>
         <input className="field mono" value={keyName} onChange={(e) => saveKeyName(e.target.value)} placeholder="default" />
         <p className="fine" style={{ margin: '6px 0 0' }}>
-          Not sure? Run <span style={{ fontFamily: 'var(--mono)' }}>thru keys list</span> in your terminal and use the name
-          it shows. It is whatever you chose when you ran <span style={{ fontFamily: 'var(--mono)' }}>thru keys generate</span>,
-          which is often but not always "default".
+          Not sure which name is yours? Run <InlineCode>thru keys list</InlineCode> in your terminal and use the name it
+          shows. It is whatever you picked when you ran <InlineCode>thru keys generate</InlineCode>, which is often but
+          not always "default".
         </p>
       </div>
 
@@ -1225,8 +1240,7 @@ function CliPostForm() {
 
       {command && (
         <>
-          <p className="caption">Run this in your terminal</p>
-          <Code code={command} />
+          <Code code={command} label="Run this in your terminal" />
           <p className="fine" style={{ marginBottom: 0 }}>
             The long hex string is your message encoded the way the program reads it. If it fails with "Fee payer account
             not found", the key name is wrong or that key has no account on chain yet — step 5 of the wallet guide covers
