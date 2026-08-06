@@ -1270,7 +1270,7 @@ function WallPage() {
               <h2 className="h2">Messages</h2>
               {wall && (
                 <p className="sub">
-                  {wall.totalPosted.toLocaleString()} posted in total, showing the most recent {wall.entries.length}
+                  {wall.totalPosted.toLocaleString()} posted in total, showing the most recent {wall.entries.length} of {wall.capacity}
                 </p>
               )}
             </div>
@@ -1293,7 +1293,7 @@ function WallPage() {
 
       <footer className="foot">
         <p className="fine">
-          The wall holds the most recent 128 messages. Older ones are overwritten, and alphanet resets clear it entirely.
+          Older messages are overwritten once the wall is full, and alphanet resets clear it entirely.
         </p>
       </footer>
     </div>

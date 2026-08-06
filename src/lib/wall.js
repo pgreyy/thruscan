@@ -26,15 +26,22 @@
 //   0xe3   32  poster pubkey — the transaction's fee payer, proven not typed
 //   0x103   1  verified (1 when the poster is not the sponsor)
 //
-// Total account size: 41 + 128 * 260 = 33,321 bytes.
+// Total account size is 41 + slots * 260. The slot count is chosen when INIT
+// runs rather than fixed here, because the chain caps how large an account can
+// be and that limit is not documented. The decoder works it out from the
+// account's own length.
 
 import { Pubkey } from '@thru/thru-sdk'
 
 export const WALL_VERSION = 1
-export const WALL_SLOTS = 128
 export const HEADER_SIZE = 41
 export const SLOT_SIZE = 260
-export const WALL_SIZE = HEADER_SIZE + WALL_SLOTS * SLOT_SIZE
+
+/** Capacity is whatever INIT allocated, so read it off the account's size. */
+export function wallCapacity(byteLength) {
+  if (byteLength < HEADER_SIZE + SLOT_SIZE) return 0
+  return Math.floor((byteLength - HEADER_SIZE) / SLOT_SIZE)
+}
 
 // Character limits the form enforces. The on-chain fields are larger in bytes
 // because one emoji can take four bytes in UTF-8, so a message that fits the
@@ -90,15 +97,16 @@ export function decodeWall(input) {
   if (bytes[0] !== WALL_VERSION) {
     throw new WallDecodeError(`unknown wall version ${bytes[0]}`)
   }
-  if (bytes.length !== WALL_SIZE) {
-    throw new WallDecodeError(`expected ${WALL_SIZE} bytes, got ${bytes.length}`)
+  const slots = wallCapacity(bytes.length)
+  if (slots === 0) {
+    throw new WallDecodeError(`wall account is too small at ${bytes.length} bytes`)
   }
 
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const sponsor = readPubkey(bytes, 0x09)
 
   const entries = []
-  for (let i = 0; i < WALL_SLOTS; i++) {
+  for (let i = 0; i < slots; i++) {
     const base = HEADER_SIZE + i * SLOT_SIZE
 
     const msgLen = bytes[base + 0x2a]
@@ -129,6 +137,7 @@ export function decodeWall(input) {
     version: bytes[0],
     nextIndex: dv.getUint32(0x01, true),
     totalPosted: dv.getUint32(0x05, true),
+    capacity: slots,
     sponsor,
     entries,
   }
