@@ -23,8 +23,8 @@ const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
 
 const NAV = [
   { to: '/', label: 'Explorer' },
-  { to: '/guides', label: 'Guides' },
   { to: '/wall', label: 'Wall' },
+  { to: '/guides', label: 'Guides' },
   { to: '/projects', label: 'Projects' },
   { to: '/community', label: 'Community' },
   { to: '/updates', label: 'Updates' },
@@ -77,8 +77,9 @@ const GUIDES = [
         description:
           'This makes a key pair on your computer. "default" is just a label, you can use any name. Your private key is saved in plain text in the config file, so treat that file like a bank password: never share it, never put it in a screenshot, never commit it to GitHub.',
         command: 'thru keys generate default',
-        verify: 'thru --json keys list',
-        verifyNote: 'Your new key name appears in the list.',
+        verify: 'thru keys list',
+        verifyNote:
+          'Your new key name appears in the list. That name is your "key name", and other guides ask for it. If you used a name other than "default", you must add --fee-payer YOURNAME to most commands from here on.',
       },
       {
         title: 'Register the account on the network',
@@ -126,8 +127,10 @@ const GUIDES = [
       {
         title: 'Check your account is funded',
         description:
-          'Every step here costs a small fee, so make sure you have a balance before starting. If it is zero, run the faucet command from the wallet guide.',
+          'Every step here costs a small fee, so make sure you have a balance before starting. If it is zero, run the faucet command from the wallet guide. Words in CAPITALS later in this guide are placeholders: each command prints an address, and the next one wants you to paste it in place of the capitalised word.',
         command: 'thru getbalance default',
+        note: 'Using a key that is not called "default"? Find its name and add --fee-payer YOURKEY to every command here:',
+        noteCommand: 'thru keys list',
       },
       {
         title: 'Make a seed',
@@ -177,31 +180,42 @@ const GUIDES = [
       'Thru has a built-in name service, similar to ENS. It works in two layers: you claim a root name, then create subdomains under it. Each subdomain can hold records, which are key and value pairs like a website or a social handle. Finish the wallet guide first.',
     steps: [
       {
+        title: 'Before you start: reading these commands',
+        description:
+          'Words in CAPITALS are placeholders, not things to type literally. Each command prints an address, and the next command wants you to paste that address in place of the capitalised word. So when a step says REGISTRAR, delete that word and paste the registrar address the previous step printed. Keep a notepad open, because you will need these addresses more than once.',
+        note: 'Also: every command below assumes your key is called "default". Find yours with:',
+        noteCommand: 'thru keys list',
+        verifyNote:
+          'If your key has a different name, add --fee-payer followed by that name to the end of every command in this guide.',
+      },
+      {
         title: 'Claim a root name',
         description:
-          'Pick something nobody else has taken. This is yours, and every subdomain lives under it. The command prints a registrar address, which represents ownership of the root.',
+          'Pick something nobody else has taken, replacing yourname with whatever you want. This root is yours, and every subdomain lives under it. The command prints a "Registrar account" address — copy it somewhere, you need it next.',
         command: 'thru nameservice init-root yourname',
-        note: 'If your key is not named "default", add --fee-payer yourkey to this and every command below.',
+        verify: 'thru nameservice derive-registrar-account yourname --json',
+        verifyNote: 'Prints the same registrar address, so you can always recover it later.',
       },
       {
         title: 'Create a subdomain',
         description:
-          'Subdomains are the part people actually use, like alice.yourname. Replace REGISTRAR with the address from the previous step. Watch the order here: the name comes first, then the registrar.',
+          'Subdomains are the part people actually use, like alice.yourname. Replace alice with the name you want, and replace REGISTRAR with the registrar address from the previous step. Note the order: the new name comes first, then the registrar. This prints a "Domain account" address, which you need for every step after this.',
         command: 'thru nameservice register-subdomain alice REGISTRAR',
-        note: 'Save the domain account address it prints.',
+        note: 'A worked example, so you can see the shape of a real one:',
+        noteCommand: 'thru nameservice register-subdomain alice tax0PQTXev5N-300fljcI0u2AYWb_x0txqDWAcS4fuFz88',
       },
       {
         title: 'Attach records',
         description:
-          'Records are labelled pieces of information attached to your name. Common ones are url for a website, com.twitter for a handle, and thru.pubkey so the name points at your account. You can add as many as you like, with any key names you want.',
+          'Records are labelled pieces of information attached to your name. Replace DOMAIN with the domain account address from the previous step. Common keys are url for a website, com.twitter for a handle, and thru.pubkey so the name points at your account. You can use any key name you like.',
         command: 'thru nameservice append-record DOMAIN url https://example.com',
-        note: 'Add more the same way:',
+        note: 'Add as many as you want, one at a time:',
         noteCommand: 'thru nameservice append-record DOMAIN com.twitter yourhandle',
       },
       {
         title: 'Check it worked',
         description:
-          'This shows everything attached to the name: the owner, the parent, and all records. You can also add --key url to look at just one record.',
+          'This shows everything attached to the name: the owner, the parent, and all records. Add --key url to look at just one.',
         command: 'thru nameservice resolve DOMAIN --json',
         note: 'Made a mistake? Remove a record with:',
         noteCommand: 'thru nameservice delete-record DOMAIN url',
@@ -1409,7 +1423,7 @@ function WallPage() {
           <section className="card">
             <div className="tabs" role="tablist" style={{ marginBottom: 18 }}>
               <button className="tab-btn" role="tab" aria-selected={tab === 'browser'} onClick={() => setTab('browser')}>Post here</button>
-              <button className="tab-btn" role="tab" aria-selected={tab === 'cli'} onClick={() => setTab('cli')}>Post from the CLI</button>
+              <button className="tab-btn" role="tab" aria-selected={tab === 'cli'} onClick={() => setTab('cli')}>Post from your terminal</button>
             </div>
             {tab === 'browser' ? <BrowserPostForm onPosted={load} /> : <CliPostForm />}
           </section>
