@@ -1276,52 +1276,11 @@ function CliPostForm() {
   )
 }
 
-// Ranks people by how many posts they signed themselves. Sponsored posts all
-// carry the site's key as poster, so they are indistinguishable from each
-// other and cannot be ranked — which is the point: the way onto this board is
-// to run the CLI and sign for yourself.
-function computeLeaderboard(entries) {
-  const byPoster = new Map()
-
-  for (const e of entries) {
-    if (!e.verified || !e.poster) continue
-
-    const seen = byPoster.get(e.poster)
-    if (!seen) {
-      byPoster.set(e.poster, {
-        poster: e.poster,
-        posts: 1,
-        // Whatever name they used most recently, since people rename
-        // themselves and the latest is the one they want shown.
-        name: e.name,
-        handle: e.handle,
-        latest: e.postedAtNs,
-      })
-      continue
-    }
-
-    seen.posts += 1
-    if (e.postedAtNs > seen.latest) {
-      seen.latest = e.postedAtNs
-      if (e.name) seen.name = e.name
-      if (e.handle) seen.handle = e.handle
-    }
-  }
-
-  return [...byPoster.values()].sort((a, b) => {
-    if (b.posts !== a.posts) return b.posts - a.posts
-    // Ties go to whoever got there first, so early posters are not displaced
-    // by someone who matched them later.
-    return a.latest < b.latest ? -1 : 1
-  })
-}
-
 // The numbers stay on screen; the lists behind them are opened on demand. Most
 // visitors come to post, not to read a table, so the page leads with the form
 // and keeps everything else one click away.
 function WallStats({ wall }) {
   const signed = wall.entries.filter((e) => e.verified).length
-  const board = computeLeaderboard(wall.entries)
 
   return (
     <div className="stats">
@@ -1334,54 +1293,10 @@ function WallStats({ wall }) {
         <span>signed by author</span>
       </div>
       <div className="stat">
-        <b>{board.length}</b>
-        <span>on the board</span>
+        <b>{wall.entries.length}<small style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 400 }}>/{wall.capacity}</small></b>
+        <span>slots filled</span>
       </div>
     </div>
-  )
-}
-
-function WallLeaderboard({ wall }) {
-  const board = computeLeaderboard(wall.entries)
-
-  return (
-    <>
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Leaderboard</h2>
-            <p className="sub">Only posts signed with your own key count</p>
-          </div>
-        </div>
-
-        {board.length === 0 ? (
-          <p className="fine" style={{ marginBottom: 0, lineHeight: 1.65 }}>
-            Nobody yet. Posts made through this page are paid for by ThruScan, so they all share one address and cannot be
-            told apart. Sign a post with your own key from the CLI tab and you take first place. The{' '}
-            <Link to="/guides">wallet guide</Link> covers getting set up.
-          </p>
-        ) : (
-          <div className="board">
-            {board.map((row, i) => (
-              <div className="board-row" key={row.poster}>
-                <span className="board-rank">{i + 1}</span>
-                <span className="board-who">
-                  <strong>
-                    {row.handle
-                      ? <a href={'https://x.com/' + row.handle} target="_blank" rel="noreferrer">@{row.handle}</a>
-                      : (row.name || 'Anonymous')}
-                  </strong>
-                  <span>{row.poster.slice(0, 10)}…{row.poster.slice(-6)}</span>
-                </span>
-                <span className="board-count">
-                  {row.posts} <span>{row.posts === 1 ? 'post' : 'posts'}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </>
   )
 }
 
@@ -1444,9 +1359,6 @@ function WallPage() {
             <button className="panel-btn" aria-expanded={panel === 'messages'} onClick={() => setPanel(panel === 'messages' ? null : 'messages')}>
               Messages <span className="caret">▼</span>
             </button>
-            <button className="panel-btn" aria-expanded={panel === 'board'} onClick={() => setPanel(panel === 'board' ? null : 'board')}>
-              Leaderboard <span className="caret">▼</span>
-            </button>
             <button className="btn ghost" onClick={load} disabled={loading} style={{ marginLeft: 'auto' }}>
               {loading ? 'Loading' : 'Refresh'}
             </button>
@@ -1454,8 +1366,6 @@ function WallPage() {
 
           {error && <p className="notice bad">{error}</p>}
           {loading && !wall && <p className="fine">Reading the wall</p>}
-
-          {wall && panel === 'board' && <WallLeaderboard wall={wall} />}
 
           {wall && panel === 'messages' && (
             <>
