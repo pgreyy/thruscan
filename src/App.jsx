@@ -23,8 +23,8 @@ const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
 
 const NAV = [
   { to: '/', label: 'Explorer' },
-  { to: '/wall', label: 'Wall' },
   { to: '/guides', label: 'Guides' },
+  { to: '/wall', label: 'Wall' },
   { to: '/projects', label: 'Projects' },
   { to: '/community', label: 'Community' },
   { to: '/updates', label: 'Updates' },
@@ -1169,13 +1169,21 @@ function BrowserPostForm({ onPosted }) {
 function CliPostForm() {
   const [who, setWho] = useState('')
   const [message, setMessage] = useState('')
+  // Remembered, because it is the same every time for a given person and
+  // retyping it is the sort of friction that stops people bothering.
+  const [keyName, setKeyName] = useState(() => localStorage.getItem('thruscan_keyname') || 'default')
+
+  const saveKeyName = (value) => {
+    setKeyName(value)
+    localStorage.setItem('thruscan_keyname', value)
+  }
 
   let command = null
   let problem = null
   try {
     if (message.trim().length > 0) {
       const hex = toHex(buildPostInstruction({ ...splitIdentity(who), message }))
-      command = `thru txn execute ${WALL_PROGRAM} ${hex} --readwrite-accounts ${WALL_ACCOUNT} --fee-payer default`
+      command = `thru txn execute ${WALL_PROGRAM} ${hex} --readwrite-accounts ${WALL_ACCOUNT} --fee-payer ${keyName || 'default'}`
     }
   } catch (e) {
     problem = e.message
@@ -1188,6 +1196,16 @@ function CliPostForm() {
         address is recorded from the transaction itself rather than typed in, so it is proven rather than claimed.
         You need a CLI wallet first, which the <Link to="/guides">wallet guide</Link> covers.
       </p>
+
+      <div className="form-row">
+        <label className="label">Your key name</label>
+        <input className="field mono" value={keyName} onChange={(e) => saveKeyName(e.target.value)} placeholder="default" />
+        <p className="fine" style={{ margin: '6px 0 0' }}>
+          Not sure? Run <span style={{ fontFamily: 'var(--mono)' }}>thru keys list</span> in your terminal and use the name
+          it shows. It is whatever you chose when you ran <span style={{ fontFamily: 'var(--mono)' }}>thru keys generate</span>,
+          which is often but not always "default".
+        </p>
+      </div>
 
       <div className="form-row">
         <label className="label">Who are you</label>
@@ -1210,8 +1228,9 @@ function CliPostForm() {
           <p className="caption">Run this in your terminal</p>
           <Code code={command} />
           <p className="fine" style={{ marginBottom: 0 }}>
-            Replace default with your key name if it is called something else. The long hex string is your message
-            encoded the way the program reads it.
+            The long hex string is your message encoded the way the program reads it. If it fails with "Fee payer account
+            not found", the key name is wrong or that key has no account on chain yet — step 5 of the wallet guide covers
+            creating one.
           </p>
         </>
       )}
