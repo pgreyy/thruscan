@@ -1412,6 +1412,7 @@ function WordleGame({ onFinished }) {
   const [status, setStatus] = useState('playing')
   const [shake, setShake] = useState(false)
   const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
+  const [nameSaved, setNameSaved] = useState(false)
   const [sending, setSending] = useState(false)
   const [signature, setSignature] = useState(null)
   const [error, setError] = useState(null)
@@ -1433,7 +1434,10 @@ function WordleGame({ onFinished }) {
         }),
       })
       const data = await res.json()
-      if (!data.ok) { setError(data.error || 'Could not record that game.'); return }
+      if (!data.ok) {
+        setError(data.detail ? `${data.error} (${data.detail})` : data.error || 'Could not record that game.')
+        return
+      }
       setSignature(data.signature)
       onFinished()
     } catch {
@@ -1517,13 +1521,25 @@ function WordleGame({ onFinished }) {
 
       <div className="form-row">
         <label className="label">Your name</label>
-        <input
-          className="field"
-          value={name}
-          onChange={(e) => { setName(e.target.value); localStorage.setItem('thruscan_player_name', e.target.value) }}
-          placeholder="Shown on the leaderboard"
-          maxLength={24}
-        />
+        <div className="inline">
+          <input
+            className="field"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setNameSaved(false) }}
+            placeholder="Shown on the leaderboard"
+            maxLength={24}
+          />
+          <button
+            className="btn ghost"
+            onClick={() => { localStorage.setItem('thruscan_player_name', name.trim()); setNameSaved(true) }}
+            disabled={!name.trim()}
+          >
+            {nameSaved ? 'Saved' : 'Save'}
+          </button>
+        </div>
+        <p className="fine" style={{ margin: '6px 0 0' }}>
+          Saved in this browser, so you only type it once — for this game and any others added later.
+        </p>
       </div>
 
       <div className="tiles" style={shake ? { animation: 'none' } : undefined}>{rows}</div>

@@ -135,14 +135,22 @@ export default async function handler(req, res) {
       },
       program: THRU_WORDLE_PROGRAM,
       accounts: { readWrite: [THRU_WORDLE_BOARD] },
-      header: { nonce, computeUnits: 300_000_000 },
+      // State and memory units default low enough to fail on a write, the
+      // same way INIT did. Ask explicitly rather than hoping.
+      header: { nonce, computeUnits: 300_000_000, stateUnits: 60_000, memoryUnits: 60_000 },
       instructionData: buildSubmitInstruction(checked),
     })
 
-    const signature = await client.transactions.send(signed.transaction ?? signed)
+    // rawTransaction is the wire-format Uint8Array. signed.transaction is a
+    // TransactionLike wrapper, which send() does not accept — passing it is
+    // what made every submission fail.
+    const signature = await client.transactions.send(signed.rawTransaction)
     return json(res, 200, { ok: true, signature })
   } catch (err) {
     console.error('wordle submit failed:', err)
-    return json(res, 502, { ok: false, error: 'Could not record that game. Try again.' })
+    // Surface the real reason. A generic message here means guessing at
+    // whether it was the key, the nonce, the transport or the program.
+    const detail = String(err?.message ?? err).slice(0, 300)
+    return json(res, 502, { ok: false, error: detail })
   }
 }
