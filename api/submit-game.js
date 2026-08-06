@@ -16,7 +16,10 @@
 //   THRU_RPC_URL           optional endpoint override
 
 import dns from 'node:dns'
-import { createThruClient } from '@thru/thru-sdk'
+// @thru/sdk, not the older @thru/thru-sdk. The 0.2.x line signs transactions
+// with a scheme the 0.3.x node rejects outright, which surfaces as "invalid
+// transaction signature" no matter how correct the rest of the request is.
+import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
 
 export const config = { runtime: 'nodejs' }

@@ -2,7 +2,7 @@
 //
 // Decoder for Thru name service account data.
 //
-// The @thru/thru-sdk has no nameservice module, so ThruScan fetches the raw
+// The SDK has no nameservice module, so ThruScan fetches the raw
 // account via ctx.accounts.get() and decodes the base64 `data` field here.
 //
 // Layout below was recovered from the thru CLI binary (thru-linux-x64 0.3.1),
@@ -50,7 +50,7 @@
 // 3 records). Every field below matched `thru nameservice resolve --json`
 // exactly, including the parent-then-owner ordering.
 
-import { Pubkey } from '@thru/thru-sdk'
+import { Pubkey } from '@thru/sdk'
 
 export const NS_KIND_ROOT_REGISTRAR = 1
 export const NS_KIND_DOMAIN = 2

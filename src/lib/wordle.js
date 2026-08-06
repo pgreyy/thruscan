@@ -27,7 +27,7 @@
 //   0x3d   5  last_answer
 //   0x42   1  last_guesses
 
-import { Pubkey } from '@thru/thru-sdk'
+import { Pubkey } from '@thru/sdk'
 
 export const WORD_LEN = 5
 export const MAX_GUESSES = 6

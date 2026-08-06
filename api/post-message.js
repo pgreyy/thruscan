@@ -18,7 +18,7 @@
 // Requires: npm i @connectrpc/connect-node
 
 import dns from 'node:dns'
-import { createThruClient } from '@thru/thru-sdk'
+import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
 
 export const config = { runtime: 'nodejs' }

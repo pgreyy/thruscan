@@ -31,7 +31,7 @@
 // be and that limit is not documented. The decoder works it out from the
 // account's own length.
 
-import { Pubkey } from '@thru/thru-sdk'
+import { Pubkey } from '@thru/sdk'
 
 export const WALL_VERSION = 1
 export const HEADER_SIZE = 41

@@ -6,7 +6,7 @@
 // call it directly. This function calls the node server to server and returns
 // plain JSON, so the browser only ever talks to thruscan.vercel.app.
 //
-// It also sidesteps a protocol problem. @thru/thru-sdk in the browser uses
+// It also sidesteps a protocol problem. The SDK in the browser uses
 // createGrpcWebTransport, but the node the CLI talks to (rpc.alphanet.thru.org)
 // speaks native gRPC over HTTP/2. Node can do both, so this function tries
 // native gRPC first and falls back to gRPC-Web, then remembers which worked.
@@ -25,7 +25,7 @@
 //   /api/rpc?action=endpoint      -> which endpoint/protocol is live
 
 import dns from 'node:dns'
-import { createThruClient } from '@thru/thru-sdk'
+import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
 
 export const config = { runtime: 'nodejs' }

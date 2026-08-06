@@ -36,7 +36,7 @@
 //   0x48    1  is_frozen (u8)
 //   ----      73 bytes total
 
-import { Pubkey } from '@thru/thru-sdk'
+import { Pubkey } from '@thru/sdk'
 
 export const MINT_ACCOUNT_SIZE = 115
 export const TOKEN_ACCOUNT_SIZE = 73

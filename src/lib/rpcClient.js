@@ -3,7 +3,7 @@
 // Browser side of the CORS fix. Replaces direct createThruClient() calls in
 // the Explorer with same-origin calls to /api/rpc.
 //
-// Nothing here imports @thru/thru-sdk, so the browser bundle no longer needs
+// Nothing here imports the SDK, so the browser bundle no longer needs
 // the SDK for reads at all. That also removes the risk of the SDK silently
 // falling back to its own DEFAULT_HOST, which is still hardcoded to the dead
 // grpc-web.alphanet.thruput.org.
