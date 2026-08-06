@@ -1053,16 +1053,27 @@ function ModeratePage() {
 
 /* ---------- the wall ---------- */
 
+// One field instead of two. The on-chain record still has separate name and
+// handle slots, but asking for both was clutter: almost everyone wants to be
+// known by one thing. A value that looks like an X handle goes in the handle
+// slot and renders as a link; anything else is treated as a plain name.
+function splitIdentity(value) {
+  const clean = (value ?? '').trim().replace(/^@/, '')
+  if (!clean) return { name: '', handle: '' }
+  return /^[A-Za-z0-9_]{1,15}$/.test(clean)
+    ? { name: '', handle: clean }
+    : { name: clean.slice(0, 24), handle: '' }
+}
+
 function WallEntry({ entry }) {
   return (
     <article className="card" style={{ marginBottom: 12 }}>
       <div className="card-head" style={{ marginBottom: 10 }}>
         <div>
           <h3 className="h2" style={{ fontSize: 14 }}>
-            {entry.name || 'Anonymous'}
-            {entry.handle && (
-              <> <a href={'https://x.com/' + entry.handle} target="_blank" rel="noreferrer" style={{ fontWeight: 400 }}>@{entry.handle}</a></>
-            )}
+            {entry.handle
+              ? <a href={'https://x.com/' + entry.handle} target="_blank" rel="noreferrer">@{entry.handle}</a>
+              : (entry.name || 'Anonymous')}
           </h3>
           <p className="sub">{entry.postedAt.toLocaleString()}</p>
         </div>
@@ -1079,8 +1090,7 @@ function WallEntry({ entry }) {
 }
 
 function BrowserPostForm({ onPosted }) {
-  const [name, setName] = useState('')
-  const [handle, setHandle] = useState('')
+  const [who, setWho] = useState('')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
@@ -1097,7 +1107,7 @@ function BrowserPostForm({ onPosted }) {
       const res = await fetch('/api/post-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, handle, message }),
+        body: JSON.stringify({ ...splitIdentity(who), message }),
       })
       const data = await res.json()
       if (!data.ok) { setError(data.error || 'That did not post.'); return }
@@ -1132,13 +1142,11 @@ function BrowserPostForm({ onPosted }) {
       </p>
 
       <div className="form-row">
-        <label className="label">Name</label>
-        <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" maxLength={NAME_CHARS} />
-      </div>
-
-      <div className="form-row">
-        <label className="label">X handle</label>
-        <input className="field" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="Optional, without the at sign" maxLength={HANDLE_CHARS} />
+        <label className="label">Who are you</label>
+        <input className="field" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Your X handle, or any name" maxLength={NAME_CHARS} />
+        <p className="fine" style={{ margin: '6px 0 0' }}>
+          Optional. An X handle becomes a link; anything else shows as plain text.
+        </p>
       </div>
 
       <div className="form-row">
@@ -1159,15 +1167,14 @@ function BrowserPostForm({ onPosted }) {
 }
 
 function CliPostForm() {
-  const [name, setName] = useState('')
-  const [handle, setHandle] = useState('')
+  const [who, setWho] = useState('')
   const [message, setMessage] = useState('')
 
   let command = null
   let problem = null
   try {
     if (message.trim().length > 0) {
-      const hex = toHex(buildPostInstruction({ name, handle, message }))
+      const hex = toHex(buildPostInstruction({ ...splitIdentity(who), message }))
       command = `thru txn execute ${WALL_PROGRAM} ${hex} --readwrite-accounts ${WALL_ACCOUNT} --fee-payer default`
     }
   } catch (e) {
@@ -1183,13 +1190,11 @@ function CliPostForm() {
       </p>
 
       <div className="form-row">
-        <label className="label">Name</label>
-        <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" maxLength={NAME_CHARS} />
-      </div>
-
-      <div className="form-row">
-        <label className="label">X handle</label>
-        <input className="field" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="Optional, without the at sign" maxLength={HANDLE_CHARS} />
+        <label className="label">Who are you</label>
+        <input className="field" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Your X handle, or any name" maxLength={NAME_CHARS} />
+        <p className="fine" style={{ margin: '6px 0 0' }}>
+          Optional. An X handle becomes a link; anything else shows as plain text.
+        </p>
       </div>
 
       <div className="form-row">
@@ -1305,10 +1310,9 @@ function WallLeaderboard({ wall }) {
                 <span className="board-rank">{i + 1}</span>
                 <span className="board-who">
                   <strong>
-                    {row.name || 'Anonymous'}
-                    {row.handle && (
-                      <> <a href={'https://x.com/' + row.handle} target="_blank" rel="noreferrer" style={{ fontWeight: 400 }}>@{row.handle}</a></>
-                    )}
+                    {row.handle
+                      ? <a href={'https://x.com/' + row.handle} target="_blank" rel="noreferrer">@{row.handle}</a>
+                      : (row.name || 'Anonymous')}
                   </strong>
                   <span>{row.poster.slice(0, 10)}…{row.poster.slice(-6)}</span>
                 </span>
@@ -1379,14 +1383,14 @@ function WallPage() {
 
           {wall && <WallStats wall={wall} />}
 
-          <div className="view-toggle">
-            <button aria-pressed={panel === 'messages'} onClick={() => setPanel(panel === 'messages' ? null : 'messages')}>
-              Messages
+          <div className="panel-toggle">
+            <button className="panel-btn" aria-expanded={panel === 'messages'} onClick={() => setPanel(panel === 'messages' ? null : 'messages')}>
+              Messages <span className="caret">▼</span>
             </button>
-            <button aria-pressed={panel === 'board'} onClick={() => setPanel(panel === 'board' ? null : 'board')}>
-              Leaderboard
+            <button className="panel-btn" aria-expanded={panel === 'board'} onClick={() => setPanel(panel === 'board' ? null : 'board')}>
+              Leaderboard <span className="caret">▼</span>
             </button>
-            <button onClick={load} disabled={loading} style={{ marginLeft: 'auto' }}>
+            <button className="btn ghost" onClick={load} disabled={loading} style={{ marginLeft: 'auto' }}>
               {loading ? 'Loading' : 'Refresh'}
             </button>
           </div>

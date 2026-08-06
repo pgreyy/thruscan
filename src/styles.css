@@ -620,6 +620,38 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .view-toggle { display: flex; align-items: center; gap: 4px; margin-bottom: 16px; }
 
+/* Panel toggles read as real buttons rather than faint tabs, because a
+   collapsed section nobody notices is the same as a section that is not
+   there. The caret says "this opens downward". */
+.panel-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+
+.panel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.panel-btn:hover { border-color: var(--ink); }
+
+.panel-btn[aria-expanded='true'] {
+  background: var(--ink);
+  color: var(--canvas);
+  border-color: var(--ink);
+}
+
+.panel-btn .caret { font-size: 9px; line-height: 1; transition: transform 0.15s; }
+.panel-btn[aria-expanded='true'] .caret { transform: rotate(180deg); }
+
 .view-toggle button {
   padding: 6px 13px;
   border: 1px solid var(--line);
