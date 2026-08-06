@@ -700,5 +700,46 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; }
 
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+
+.stat {
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+}
+
+.stat b { display: block; font-family: var(--mono); font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+.stat span { font-size: 11.5px; color: var(--muted); }
+
+.board { border-top: 1px solid var(--line); }
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.board-rank {
+  width: 26px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* Top three get the ink treatment. Beyond that a rank number is enough. */
+.board-row:nth-child(-n+3) .board-rank { color: var(--signal); }
+
+.board-who { flex: 1; min-width: 0; }
+.board-who strong { display: block; font-size: 14px; font-weight: 600; }
+.board-who span { font-size: 11.5px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+.board-count { font-family: var(--mono); font-size: 14px; font-weight: 600; flex-shrink: 0; }
+.board-count span { font-size: 11px; color: var(--muted); font-weight: 400; font-family: var(--sans); }
+
 .foot { margin-top: 34px; text-align: center; }
 .foot p { margin: 0 0 4px; }
