@@ -87,6 +87,8 @@ const GUIDES = [
         command: 'thru account create default',
         verify: 'thru --json getaccountinfo default',
         verifyNote: 'Returns account details instead of "not found".',
+        note:
+          'Worth knowing: alphanet resets from genesis whenever the network upgrades. When that happens your account, tokens and names all disappear and you run these steps again. Your keys stay on your computer, so it is only ever the on-chain side that resets.',
       },
       {
         title: 'Get free test tokens',
@@ -1323,6 +1325,9 @@ function GuideDetail({ guide, onBack }) {
             {isOpen && (
               <div className="step-body">
                 <p className="fine" style={{ marginTop: 0, lineHeight: 1.7 }}>{step.description}</p>
+                {step.warning && (
+                  <p className="notice bad" style={{ marginBottom: 14, lineHeight: 1.65 }}>{step.warning}</p>
+                )}
                 {step.linkUrl && <p><a href={step.linkUrl} target="_blank" rel="noreferrer" className="fine">{step.linkLabel} →</a></p>}
                 {step.command && <Code code={step.command} label={step.commandLabel || 'Run this'} />}
                 {step.note && <p className="caption">{step.note}</p>}
