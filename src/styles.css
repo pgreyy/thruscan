@@ -618,7 +618,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   .feed-list .post-body .fine { display: none; }
 }
 
-.view-toggle { display: flex; gap: 4px; margin-bottom: 16px; }
+.view-toggle { display: flex; align-items: center; gap: 4px; margin-bottom: 16px; }
 
 .view-toggle button {
   padding: 6px 13px;
@@ -701,6 +701,13 @@ textarea.field { resize: vertical; min-height: 84px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+
+@media (max-width: 479px) {
+  .stats { gap: 8px; }
+  .stat { padding: 11px 12px; }
+  .stat b { font-size: 17px; }
+  .stat span { font-size: 10.5px; }
+}
 
 .stat {
   background: var(--surface);

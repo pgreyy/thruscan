@@ -1254,27 +1254,36 @@ function computeLeaderboard(entries) {
   })
 }
 
+// The numbers stay on screen; the lists behind them are opened on demand. Most
+// visitors come to post, not to read a table, so the page leads with the form
+// and keeps everything else one click away.
+function WallStats({ wall }) {
+  const signed = wall.entries.filter((e) => e.verified).length
+  const board = computeLeaderboard(wall.entries)
+
+  return (
+    <div className="stats">
+      <div className="stat">
+        <b>{wall.totalPosted.toLocaleString()}</b>
+        <span>messages ever</span>
+      </div>
+      <div className="stat">
+        <b>{signed}</b>
+        <span>signed by author</span>
+      </div>
+      <div className="stat">
+        <b>{board.length}</b>
+        <span>on the board</span>
+      </div>
+    </div>
+  )
+}
+
 function WallLeaderboard({ wall }) {
   const board = computeLeaderboard(wall.entries)
-  const signed = wall.entries.filter((e) => e.verified).length
 
   return (
     <>
-      <div className="stats">
-        <div className="stat">
-          <b>{wall.totalPosted.toLocaleString()}</b>
-          <span>messages ever</span>
-        </div>
-        <div className="stat">
-          <b>{signed}</b>
-          <span>signed by author</span>
-        </div>
-        <div className="stat">
-          <b>{board.length}</b>
-          <span>on the board</span>
-        </div>
-      </div>
-
       <section className="card">
         <div className="card-head">
           <div>
@@ -1320,6 +1329,8 @@ function WallPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('browser')
+  // null keeps both lists closed on arrival.
+  const [panel, setPanel] = useState(null)
 
   const load = async () => {
     if (!WALL_ACCOUNT) { setLoading(false); return }
@@ -1366,31 +1377,41 @@ function WallPage() {
             {tab === 'browser' ? <BrowserPostForm onPosted={load} /> : <CliPostForm />}
           </section>
 
-          {wall && <WallLeaderboard wall={wall} />}
+          {wall && <WallStats wall={wall} />}
 
-          <div className="card-head" style={{ marginTop: 26 }}>
-            <div>
-              <h2 className="h2">Messages</h2>
-              {wall && (
-                <p className="sub">
-                  {wall.totalPosted.toLocaleString()} posted in total, showing the most recent {wall.entries.length} of {wall.capacity}
-                </p>
-              )}
-            </div>
-            <button className="btn ghost" onClick={load} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
+          <div className="view-toggle">
+            <button aria-pressed={panel === 'messages'} onClick={() => setPanel(panel === 'messages' ? null : 'messages')}>
+              Messages
+            </button>
+            <button aria-pressed={panel === 'board'} onClick={() => setPanel(panel === 'board' ? null : 'board')}>
+              Leaderboard
+            </button>
+            <button onClick={load} disabled={loading} style={{ marginLeft: 'auto' }}>
+              {loading ? 'Loading' : 'Refresh'}
+            </button>
           </div>
 
           {error && <p className="notice bad">{error}</p>}
           {loading && !wall && <p className="fine">Reading the wall</p>}
 
-          {wall && wall.entries.length === 0 && (
-            <div className="empty">
-              <p style={{ fontWeight: 600 }}>Nothing here yet</p>
-              <p className="fine">Be the first to write on it.</p>
-            </div>
-          )}
+          {wall && panel === 'board' && <WallLeaderboard wall={wall} />}
 
-          {wall && wall.entries.map((e) => <WallEntry key={`${e.slot}-${e.postedAtNs}`} entry={e} />)}
+          {wall && panel === 'messages' && (
+            <>
+              <p className="fine" style={{ marginTop: 0 }}>
+                Showing the most recent {wall.entries.length} of {wall.capacity} slots
+              </p>
+
+              {wall.entries.length === 0 ? (
+                <div className="empty">
+                  <p style={{ fontWeight: 600 }}>Nothing here yet</p>
+                  <p className="fine">Be the first to write on it.</p>
+                </div>
+              ) : (
+                wall.entries.map((e) => <WallEntry key={`${e.slot}-${e.postedAtNs}`} entry={e} />)
+              )}
+            </>
+          )}
         </>
       )}
 
