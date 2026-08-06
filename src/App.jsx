@@ -189,9 +189,19 @@ const GUIDES = [
           'If your key has a different name, add --fee-payer followed by that name to the end of every command in this guide.',
       },
       {
+        title: 'Check the name is free',
+        description:
+          'Names are first come, first served, and there is no search page. You check by working out what address a name would live at, then asking the chain whether anything is there. Run the first command with the name you want, copy the registrar_account it prints, and paste it into the second.',
+        command: 'thru nameservice derive-registrar-account yourname --json',
+        note: 'Then look that address up:',
+        noteCommand: 'thru getaccountinfo REGISTRAR --json',
+        verifyNote:
+          '"Account not found" means the name is free and yours to claim. If it returns account details instead, somebody already has it — pick another. You can also paste the registrar address into the Explorer tab on this site to see the same thing.',
+      },
+      {
         title: 'Claim a root name',
         description:
-          'Pick something nobody else has taken, replacing yourname with whatever you want. This root is yours, and every subdomain lives under it. The command prints a "Registrar account" address — copy it somewhere, you need it next.',
+          'Replace yourname with the name you just checked. This root is yours, and every subdomain lives under it. The command prints a "Registrar account" address — copy it somewhere, you need it next.',
         command: 'thru nameservice init-root yourname',
         verify: 'thru nameservice derive-registrar-account yourname --json',
         verifyNote: 'Prints the same registrar address, so you can always recover it later.',

@@ -456,6 +456,12 @@ textarea.field { resize: vertical; min-height: 84px; }
 .step-t { font-size: 13.5px; font-weight: 500; flex: 1; }
 .step-body { padding: 0 14px 14px; }
 
+/* Guide prose is instructions people follow while typing, not incidental
+   small print, so it gets more size and contrast than .fine does elsewhere. */
+.step-body .fine,
+.step-body p { font-size: 13.5px; line-height: 1.75; color: #494b52; }
+.step-body .caption { font-size: 12.5px; color: #5c5e66; margin: 12px 0 2px; }
+
 /* ---------- code ---------- */
 
 /* The copy button lives in a bar above the code, not inline with it. Long
