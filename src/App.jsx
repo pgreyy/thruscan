@@ -8,6 +8,10 @@ import {
   WORDS, WORD_LEN, MAX_GUESSES, randomWord, scoreGuess, keyboardState, pointsFor,
   getPlayerId, setPlayerId, isPlayerId, decodeBoard, rankByPoints, rankByStreak,
 } from './lib/wordle'
+import {
+  decodeGameBoard, findPlayer, applyMove, tileValue, rank2048,
+  STATUS_PLAYING, STATUS_OVER,
+} from './lib/game2048'
 import './styles.css'
 
 // All chain reads go through /api/rpc, a serverless function that talks to the
@@ -25,6 +29,7 @@ const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Unto-Labs/thru/release
 const WALL_PROGRAM = import.meta.env.VITE_THRU_WALL_PROGRAM || ''
 const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
 const WORDLE_BOARD = import.meta.env.VITE_THRU_WORDLE_BOARD || ''
+const G2048_BOARD = import.meta.env.VITE_THRU_2048_BOARD || ''
 
 const NAV = [
   { to: '/', label: 'Explorer', icon: 'search' },
@@ -1815,10 +1820,234 @@ function PlayerCode({ onChanged }) {
   )
 }
 
+/* ---------- 2048 ---------- */
+
+const DIR_KEYS = { ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3, a: 0, d: 1, w: 2, s: 3 }
+
+function Game2048() {
+  const [board, setBoard] = useState(null)      // whole account, decoded
+  const [me, setMe] = useState(null)            // my slot within it
+  const [local, setLocal] = useState(null)      // optimistic board between moves
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
+  // What pg actually wants to measure: how many transactions this game has
+  // fired and how long each took to come back.
+  const [sent, setSent] = useState(0)
+  const [times, setTimes] = useState([])
+  const touch = useRef(null)
+
+  const load = async () => {
+    if (!G2048_BOARD) return
+    try {
+      const account = await getAccount(G2048_BOARD)
+      const decoded = decodeGameBoard(account.data?.base64)
+      setBoard(decoded)
+      const mine = findPlayer(decoded, getPlayerId())
+      setMe(mine)
+      setLocal(mine ? mine.board : null)
+    } catch {
+      setError('Could not read the board.')
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const send = async (payload) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/move-2048', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: getPlayerId(), name: name.trim(), ...payload }),
+      })
+      const data = await res.json()
+
+      if (typeof data.ms === 'number') setTimes((t) => [...t.slice(-49), data.ms])
+      if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return false }
+      if (!data.noChange) setSent((n) => n + 1)
+      return true
+    } catch {
+      setError('Could not reach the server.')
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const newGame = async () => {
+    setSent(0)
+    setTimes([])
+    if (await send({ action: 'new' })) await load()
+  }
+
+  const move = async (dir) => {
+    if (busy || !local || me?.status !== STATUS_PLAYING) return
+
+    // Show the slide immediately. The spawned tile only appears once the chain
+    // has decided where it goes, which is the one thing we cannot predict.
+    const preview = applyMove(local, dir)
+    if (!preview.changed) return
+    setLocal(preview.board)
+
+    if (await send({ action: 'move', dir })) await load()
+    else await load() // reconcile even on failure, so the board never lies
+  }
+
+  useEffect(() => {
+    const onKey = (e) => {
+      const dir = DIR_KEYS[e.key]
+      if (dir === undefined) return
+      if (document.activeElement?.tagName === 'INPUT') return
+      e.preventDefault()
+      move(dir)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const onTouchStart = (e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY } }
+
+  const onTouchEnd = (e) => {
+    if (!touch.current) return
+    const dx = e.changedTouches[0].clientX - touch.current.x
+    const dy = e.changedTouches[0].clientY - touch.current.y
+    touch.current = null
+    // Ignore anything too small to be a deliberate swipe.
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : 0)
+    else move(dy > 0 ? 3 : 2)
+  }
+
+  const avg = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null
+  const cells = local ?? Array(16).fill(0)
+  const playing = me?.status === STATUS_PLAYING
+
+  return (
+    <>
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2 className="h2">2048</h2>
+            <p className="sub">Every swipe is its own transaction on Thru</p>
+          </div>
+          {me && <span className="pill tag">best {me.bestScore.toLocaleString()}</span>}
+        </div>
+
+        {!me && (
+          <div className="form-row">
+            <label className="label">Your name</label>
+            <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shown on the board" maxLength={24} />
+          </div>
+        )}
+
+        <div className="meter">
+          <span>score <b>{(me?.score ?? 0).toLocaleString()}</b></span>
+          <span>moves <b>{me?.moves ?? 0}</b></span>
+          <span>sent <b>{sent}</b></span>
+          {avg !== null && <span>avg <b>{avg}ms</b></span>}
+        </div>
+
+        <div className="grid2048" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          {cells.map((exp, i) => {
+            const value = tileValue(exp)
+            return (
+              <div className={`cell2048${value >= 4096 ? ' big' : ''}`} data-v={value || undefined} key={i}>
+                {value || ''}
+              </div>
+            )
+          })}
+        </div>
+
+        {playing && (
+          <div className="pad">
+            <button className="up" onClick={() => move(2)} disabled={busy} aria-label="Up">↑</button>
+            <button onClick={() => move(0)} disabled={busy} aria-label="Left">←</button>
+            <button onClick={() => move(3)} disabled={busy} aria-label="Down">↓</button>
+            <button onClick={() => move(1)} disabled={busy} aria-label="Right">→</button>
+          </div>
+        )}
+
+        <p className="fine" style={{ textAlign: 'center', marginTop: 0 }}>
+          {playing ? 'Swipe, use the arrow keys, or tap the pad.' : 'Start a game to play.'}
+        </p>
+
+        {me?.status === STATUS_OVER && (
+          <div className="result">
+            <h3>No moves left</h3>
+            <p className="fine" style={{ margin: '4px 0 0' }}>
+              {me.score.toLocaleString()} points over {me.moves} moves, all of them on chain.
+            </p>
+          </div>
+        )}
+
+        {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+
+        <button className="btn full" onClick={newGame} disabled={busy} style={{ marginTop: 12 }}>
+          {busy ? 'Working' : playing ? 'Start over' : 'New game'}
+        </button>
+      </section>
+
+      {board && (
+        <>
+          <div className="stats">
+            <div className="stat">
+              <b>{board.moves.toLocaleString()}</b>
+              <span>moves on chain</span>
+            </div>
+            <div className="stat">
+              <b>{board.entries.length}</b>
+              <span>players</span>
+            </div>
+            <div className="stat">
+              <b>{Math.max(0, ...board.entries.map((e) => e.bestScore)).toLocaleString()}</b>
+              <span>top score</span>
+            </div>
+          </div>
+
+          <section className="card">
+            <div className="card-head">
+              <div>
+                <h2 className="h2">Best scores</h2>
+                <p className="sub">Highest single game</p>
+              </div>
+              <button className="btn ghost" onClick={load} disabled={busy}>Refresh</button>
+            </div>
+
+            {board.entries.length === 0 ? (
+              <p className="fine" style={{ marginBottom: 0 }}>Nobody has played yet.</p>
+            ) : (
+              <div className="board">
+                {rank2048(board.entries).slice(0, 50).map((p, i) => (
+                  <div className={`board-row${p.id === getPlayerId() ? ' you' : ''}`} key={p.id}>
+                    <span className="board-rank">{i + 1}</span>
+                    <span className="board-who">
+                      <strong>{p.name || 'Anonymous'}{p.id === getPlayerId() && ' (you)'}</strong>
+                      <span>{p.games} {p.games === 1 ? 'game' : 'games'}, {p.moves} moves</span>
+                    </span>
+                    <span className="board-count">
+                      {p.bestScore.toLocaleString()}
+                      <span>best score</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </>
+  )
+}
+
 function GamesPage() {
+  const [game, setGame] = useState(() => localStorage.getItem('thruscan_game') || 'wordle')
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  const pick = (which) => { setGame(which); localStorage.setItem('thruscan_game', which) }
 
   const load = async () => {
     if (!WORDLE_BOARD) { setLoading(false); return }
@@ -1849,24 +2078,43 @@ function GamesPage() {
   return (
     <div className="wrap">
       <p className="eyebrow">Games</p>
-      <h1 className="h1">Thru Wordle</h1>
+      <h1 className="h1">{game === 'wordle' ? 'Thru Wordle' : 'Thru 2048'}</h1>
       <p className="lede">
-        Guess a five letter word in six tries. Every finished game is written to Thru by a program running on chain, and
-        the scoreboard below is read straight back out of it. No wallet needed, ThruScan pays.
+        {game === 'wordle'
+          ? 'Guess a five letter word in six tries. Every finished game is written to Thru by a program running on chain, and the scoreboard below is read straight back out of it. No wallet needed, ThruScan pays.'
+          : 'Slide tiles together to reach 2048. Every single swipe is its own transaction, and the board itself lives on chain between moves, so the chain is playing along rather than just keeping score.'}
       </p>
 
-      <WordleGame onFinished={load} />
+      <div className="view-toggle">
+        <button aria-pressed={game === 'wordle'} onClick={() => pick('wordle')}>Wordle</button>
+        <button aria-pressed={game === '2048'} onClick={() => pick('2048')}>2048</button>
+      </div>
+
+      {game === 'wordle' ? (
+        <>
+          <WordleGame onFinished={load} />
+          {error && <p className="notice bad">{error}</p>}
+          {loading && !board && <p className="fine">Reading the scoreboard</p>}
+          {board && <WordleBoard board={board} refresh={load} loading={loading} />}
+        </>
+      ) : (
+        <Game2048 />
+      )}
+
       <PlayerCode onChanged={load} />
 
-      {error && <p className="notice bad">{error}</p>}
-      {loading && !board && <p className="fine">Reading the scoreboard</p>}
-      {board && <WordleBoard board={board} refresh={load} loading={loading} />}
-
       <footer className="foot">
-        <p className="fine">
-          The program recomputes your score from the word and your guesses, so a claimed win has to come with the guess
-          that proves it. It cannot check which word you were given, since the game runs in your browser.
-        </p>
+        {game === 'wordle' ? (
+          <p className="fine">
+            The program recomputes your score from the word and your guesses, so a claimed win has to come with the guess
+            that proves it. It cannot check which word you were given, since the game runs in your browser.
+          </p>
+        ) : (
+          <p className="fine">
+            The chain does the sliding, merging, scoring and tile spawning. Nothing here reports a score — the board is
+            read back out of the account after every move, so what you see is what the chain computed.
+          </p>
+        )}
         <p className="fine">Scores reset whenever alphanet resets. Think of them as seasons.</p>
       </footer>
     </div>

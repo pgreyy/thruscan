@@ -857,6 +857,84 @@ textarea.field { resize: vertical; min-height: 84px; }
 .board-count { font-family: var(--mono); font-size: 14px; font-weight: 600; flex-shrink: 0; }
 .board-count span { font-size: 11px; color: var(--muted); font-weight: 400; font-family: var(--sans); }
 
+/* ---------- 2048 ---------- */
+
+.grid2048 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 8px;
+  background: #ddd9d2;
+  border-radius: var(--r-md);
+  max-width: 340px;
+  margin: 0 auto 16px;
+  touch-action: none; /* let swipes drive the game instead of scrolling */
+  user-select: none;
+}
+
+.cell2048 {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #eae7e1;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 21px;
+  color: var(--ink);
+  transition: background 0.1s;
+}
+
+/* Low tiles stay quiet; the ramp toward ink and then signal blue means the
+   board visibly heats up as you get further, without introducing new hues. */
+.cell2048[data-v='2']    { background: #e2dfd8; }
+.cell2048[data-v='4']    { background: #d8d4cb; }
+.cell2048[data-v='8']    { background: #c9c4b9; }
+.cell2048[data-v='16']   { background: #b4aea1; color: #fff; }
+.cell2048[data-v='32']   { background: #97907f; color: #fff; }
+.cell2048[data-v='64']   { background: #74705f; color: #fff; }
+.cell2048[data-v='128']  { background: var(--ink); color: var(--canvas); font-size: 18px; }
+.cell2048[data-v='256']  { background: #232a4a; color: #fff; font-size: 18px; }
+.cell2048[data-v='512']  { background: #26356e; color: #fff; font-size: 18px; }
+.cell2048[data-v='1024'] { background: #2a44a6; color: #fff; font-size: 15px; }
+.cell2048[data-v='2048'] { background: var(--signal); color: #fff; font-size: 15px; }
+.cell2048.big            { font-size: 14px; }
+
+.pad {
+  display: grid;
+  grid-template-columns: repeat(3, 46px);
+  grid-template-rows: repeat(2, 46px);
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.pad button {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 16px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.pad button:disabled { opacity: 0.4; cursor: not-allowed; }
+.pad .up { grid-column: 2; }
+
+.meter {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.meter b { color: var(--ink); font-weight: 700; }
+
 /* ---------- wordle ---------- */
 
 /* The tile area doubles as a text field. An invisible input sits over it, so
