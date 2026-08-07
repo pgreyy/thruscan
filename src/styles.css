@@ -196,11 +196,12 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
      rather than sliding it off screen. */
   .rail { transform: translateX(0); }
   .rail[data-open='false'] { width: 62px; padding-left: 10px; padding-right: 10px; }
-  .rail[data-open='false'] .brand-name,
+  /* Collapsed, the brand and labels go but the toggle must stay — hiding it
+     leaves no way to open the rail again. */
+  .rail[data-open='false'] .brand,
   .rail[data-open='false'] .rail-link span,
   .rail[data-open='false'] .rail-foot { display: none; }
   .rail[data-open='false'] .rail-top { justify-content: center; padding-left: 0; }
-  .rail[data-open='false'] .nav-toggle { display: none; }
   .rail[data-open='false'] .rail-link { justify-content: center; padding: 10px 0; }
 
   .main { margin-left: var(--rail); padding: 34px 32px 56px; transition: margin-left 0.18s ease; }
