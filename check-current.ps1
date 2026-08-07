@@ -79,24 +79,85 @@ $local = (git rev-parse --short HEAD)
 Write-Host ("  {0,-38}{1}" -f "local commit", $local) -ForegroundColor Gray
 
 Write-Host ""
-Write-Host "Live site" -ForegroundColor White
+Write-Host "Deployed configuration" -ForegroundColor White
 Write-Host ("-" * 52) -ForegroundColor DarkGray
 
-# The endpoints only answer if they exist in the deployed build, so a 404 here
-# means the push has not gone out yet.
-foreach ($api in @("rpc?action=endpoint", "get-content")) {
-  Write-Host ("  {0,-38}" -f "/api/$($api.Split('?')[0])") -NoNewline
+# Each endpoint answers differently depending on whether its environment
+# variables exist. Sending a deliberately invalid payload separates the two:
+# a 503 means the variables are missing, a 400 means it got far enough to
+# reject the payload, which is exactly what a configured endpoint does.
+$endpoints = @(
+  @{ path = "register-name"; label = "names (thruid)" },
+  @{ path = "move-2048";     label = "2048" },
+  @{ path = "submit-game";   label = "wordle" },
+  @{ path = "post-message";  label = "wall" }
+)
+
+$unconfigured = 0
+foreach ($e in $endpoints) {
+  Write-Host ("  {0,-38}" -f $e.label) -NoNewline
   try {
-    $null = Invoke-RestMethod "https://thruscan.vercel.app/api/$api" -TimeoutSec 15
-    Write-Host "live" -ForegroundColor Green
+    $null = Invoke-RestMethod "https://thruscan.vercel.app/api/$($e.path)" -Method Post `
+      -ContentType "application/json" -Body '{}' -TimeoutSec 20
+    Write-Host "unexpected pass" -ForegroundColor Yellow
   } catch {
-    Write-Host "not there" -ForegroundColor Red
+    $code = $_.Exception.Response.StatusCode.value__
+    switch ($code) {
+      400 { Write-Host "configured" -ForegroundColor Green }
+      429 { Write-Host "configured (rate limited)" -ForegroundColor Green }
+      503 { Write-Host "ENV VARS MISSING" -ForegroundColor Red; $unconfigured++ }
+      404 { Write-Host "NOT DEPLOYED" -ForegroundColor Red; $unconfigured++ }
+      default { Write-Host "HTTP $code" -ForegroundColor Yellow }
+    }
   }
 }
 
 Write-Host ""
-if ($missing -eq 0 -and -not $dirty) {
-  Write-Host "  Everything on disk is current and committed." -ForegroundColor Green
+Write-Host "Deployed front end" -ForegroundColor White
+Write-Host ("-" * 52) -ForegroundColor DarkGray
+
+# VITE_ variables are compiled into the bundle at build time, so the only way
+# to know they took is to look inside the JavaScript the site is serving.
+try {
+  $html = (Invoke-WebRequest "https://thruscan.vercel.app/" -TimeoutSec 20 -UseBasicParsing).Content
+  $asset = [regex]::Match($html, 'src="(/assets/[^"]+\.js)"').Groups[1].Value
+
+  if (-not $asset) {
+    Write-Host "  could not find the bundle to inspect" -ForegroundColor Yellow
+  } else {
+    $js = (Invoke-WebRequest "https://thruscan.vercel.app$asset" -TimeoutSec 30 -UseBasicParsing).Content
+
+    $baked = [ordered]@{
+      "wall account"     = "taq-jVKlLJwPlmwGdgzC0aVccr8u-OwkRPuAUJNDBHn7c4"
+      "wordle board"     = "taBkrwefMZJB_eBROeib98YKLWJVfqFk0res1Idjk5VggB"
+      "2048 board"       = "ta5pJNlm-pH-IcgLkZKfRYD-2bD6H8InvY6HIFOzpE0aSc"
+      "name registry"    = "takVGpRqWnanA6R1R_IjPBCkCMkP_dwRxTYd6tguNPe8Ox"
+    }
+
+    foreach ($k in $baked.Keys) {
+      Write-Host ("  {0,-38}" -f "VITE $k") -NoNewline
+      if ($js.Contains($baked[$k])) { Write-Host "in bundle" -ForegroundColor Green }
+      else { Write-Host "MISSING" -ForegroundColor Red; $unconfigured++ }
+    }
+
+    # Something only the newest build contains, to catch a stale deploy.
+    Write-Host ("  {0,-38}" -f "identity panel shipped") -NoNewline
+    if ($js.Contains("Claim a name")) { Write-Host "yes" -ForegroundColor Green }
+    else { Write-Host "OLD BUILD" -ForegroundColor Red; $unconfigured++ }
+  }
+} catch {
+  Write-Host "  could not read the deployed site" -ForegroundColor Yellow
+}
+
+Write-Host ""
+if ($missing -eq 0 -and -not $dirty -and $unconfigured -eq 0) {
+  Write-Host "  Everything is current, committed and live." -ForegroundColor Green
+} elseif ($unconfigured -gt 0 -and $missing -eq 0 -and -not $dirty) {
+  Write-Host "  Code is current, but $unconfigured thing(s) are not live yet." -ForegroundColor Yellow
+  Write-Host "  ENV VARS MISSING -> add them in Vercel, then redeploy." -ForegroundColor Yellow
+  Write-Host "  MISSING from bundle -> a VITE_ variable was added after the last" -ForegroundColor Yellow
+  Write-Host "  build, so push an empty commit to rebuild:" -ForegroundColor Yellow
+  Write-Host "    git commit --allow-empty -m rebuild; git push" -ForegroundColor Yellow
 } elseif ($missing -gt 0) {
   Write-Host "  $missing file(s) are older than the versions you were given." -ForegroundColor Yellow
   Write-Host "  Check C:\Users\hp for numbered downloads like 'App (1).jsx'." -ForegroundColor Yellow
