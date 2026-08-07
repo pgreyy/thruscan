@@ -15,6 +15,7 @@ Set-Location $repo
 # is older than the version you were given.
 $markers = [ordered]@{
   "src/lib/game2048.js  RNG mirror"        = @("src\lib\game2048.js", "export function spawnTile")
+  "src/App.jsx          no-bounce guard"   = @("src\App.jsx", "movesMade.current")
   "src/App.jsx          move queue"        = @("src\App.jsx", "draining.current")
   "src/App.jsx          tx history toggle" = @("src\App.jsx", "showHistory")
   "src/App.jsx          game picker cards" = @("src\App.jsx", "game-picker")

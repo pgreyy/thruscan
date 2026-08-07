@@ -1855,6 +1855,9 @@ function Game2048() {
   // the board run ahead while transactions go out one at a time.
   const queue = useRef([])
   const draining = useRef(false)
+  // How many moves this browser has made. The chain's own count is compared
+  // against it before its board is ever adopted.
+  const movesMade = useRef(0)
 
   const remember = (signature) => {
     setHistory((prev) => {
@@ -1874,17 +1877,24 @@ function Game2048() {
       const mine = findPlayer(decoded, getPlayerId())
       setMe(mine)
 
-      // Only adopt the chain's board when nothing is in flight, otherwise it
-      // would overwrite moves that simply have not landed yet.
-      if (adopt && mine && queue.current.length === 0 && !draining.current) {
+      // Adopting a board that is behind ours is what made moves bounce: a
+      // transaction returns once it is SUBMITTED, not once it has run, so the
+      // account often still shows the previous position. Only take the chain's
+      // version when its move count has caught up with ours.
+      const caughtUp = mine && mine.moves >= movesMade.current
+      if (adopt && mine && caughtUp && queue.current.length === 0 && !draining.current) {
+        movesMade.current = mine.moves
         setLocal(mine.board)
         setRng(mine.rng)
         setScore(mine.score)
         setMoves(mine.moves)
         setOver(mine.status === STATUS_OVER)
+        return true
       }
+      return false
     } catch {
       setError('Could not read the board.')
+      return false
     }
   }
 
@@ -1922,21 +1932,34 @@ function Game2048() {
 
     draining.current = false
     setPending(0)
-    // Everything has landed, so it is safe to check the chain agrees.
-    load()
+
+    // Everything has been sent, but the last one may still be executing. Check
+    // back a few times; load() refuses to adopt anything that is behind, so a
+    // slow block simply means we keep our own board a little longer.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (queue.current.length > 0) return   // playing again already
+      if (await load()) return
+      await new Promise((r) => setTimeout(r, 1200))
+    }
   }
 
   const newGame = async () => {
     setStarting(true)
     setError(null)
     queue.current = []
+    movesMade.current = 0
     setSent(0)
     setTimes([])
     try {
       const data = await post({ action: 'new' })
       if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
       if (data.signature) remember(data.signature)
-      await load()
+      // A new game resets the chain's move count to zero, so wait for it to
+      // actually appear rather than adopting the previous game's board.
+      for (let attempt = 0; attempt < 8; attempt++) {
+        if (await load()) break
+        await new Promise((r) => setTimeout(r, 900))
+      }
     } catch {
       setError('Could not reach the server.')
     } finally {
@@ -1956,6 +1979,7 @@ function Game2048() {
     setRng(spawned.rng)
     setScore((s) => s + slid.gained)
     setMoves((m) => m + 1)
+    movesMade.current += 1
 
     // Cheap local check so the board stops accepting input the moment it is
     // finished, rather than waiting for the chain to say so.
