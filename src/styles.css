@@ -60,14 +60,33 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 .shell { min-height: 100%; }
 
+/* The rail is one element in three states: a full sidebar, a collapsed strip
+   of icons, and a slide-in drawer on small screens. Keeping it as one element
+   means the nav markup exists once rather than being duplicated per layout. */
 .rail {
   position: fixed;
   inset: 0 auto 0 0;
+  z-index: 40;
   width: var(--rail);
-  padding: 22px 16px;
-  display: none;
+  padding: 18px 12px;
+  background: var(--canvas);
+  display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  transform: translateX(-100%);
+  transition: transform 0.22s ease, width 0.18s ease;
+  overflow: hidden;
+}
+
+.rail[data-open='true'] { transform: translateX(0); }
+
+.rail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-left: 6px;
 }
 
 .brand {
@@ -76,8 +95,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   gap: 9px;
   text-decoration: none;
   color: var(--ink);
-  padding: 0 10px;
-  margin-bottom: 22px;
+  min-width: 0;
 }
 
 .brand-mark {
@@ -94,20 +112,39 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   flex-shrink: 0;
 }
 
-.brand-name { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.brand-name { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; }
+
+.nav-toggle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nav-toggle:hover { background: rgba(22, 24, 29, 0.06); color: var(--ink); }
 
 .rail-link {
-  display: block;
-  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
   border-radius: var(--r-sm);
   font-size: 14px;
   font-weight: 500;
   color: var(--muted);
   text-decoration: none;
+  white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
 
-.rail-link:hover { color: var(--ink); background: rgba(22, 24, 29, 0.04); }
+.rail-link svg { flex-shrink: 0; }
+.rail-link:hover { color: var(--ink); background: rgba(22, 24, 29, 0.05); }
 
 .rail-link[aria-current='page'] {
   background: var(--surface);
@@ -118,7 +155,17 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 .rail-foot { margin-top: auto; padding: 0 10px; }
 
-.main { padding: 22px 16px 92px; }
+/* Dimming layer behind the drawer. Only ever shown on small screens. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(22, 24, 29, 0.34);
+  border: 0;
+  cursor: pointer;
+}
+
+.main { padding: 22px 16px 40px; }
 
 .wrap { max-width: 720px; margin: 0 auto; }
 .wrap-wide { max-width: 940px; margin: 0 auto; }
@@ -139,41 +186,28 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   border-bottom: 1px solid var(--line);
 }
 
-.tabbar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--line);
-  padding-bottom: env(safe-area-inset-bottom);
-}
 
-.tab {
-  padding: 10px 2px 12px;
-  text-align: center;
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--muted);
-  text-decoration: none;
-  border-top: 2px solid transparent;
-  margin-top: -1px;
-}
-
-.tab[aria-current='page'] { color: var(--signal); border-top-color: var(--signal); font-weight: 600; }
 
 /* Desktop overrides live AFTER the mobile rules on purpose. These selectors
    have the same specificity as the ones above, so source order decides the
    winner. Move this block earlier and both navigations render at once. */
 @media (min-width: 900px) {
-  .rail { display: flex; }
-  .main { margin-left: var(--rail); padding: 34px 32px 56px; }
+  /* On desktop the rail is always present; open and closed change its width
+     rather than sliding it off screen. */
+  .rail { transform: translateX(0); }
+  .rail[data-open='false'] { width: 62px; padding-left: 10px; padding-right: 10px; }
+  .rail[data-open='false'] .brand-name,
+  .rail[data-open='false'] .rail-link span,
+  .rail[data-open='false'] .rail-foot { display: none; }
+  .rail[data-open='false'] .rail-top { justify-content: center; padding-left: 0; }
+  .rail[data-open='false'] .nav-toggle { display: none; }
+  .rail[data-open='false'] .rail-link { justify-content: center; padding: 10px 0; }
+
+  .main { margin-left: var(--rail); padding: 34px 32px 56px; transition: margin-left 0.18s ease; }
+  .main[data-nav='false'] { margin-left: 62px; }
+
   .topbar { display: none; }
-  .tabbar { display: none; }
+  .scrim { display: none; }
 }
 
 /* ---------- status ---------- */

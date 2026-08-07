@@ -175,13 +175,33 @@ const ID_KEY = 'thruscan_player_id'
  */
 export function getPlayerId() {
   let hex = localStorage.getItem(ID_KEY)
-  if (hex && /^[0-9a-f]{16}$/.test(hex)) return hex
+  if (isPlayerId(hex)) return hex
 
   const bytes = new Uint8Array(8)
   crypto.getRandomValues(bytes)
   hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
   localStorage.setItem(ID_KEY, hex)
   return hex
+}
+
+export function isPlayerId(value) {
+  return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value) && value !== '0000000000000000'
+}
+
+/**
+ * Adopt an id from another device. This is what makes progress portable
+ * without anyone needing a wallet: the id is the account, so copying it
+ * carries the scores with it.
+ *
+ * The tradeoff is honest and worth stating on the page — anyone holding the
+ * code can play as you. For a casual scoreboard that is the right trade
+ * against making people create a keypair before their first game.
+ */
+export function setPlayerId(value) {
+  const clean = (value ?? '').trim().toLowerCase().replace(/[^0-9a-f]/g, '')
+  if (!isPlayerId(clean)) return null
+  localStorage.setItem(ID_KEY, clean)
+  return clean
 }
 
 /* ---------- decoding ---------- */

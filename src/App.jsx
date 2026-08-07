@@ -6,7 +6,7 @@ import { decodeTokenProgramAccount, formatAmount } from './lib/token'
 import { decodeWall, buildPostInstruction, toHex, MESSAGE_CHARS, NAME_CHARS, HANDLE_CHARS } from './lib/wall'
 import {
   WORDS, WORD_LEN, MAX_GUESSES, randomWord, scoreGuess, keyboardState, pointsFor,
-  getPlayerId, decodeBoard, rankByPoints, rankByStreak,
+  getPlayerId, setPlayerId, isPlayerId, decodeBoard, rankByPoints, rankByStreak,
 } from './lib/wordle'
 import './styles.css'
 
@@ -27,14 +27,37 @@ const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
 const WORDLE_BOARD = import.meta.env.VITE_THRU_WORDLE_BOARD || ''
 
 const NAV = [
-  { to: '/', label: 'Explorer' },
-  { to: '/wall', label: 'Wall' },
-  { to: '/games', label: 'Games' },
-  { to: '/guides', label: 'Guides' },
-  { to: '/projects', label: 'Projects' },
-  { to: '/community', label: 'Community' },
-  { to: '/updates', label: 'Updates' },
+  { to: '/', label: 'Explorer', icon: 'search' },
+  { to: '/wall', label: 'Wall', icon: 'message' },
+  { to: '/games', label: 'Games', icon: 'game' },
+  { to: '/guides', label: 'Guides', icon: 'book' },
+  { to: '/projects', label: 'Projects', icon: 'box' },
+  { to: '/community', label: 'Community', icon: 'users' },
+  { to: '/updates', label: 'Updates', icon: 'bell' },
 ]
+
+/* Inline rather than an icon package: seven glyphs is not worth a dependency,
+   and these inherit currentColor so they follow the link states for free. */
+const ICON_PATHS = {
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2',
+  message: 'M4 5h16v11H8l-4 3V5z',
+  game: 'M7 12h4M9 10v4M15.5 11.5h.01M18 13.5h.01M3.5 15.5 5 9a3 3 0 0 1 3-2.4h8A3 3 0 0 1 19 9l1.5 6.5a2.4 2.4 0 0 1-4.2 2L15 16H9l-1.3 1.5a2.4 2.4 0 0 1-4.2-2z',
+  book: 'M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 3V4zM17 7h2v16H8',
+  box: 'M12 3 4 7v10l8 4 8-4V7l-8-4zM4 7l8 4 8-4M12 11v10',
+  users: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M17 11.2a3.2 3.2 0 0 0 0-6.4M18.5 20h3a6.2 6.2 0 0 0-3-5.3',
+  bell: 'M12 3a6 6 0 0 0-6 6c0 5-2 6-2 6h16s-2-1-2-6a6 6 0 0 0-6-6zM10.5 21a1.9 1.9 0 0 0 3 0',
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  panel: 'M4 5h16v14H4zM10 5v14',
+}
+
+function Icon({ name, size = 17 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  )
+}
 
 /* ---------- guide content ----------
    Written for someone who has never used a terminal for this before. Every
@@ -474,28 +497,71 @@ function Shell({ children }) {
   const { pathname } = useLocation()
   const current = (to) => (pathname === to ? 'page' : undefined)
 
+  const isSmall = () => typeof window !== 'undefined' && window.innerWidth < 900
+
+  // Desktop remembers your choice; small screens always start closed, because
+  // a drawer covering the page on arrival helps nobody.
+  const [open, setOpen] = useState(() => {
+    if (isSmall()) return false
+    return localStorage.getItem('thruscan_nav') !== 'closed'
+  })
+
+  const toggle = () => {
+    setOpen((was) => {
+      const next = !was
+      if (!isSmall()) localStorage.setItem('thruscan_nav', next ? 'open' : 'closed')
+      return next
+    })
+  }
+
+  // Following a link on a small screen should put the drawer away again.
+  const follow = () => { if (isSmall()) setOpen(false) }
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && isSmall()) setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <div className="shell">
-      <nav className="rail">
-        <Link to="/" className="brand"><Brand /></Link>
+      {open && <button className="scrim" aria-label="Close menu" onClick={() => setOpen(false)} />}
+
+      <nav className="rail" data-open={open}>
+        <div className="rail-top">
+          <Link to="/" className="brand" onClick={follow}>
+            <span className="brand-mark">T</span>
+            <span className="brand-name">ThruScan</span>
+          </Link>
+          <button className="nav-toggle" onClick={toggle} aria-label="Collapse menu">
+            <Icon name="panel" size={18} />
+          </button>
+        </div>
+
         {NAV.map((l) => (
-          <Link key={l.to} to={l.to} className="rail-link" aria-current={current(l.to)}>{l.label}</Link>
+          <Link key={l.to} to={l.to} className="rail-link" aria-current={current(l.to)} onClick={follow} title={l.label}>
+            <Icon name={l.icon} />
+            <span>{l.label}</span>
+          </Link>
         ))}
+
         <div className="rail-foot"><NetworkStatus /></div>
       </nav>
 
       <header className="topbar">
-        <Link to="/" className="brand" style={{ margin: 0 }}><Brand /></Link>
+        <div className="inline" style={{ gap: 6 }}>
+          <button className="nav-toggle" onClick={toggle} aria-label="Open menu">
+            <Icon name="menu" size={19} />
+          </button>
+          <Link to="/" className="brand">
+            <span className="brand-mark">T</span>
+            <span className="brand-name">ThruScan</span>
+          </Link>
+        </div>
         <NetworkStatus />
       </header>
 
-      <main className="main">{children}</main>
-
-      <nav className="tabbar">
-        {NAV.map((l) => (
-          <Link key={l.to} to={l.to} className="tab" aria-current={current(l.to)}>{l.label}</Link>
-        ))}
-      </nav>
+      <main className="main" data-nav={open}>{children}</main>
     </div>
   )
 }
@@ -1412,7 +1478,9 @@ function WordleGame({ onFinished }) {
   const [status, setStatus] = useState('playing')
   const [shake, setShake] = useState(false)
   const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
-  const [nameSaved, setNameSaved] = useState(false)
+  // Saved state is derived from what is actually stored, so a reload shows
+  // "Saved" instead of asking you to save the same name again.
+  const [nameSaved, setNameSaved] = useState(() => Boolean(localStorage.getItem('thruscan_player_name')))
   const [sending, setSending] = useState(false)
   const [signature, setSignature] = useState(null)
   const [error, setError] = useState(null)
@@ -1525,7 +1593,10 @@ function WordleGame({ onFinished }) {
           <input
             className="field"
             value={name}
-            onChange={(e) => { setName(e.target.value); setNameSaved(false) }}
+            onChange={(e) => {
+              setName(e.target.value)
+              setNameSaved(e.target.value.trim() === (localStorage.getItem('thruscan_player_name') || ''))
+            }}
             placeholder="Shown on the leaderboard"
             maxLength={24}
           />
@@ -1641,6 +1712,84 @@ function WordleBoard({ board, refresh, loading }) {
   )
 }
 
+/**
+ * Your scores live against a code generated in this browser, so a different
+ * device looks like a different person. Showing the code and letting it be
+ * pasted elsewhere makes progress portable without anyone needing a wallet
+ * before their first game.
+ */
+function PlayerCode({ onChanged }) {
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState(getPlayerId)
+  const [entry, setEntry] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(null)
+
+  const copy = () => {
+    navigator.clipboard?.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
+  const restore = () => {
+    const next = setPlayerId(entry)
+    if (!next) { setError('That does not look like a player code.'); return }
+    setCode(next)
+    setEntry('')
+    setError(null)
+    onChanged()
+  }
+
+  return (
+    <section className="card">
+      <button className="disclose" onClick={() => setOpen(!open)}>
+        <div>
+          <h2 className="h2">Play on another device</h2>
+          <p className="sub">Carry your scores between phone and laptop</p>
+        </div>
+        <span className="chev">{open ? '\u2212' : '+'}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 16 }}>
+          <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
+            Your scores are tied to this code, not to your name. Copy it, paste it into ThruScan on another device, and
+            your points and streak follow you. Anyone with the code can play as you, so treat it like a password.
+          </p>
+
+          <div className="form-row">
+            <label className="label">Your code</label>
+            <div className="inline">
+              <input className="field mono" value={code} readOnly />
+              <button className="btn ghost" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <label className="label">Use a code from another device</label>
+            <div className="inline">
+              <input
+                className="field mono"
+                value={entry}
+                onChange={(e) => { setEntry(e.target.value); setError(null) }}
+                placeholder="Paste the code here"
+              />
+              <button className="btn ghost" onClick={restore} disabled={!isPlayerId(entry.trim().toLowerCase())}>
+                Use it
+              </button>
+            </div>
+            <p className="fine" style={{ margin: '6px 0 0' }}>
+              This replaces the code on this device. Copy the current one first if you want to keep it.
+            </p>
+          </div>
+
+          {error && <p className="notice bad" style={{ marginBottom: 0 }}>{error}</p>}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function GamesPage() {
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1682,6 +1831,7 @@ function GamesPage() {
       </p>
 
       <WordleGame onFinished={load} />
+      <PlayerCode onChanged={load} />
 
       {error && <p className="notice bad">{error}</p>}
       {loading && !board && <p className="fine">Reading the scoreboard</p>}
