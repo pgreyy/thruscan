@@ -15,7 +15,7 @@ Set-Location $repo
 # is older than the version you were given.
 $markers = [ordered]@{
   "src/lib/identity.js  registry"        = @("src\lib\identity.js", "decodeRegistry")
-  "api/register-name.js exists"           = @("api\register-name.js", "buildRegister")
+  "api/play.js          merged"           = @("api\play.js", "2048-move")
   "src/App.jsx          identity panel"   = @("src\App.jsx", "function Identity")
   "src/lib/game2048.js  RNG mirror"        = @("src\lib\game2048.js", "export function spawnTile")
   "src/App.jsx          no-bounce guard"   = @("src\App.jsx", "movesMade.current")
@@ -27,8 +27,6 @@ $markers = [ordered]@{
   "src/App.jsx          icon nav"          = @("src\App.jsx", "function Icon(")
   "src/styles.css       2048 board"        = @("src\styles.css", ".grid2048")
   "src/styles.css       picker cards"      = @("src\styles.css", ".game-picker")
-  "api/move-2048.js     exists"            = @("api\move-2048.js", "buildMove")
-  "api/submit-game.js   new SDK"           = @("api\submit-game.js", "@thru/sdk")
   "api/post-message.js  new SDK"           = @("api\post-message.js", "@thru/sdk")
   "api/rpc.js           new SDK"           = @("api\rpc.js", "@thru/sdk")
 }
@@ -87,10 +85,8 @@ Write-Host ("-" * 52) -ForegroundColor DarkGray
 # a 503 means the variables are missing, a 400 means it got far enough to
 # reject the payload, which is exactly what a configured endpoint does.
 $endpoints = @(
-  @{ path = "register-name"; label = "names (thruid)" },
-  @{ path = "move-2048";     label = "2048" },
-  @{ path = "submit-game";   label = "wordle" },
-  @{ path = "post-message";  label = "wall" }
+  @{ path = "play";         label = "games and names" },
+  @{ path = "post-message"; label = "wall" }
 )
 
 $unconfigured = 0

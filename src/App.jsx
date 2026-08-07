@@ -1497,10 +1497,11 @@ function WordleGame({ onFinished, registry }) {
     setSending(true)
     setError(null)
     try {
-      const res = await fetch('/api/submit-game', {
+      const res = await fetch('/api/play', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'wordle',
           playerId: getPlayerId(),
           name: myName,
           answer,
@@ -1766,10 +1767,10 @@ function Identity({ registry, onChanged }) {
     setError(null)
     setDone(null)
     try {
-      const res = await fetch('/api/register-name', {
+      const res = await fetch('/api/play', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId: code, name: name.trim() }),
+        body: JSON.stringify({ action: 'register', playerId: code, name: name.trim() }),
       })
       const data = await res.json()
       if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
@@ -1954,7 +1955,7 @@ function Game2048({ registry }) {
   useEffect(() => { load() }, [])
 
   const post = async (payload) => {
-    const res = await fetch('/api/move-2048', {
+    const res = await fetch('/api/play', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId: getPlayerId(), name: myName, ...payload }),
@@ -1970,7 +1971,7 @@ function Game2048({ registry }) {
       const dir = queue.current.shift()
       setPending(queue.current.length)
       try {
-        const data = await post({ action: 'move', dir })
+        const data = await post({ action: '2048-move', dir })
         if (typeof data.ms === 'number') setTimes((t) => [...t.slice(-49), data.ms])
         if (data.ok && !data.noChange) {
           setSent((n) => n + 1)
@@ -2004,7 +2005,7 @@ function Game2048({ registry }) {
     setSent(0)
     setTimes([])
     try {
-      const data = await post({ action: 'new' })
+      const data = await post({ action: '2048-new' })
       if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
       if (data.signature) remember(data.signature)
       // A new game resets the chain's move count to zero, so wait for it to
