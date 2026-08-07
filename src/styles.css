@@ -859,6 +859,26 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 /* ---------- wordle ---------- */
 
+/* The tile area doubles as a text field. An invisible input sits over it, so
+   tapping the board on a phone raises the system keyboard instead of forcing
+   people through the on-screen one, which is slow and cramped on small
+   screens. Opacity rather than display:none, because a hidden input cannot
+   take focus and so never summons the keyboard. */
+.board-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  background: transparent;
+  cursor: pointer;
+}
+
+.tiles-wrap { position: relative; }
+
 .tiles { display: grid; gap: 6px; justify-content: center; margin: 0 auto 18px; }
 .tile-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 

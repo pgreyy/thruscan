@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -1477,6 +1477,7 @@ function WordleGame({ onFinished }) {
   const [current, setCurrent] = useState('')
   const [status, setStatus] = useState('playing')
   const [shake, setShake] = useState(false)
+  const boardInput = useRef(null)
   const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
   // Saved state is derived from what is actually stored, so a reload shows
   // "Saved" instead of asking you to save the same name again.
@@ -1613,7 +1614,31 @@ function WordleGame({ onFinished }) {
         </p>
       </div>
 
-      <div className="tiles" style={shake ? { animation: 'none' } : undefined}>{rows}</div>
+      <div className="tiles-wrap">
+        <div className="tiles" style={shake ? { animation: 'none' } : undefined}>{rows}</div>
+
+        {status === 'playing' && (
+          <input
+            ref={boardInput}
+            className="board-input"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value.toLowerCase().replace(/[^a-z]/g, '').slice(0, WORD_LEN))}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitGuess() } }}
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck="false"
+            inputMode="text"
+            aria-label="Type your guess"
+          />
+        )}
+      </div>
+
+      {status === 'playing' && (
+        <p className="fine" style={{ textAlign: 'center', margin: '-8px 0 14px' }}>
+          Tap the board to use your own keyboard, or use the one below.
+        </p>
+      )}
 
       {status === 'playing' ? (
         <div className="keys">
