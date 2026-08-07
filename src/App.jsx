@@ -1847,6 +1847,7 @@ function Game2048() {
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem('thruscan_2048_txns') || '[]') } catch { return [] }
   })
+  const [showHistory, setShowHistory] = useState(false)
 
   const touch = useRef(null)
   // Moves must reach the chain in the order they were made, and each one reads
@@ -2063,20 +2064,25 @@ function Game2048() {
       </section>
 
       {history.length > 0 && (
-        <section className="card">
-          <button className="disclose" onClick={() => setHistory((h) => h)} style={{ cursor: 'default' }}>
-            <div>
-              <h2 className="h2">Your transactions</h2>
-              <p className="sub">The last {history.length} moves you sent, kept in this browser</p>
-            </div>
-          </button>
-          <div className="chips" style={{ marginTop: 12 }}>
-            {history.slice(0, 12).map((h) => <Address key={h.signature} value={h.signature} />)}
+        <>
+          <div className="panel-toggle">
+            <button className="panel-btn" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)}>
+              Your transactions <span className="caret">▼</span>
+            </button>
           </div>
-          <p className="fine" style={{ marginBottom: 0 }}>
-            Paste any of these into the <Link to="/">Explorer</Link> to see what the chain did with it.
-          </p>
-        </section>
+
+          {showHistory && (
+            <section className="card">
+              <p className="fine" style={{ marginTop: 0 }}>
+                The last {history.length} moves you sent, kept in this browser. Paste any into the{' '}
+                <Link to="/">Explorer</Link> to see what the chain did with it.
+              </p>
+              <div className="chips">
+                {history.slice(0, 12).map((h) => <Address key={h.signature} value={h.signature} />)}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {board && (
