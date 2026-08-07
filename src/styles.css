@@ -888,6 +888,35 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .game-picker button[aria-pressed="true"] span { color: rgba(241, 240, 237, 0.62); }
 
+/* ---------- identity ---------- */
+
+.ident {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ident-name {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.qr {
+  display: block;
+  width: 168px;
+  height: 168px;
+  image-rendering: pixelated; /* keep the modules crisp when scaled */
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  padding: 8px;
+}
+
+.qr-wrap { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.qr-side { flex: 1; min-width: 200px; }
+
 /* ---------- 2048 ---------- */
 
 .grid2048 {

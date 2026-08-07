@@ -12,6 +12,7 @@
   "dependencies": {
     "@connectrpc/connect-node": "^2.1.2",
     "@thru/sdk": "^0.3.3",
+    "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1"

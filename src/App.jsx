@@ -12,6 +12,8 @@ import {
   decodeGameBoard, findPlayer, applyMove, spawnTile, tileValue, rank2048,
   STATUS_PLAYING, STATUS_OVER,
 } from './lib/game2048'
+import { decodeRegistry, displayName, nameProblem, nameTaken } from './lib/identity'
+import QRCode from 'qrcode'
 import './styles.css'
 
 // All chain reads go through /api/rpc, a serverless function that talks to the
@@ -30,6 +32,7 @@ const WALL_PROGRAM = import.meta.env.VITE_THRU_WALL_PROGRAM || ''
 const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
 const WORDLE_BOARD = import.meta.env.VITE_THRU_WORDLE_BOARD || ''
 const G2048_BOARD = import.meta.env.VITE_THRU_2048_BOARD || ''
+const ID_REGISTRY = import.meta.env.VITE_THRU_ID_REGISTRY || ''
 
 const NAV = [
   { to: '/', label: 'Explorer', icon: 'search' },
@@ -1476,17 +1479,15 @@ function WallPage() {
 
 const KEY_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
 
-function WordleGame({ onFinished }) {
+function WordleGame({ onFinished, registry }) {
   const [answer, setAnswer] = useState(randomWord)
   const [guesses, setGuesses] = useState([])
   const [current, setCurrent] = useState('')
   const [status, setStatus] = useState('playing')
   const [shake, setShake] = useState(false)
   const boardInput = useRef(null)
-  const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
-  // Saved state is derived from what is actually stored, so a reload shows
-  // "Saved" instead of asking you to save the same name again.
-  const [nameSaved, setNameSaved] = useState(() => Boolean(localStorage.getItem('thruscan_player_name')))
+  // The name comes from the registry now, so there is nothing to type here.
+  const myName = registry?.byId.get(getPlayerId()) ?? ''
   const [sending, setSending] = useState(false)
   const [signature, setSignature] = useState(null)
   const [error, setError] = useState(null)
@@ -1501,7 +1502,7 @@ function WordleGame({ onFinished }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           playerId: getPlayerId(),
-          name: name.trim(),
+          name: myName,
           answer,
           guesses: allGuesses,
           solved,
@@ -1593,31 +1594,11 @@ function WordleGame({ onFinished }) {
         </div>
       </div>
 
-      <div className="form-row">
-        <label className="label">Your name</label>
-        <div className="inline">
-          <input
-            className="field"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setNameSaved(e.target.value.trim() === (localStorage.getItem('thruscan_player_name') || ''))
-            }}
-            placeholder="Shown on the leaderboard"
-            maxLength={24}
-          />
-          <button
-            className="btn ghost"
-            onClick={() => { localStorage.setItem('thruscan_player_name', name.trim()); setNameSaved(true) }}
-            disabled={!name.trim()}
-          >
-            {nameSaved ? 'Saved' : 'Save'}
-          </button>
-        </div>
-        <p className="fine" style={{ margin: '6px 0 0' }}>
-          Saved in this browser, so you only type it once — for this game and any others added later.
+      {!myName && (
+        <p className="fine" style={{ marginTop: 0 }}>
+          Playing as a guest. Claim a name below and your scores get one.
         </p>
-      </div>
+      )}
 
       <div className="tiles-wrap">
         <div className="tiles" style={shake ? { animation: 'none' } : undefined}>{rows}</div>
@@ -1686,7 +1667,7 @@ function WordleGame({ onFinished }) {
   )
 }
 
-function WordleBoard({ board, refresh, loading }) {
+function WordleBoard({ board, registry, refresh, loading }) {
   const [tab, setTab] = useState('points')
   const me = getPlayerId()
 
@@ -1726,7 +1707,7 @@ function WordleBoard({ board, refresh, loading }) {
               <div className={`board-row${p.id === me ? ' you' : ''}`} key={p.id}>
                 <span className="board-rank">{i + 1}</span>
                 <span className="board-who">
-                  <strong>{p.name || 'Anonymous'}{p.id === me && ' (you)'}</strong>
+                  <strong>{displayName(registry, p.id, p.name)}{p.id === me && ' (you)'}</strong>
                   <span>{p.won} of {p.played} solved</span>
                 </span>
                 <span className="board-count">
@@ -1743,17 +1724,63 @@ function WordleBoard({ board, refresh, loading }) {
 }
 
 /**
- * Your scores live against a code generated in this browser, so a different
- * device looks like a different person. Showing the code and letting it be
- * pasted elsewhere makes progress portable without anyone needing a wallet
- * before their first game.
+ * Names and devices in one place.
+ *
+ * A name is public and unique, claimed on chain. The eight byte player code is
+ * the secret that proves you are the one who claimed it — names appear on
+ * leaderboards, so if a name alone could claim an identity, anyone reading the
+ * board could take someone else's. The QR simply carries the secret, which is
+ * why scanning it on a second device brings everything with it.
  */
-function PlayerCode({ onChanged }) {
+function Identity({ registry, onChanged }) {
   const [open, setOpen] = useState(false)
   const [code, setCode] = useState(getPlayerId)
+  const [name, setName] = useState('')
   const [entry, setEntry] = useState('')
+  const [qr, setQr] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
+  const mine = registry?.byId.get(code) ?? null
+
+  useEffect(() => { setName(mine ?? '') }, [mine])
+
+  // The QR points at the site carrying the code, so scanning it on a phone
+  // both opens ThruScan and adopts the identity in one step.
+  useEffect(() => {
+    if (!open) return
+    const url = `${window.location.origin}/games?code=${code}`
+    QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: 'M' })
+      .then(setQr)
+      .catch(() => setQr(null))
+  }, [open, code])
+
+  const claim = async () => {
+    const problem = nameProblem(name)
+    if (problem) { setError(problem); return }
+    if (nameTaken(registry, name.trim(), code)) { setError('That name is already taken.'); return }
+
+    setBusy(true)
+    setError(null)
+    setDone(null)
+    try {
+      const res = await fetch('/api/register-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: code, name: name.trim() }),
+      })
+      const data = await res.json()
+      if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
+      setDone(mine ? 'Name changed.' : 'Name claimed.')
+      onChanged()
+    } catch {
+      setError('Could not reach the server.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const copy = () => {
     navigator.clipboard?.writeText(code)
@@ -1767,6 +1794,7 @@ function PlayerCode({ onChanged }) {
     setCode(next)
     setEntry('')
     setError(null)
+    setDone('Switched to that identity.')
     onChanged()
   }
 
@@ -1774,57 +1802,82 @@ function PlayerCode({ onChanged }) {
     <section className="card">
       <button className="disclose" onClick={() => setOpen(!open)}>
         <div>
-          <h2 className="h2">Play on another device</h2>
-          <p className="sub">Carry your scores between phone and laptop</p>
+          <h2 className="h2">{mine ? `You are ${mine}` : 'Claim a name'}</h2>
+          <p className="sub">
+            {mine ? 'Change it, or move to another device' : 'One name across every game here'}
+          </p>
         </div>
         <span className="chev">{open ? '\u2212' : '+'}</span>
       </button>
 
       {open && (
-        <div style={{ marginTop: 16 }}>
-          <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
-            Your scores are tied to this code, not to your name. Copy it, paste it into ThruScan on another device, and
-            your points and streak follow you. Anyone with the code can play as you, so treat it like a password.
-          </p>
-
+        <div style={{ marginTop: 18 }}>
           <div className="form-row">
-            <label className="label">Your code</label>
-            <div className="inline">
-              <input className="field mono" value={code} readOnly />
-              <button className="btn ghost" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <label className="label">Use a code from another device</label>
+            <label className="label">{mine ? 'Change your name' : 'Pick a name'}</label>
             <div className="inline">
               <input
                 className="field mono"
-                value={entry}
-                onChange={(e) => { setEntry(e.target.value); setError(null) }}
-                placeholder="Paste the code here"
+                value={name}
+                onChange={(e) => { setName(e.target.value.toLowerCase()); setError(null); setDone(null) }}
+                placeholder="lowercase, numbers, underscores"
+                maxLength={24}
               />
-              <button className="btn ghost" onClick={restore} disabled={!isPlayerId(entry.trim().toLowerCase())}>
-                Use it
+              <button className="btn" onClick={claim} disabled={busy || !name.trim()}>
+                {busy ? 'Saving' : mine ? 'Change' : 'Claim'}
               </button>
             </div>
             <p className="fine" style={{ margin: '6px 0 0' }}>
-              This replaces the code on this device. Copy the current one first if you want to keep it.
+              Three to twenty-four characters. Names are first come, first served, and yours shows on every leaderboard.
+              {registry && ` ${registry.count} claimed so far.`}
             </p>
           </div>
 
-          {error && <p className="notice bad" style={{ marginBottom: 0 }}>{error}</p>}
+          <div className="qr-wrap" style={{ marginTop: 18 }}>
+            {qr && <img className="qr" src={qr} alt="Scan to use this identity on another device" />}
+            <div className="qr-side">
+              <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
+                Scan this on another device and it becomes you — name, scores and streaks. Anyone who scans it can play as
+                you, so treat it like a password rather than something to post.
+              </p>
+
+              <div className="form-row">
+                <label className="label">Your player code</label>
+                <div className="inline">
+                  <input className="field mono" value={code} readOnly />
+                  <button className="btn ghost" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+                </div>
+              </div>
+
+              <div className="form-row" style={{ marginBottom: 0 }}>
+                <label className="label">Use a code from another device</label>
+                <div className="inline">
+                  <input
+                    className="field mono"
+                    value={entry}
+                    onChange={(e) => { setEntry(e.target.value); setError(null) }}
+                    placeholder="Paste a code"
+                  />
+                  <button className="btn ghost" onClick={restore} disabled={!isPlayerId(entry.trim().toLowerCase())}>
+                    Use it
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {error && <p className="notice bad" style={{ marginTop: 14, marginBottom: 0 }}>{error}</p>}
+          {done && <p className="notice" style={{ marginTop: 14, marginBottom: 0 }}>{done}</p>}
         </div>
       )}
     </section>
   )
 }
 
-/* ---------- 2048 ---------- */
+/* ---------- 2048 ---------- *//* ---------- 2048 ---------- */
 
 const DIR_KEYS = { ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3, a: 0, d: 1, w: 2, s: 3 }
 
-function Game2048() {
+function Game2048({ registry }) {
   const [board, setBoard] = useState(null)
   const [me, setMe] = useState(null)
 
@@ -1839,7 +1892,7 @@ function Game2048() {
 
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState(null)
-  const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
+  const myName = registry?.byId.get(getPlayerId()) ?? ''
 
   const [sent, setSent] = useState(0)
   const [pending, setPending] = useState(0)
@@ -1904,7 +1957,7 @@ function Game2048() {
     const res = await fetch('/api/move-2048', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: getPlayerId(), name: name.trim(), ...payload }),
+      body: JSON.stringify({ playerId: getPlayerId(), name: myName, ...payload }),
     })
     return res.json()
   }
@@ -2030,11 +2083,10 @@ function Game2048() {
           {me && <span className="pill tag">best {me.bestScore.toLocaleString()}</span>}
         </div>
 
-        {!me && (
-          <div className="form-row">
-            <label className="label">Your name</label>
-            <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shown on the board" maxLength={24} />
-          </div>
+        {!myName && (
+          <p className="fine" style={{ marginTop: 0 }}>
+            Playing as a guest. Claim a name below and your scores get one.
+          </p>
         )}
 
         <div className="meter">
@@ -2143,7 +2195,7 @@ function Game2048() {
                   <div className={`board-row${p.id === getPlayerId() ? ' you' : ''}`} key={p.id}>
                     <span className="board-rank">{i + 1}</span>
                     <span className="board-who">
-                      <strong>{p.name || 'Anonymous'}{p.id === getPlayerId() && ' (you)'}</strong>
+                      <strong>{displayName(registry, p.id, p.name)}{p.id === getPlayerId() && ' (you)'}</strong>
                       <span>{p.games} {p.games === 1 ? 'game' : 'games'}, {p.moves} moves</span>
                     </span>
                     <span className="board-count">
@@ -2164,10 +2216,30 @@ function Game2048() {
 function GamesPage() {
   const [game, setGame] = useState(() => localStorage.getItem('thruscan_game') || 'wordle')
   const [board, setBoard] = useState(null)
+  const [registry, setRegistry] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   const pick = (which) => { setGame(which); localStorage.setItem('thruscan_game', which) }
+
+  const loadRegistry = async () => {
+    if (!ID_REGISTRY) return
+    try {
+      const account = await getAccount(ID_REGISTRY)
+      setRegistry(decodeRegistry(account.data?.base64))
+    } catch { /* names are decoration; a failure here should not break a game */ }
+  }
+
+  // A QR scan lands here with the code in the URL. Adopt it, then clean the
+  // address bar so the secret is not left sitting in history or a shared link.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    if (code && setPlayerId(code)) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    loadRegistry()
+  }, [])
 
   const load = async () => {
     if (!WORDLE_BOARD) { setLoading(false); return }
@@ -2218,16 +2290,16 @@ function GamesPage() {
 
       {game === 'wordle' ? (
         <>
-          <WordleGame onFinished={load} />
+          <WordleGame onFinished={load} registry={registry} />
           {error && <p className="notice bad">{error}</p>}
           {loading && !board && <p className="fine">Reading the scoreboard</p>}
-          {board && <WordleBoard board={board} refresh={load} loading={loading} />}
+          {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
         </>
       ) : (
-        <Game2048 />
+        <Game2048 registry={registry} />
       )}
 
-      <PlayerCode onChanged={load} />
+      <Identity registry={registry} onChanged={() => { loadRegistry(); load() }} />
 
       <footer className="foot">
         {game === 'wordle' ? (

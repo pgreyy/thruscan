@@ -14,13 +14,16 @@ Set-Location $repo
 # One marker per change, newest first. A missing marker means that file on disk
 # is older than the version you were given.
 $markers = [ordered]@{
+  "src/lib/identity.js  registry"        = @("src\lib\identity.js", "decodeRegistry")
+  "api/register-name.js exists"           = @("api\register-name.js", "buildRegister")
+  "src/App.jsx          identity panel"   = @("src\App.jsx", "function Identity")
   "src/lib/game2048.js  RNG mirror"        = @("src\lib\game2048.js", "export function spawnTile")
   "src/App.jsx          no-bounce guard"   = @("src\App.jsx", "movesMade.current")
   "src/App.jsx          move queue"        = @("src\App.jsx", "draining.current")
   "src/App.jsx          tx history toggle" = @("src\App.jsx", "showHistory")
   "src/App.jsx          game picker cards" = @("src\App.jsx", "game-picker")
   "src/App.jsx          native keyboard"   = @("src\App.jsx", "board-input")
-  "src/App.jsx          player code"       = @("src\App.jsx", "function PlayerCode")
+  "src/App.jsx          portable code"     = @("src\App.jsx", "setPlayerId")
   "src/App.jsx          icon nav"          = @("src\App.jsx", "function Icon(")
   "src/styles.css       2048 board"        = @("src\styles.css", ".grid2048")
   "src/styles.css       picker cards"      = @("src\styles.css", ".game-picker")
