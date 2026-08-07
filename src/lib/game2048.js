@@ -117,6 +117,43 @@ export function hasMoves(board) {
   return false
 }
 
+/* ---------- randomness ----------
+   A JavaScript twin of the xorshift64 in thru2048.c. Because the generator's
+   state is stored in the account, the browser can work out exactly which cell
+   the chain will fill and what it will contain — so a move can be shown in
+   full immediately, with the transaction settling behind it. Get this wrong
+   and the board visibly corrects itself a second later, which is worse than
+   not predicting at all. */
+
+const MASK64 = (1n << 64n) - 1n
+
+export function nextRandom(state) {
+  let x = BigInt(state) & MASK64
+  x = (x ^ (x << 13n)) & MASK64
+  x = x ^ (x >> 7n)
+  x = (x ^ (x << 17n)) & MASK64
+  return x
+}
+
+/**
+ * Drop a tile exactly where the program would. Two draws, in the same order
+ * as the C: the first picks the cell, the second decides 2 or 4.
+ */
+export function spawnTile(board, rngState) {
+  const empty = []
+  for (let i = 0; i < CELLS; i++) if (!board[i]) empty.push(i)
+  if (empty.length === 0) return { board, rng: rngState }
+
+  const pickRng = nextRandom(rngState)
+  const cell = empty[Number(pickRng % BigInt(empty.length))]
+
+  const valueRng = nextRandom(pickRng)
+  const next = [...board]
+  next[cell] = valueRng % 10n === 0n ? 2 : 1
+
+  return { board: next, rng: valueRng }
+}
+
 /* ---------- decoding ---------- */
 
 export class Board2048Error extends Error {
@@ -169,6 +206,7 @@ export function decodeGameBoard(input) {
       bestScore: dv.getUint32(base + 0x35, true),
       moves: dv.getUint32(base + 0x39, true),
       games: dv.getUint32(base + 0x3d, true),
+      rng: dv.getBigUint64(base + 0x41, true),
       lastPlayed: new Date(Number(lastNs / 1000000n)),
       lastPlayedNs: lastNs,
       status: bytes[base + 0x51],

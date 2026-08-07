@@ -9,7 +9,7 @@ import {
   getPlayerId, setPlayerId, isPlayerId, decodeBoard, rankByPoints, rankByStreak,
 } from './lib/wordle'
 import {
-  decodeGameBoard, findPlayer, applyMove, tileValue, rank2048,
+  decodeGameBoard, findPlayer, applyMove, spawnTile, tileValue, rank2048,
   STATUS_PLAYING, STATUS_OVER,
 } from './lib/game2048'
 import './styles.css'
@@ -1825,27 +1825,63 @@ function PlayerCode({ onChanged }) {
 const DIR_KEYS = { ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3, a: 0, d: 1, w: 2, s: 3 }
 
 function Game2048() {
-  const [board, setBoard] = useState(null)      // whole account, decoded
-  const [me, setMe] = useState(null)            // my slot within it
-  const [local, setLocal] = useState(null)      // optimistic board between moves
-  const [busy, setBusy] = useState(false)
+  const [board, setBoard] = useState(null)
+  const [me, setMe] = useState(null)
+
+  // The playable board lives here, not in the account snapshot. Because the
+  // browser can reproduce the program's randomness exactly, this stays ahead
+  // of the chain without ever disagreeing with it.
+  const [local, setLocal] = useState(null)
+  const [rng, setRng] = useState(0n)
+  const [score, setScore] = useState(0)
+  const [moves, setMoves] = useState(0)
+  const [over, setOver] = useState(false)
+
+  const [starting, setStarting] = useState(false)
   const [error, setError] = useState(null)
   const [name, setName] = useState(() => localStorage.getItem('thruscan_player_name') || '')
-  // What pg actually wants to measure: how many transactions this game has
-  // fired and how long each took to come back.
-  const [sent, setSent] = useState(0)
-  const [times, setTimes] = useState([])
-  const touch = useRef(null)
 
-  const load = async () => {
+  const [sent, setSent] = useState(0)
+  const [pending, setPending] = useState(0)
+  const [times, setTimes] = useState([])
+  const [history, setHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('thruscan_2048_txns') || '[]') } catch { return [] }
+  })
+
+  const touch = useRef(null)
+  // Moves must reach the chain in the order they were made, and each one reads
+  // the sponsor's nonce, so they cannot be sent concurrently. The queue lets
+  // the board run ahead while transactions go out one at a time.
+  const queue = useRef([])
+  const draining = useRef(false)
+
+  const remember = (signature) => {
+    setHistory((prev) => {
+      const next = [{ signature, at: Date.now() }, ...prev].slice(0, 40)
+      localStorage.setItem('thruscan_2048_txns', JSON.stringify(next))
+      return next
+    })
+  }
+
+  const load = async ({ adopt = true } = {}) => {
     if (!G2048_BOARD) return
     try {
       const account = await getAccount(G2048_BOARD)
       const decoded = decodeGameBoard(account.data?.base64)
       setBoard(decoded)
+
       const mine = findPlayer(decoded, getPlayerId())
       setMe(mine)
-      setLocal(mine ? mine.board : null)
+
+      // Only adopt the chain's board when nothing is in flight, otherwise it
+      // would overwrite moves that simply have not landed yet.
+      if (adopt && mine && queue.current.length === 0 && !draining.current) {
+        setLocal(mine.board)
+        setRng(mine.rng)
+        setScore(mine.score)
+        setMoves(mine.moves)
+        setOver(mine.status === STATUS_OVER)
+      }
     } catch {
       setError('Could not read the board.')
     }
@@ -1853,46 +1889,81 @@ function Game2048() {
 
   useEffect(() => { load() }, [])
 
-  const send = async (payload) => {
-    setBusy(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/move-2048', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId: getPlayerId(), name: name.trim(), ...payload }),
-      })
-      const data = await res.json()
+  const post = async (payload) => {
+    const res = await fetch('/api/move-2048', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: getPlayerId(), name: name.trim(), ...payload }),
+    })
+    return res.json()
+  }
 
-      if (typeof data.ms === 'number') setTimes((t) => [...t.slice(-49), data.ms])
-      if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return false }
-      if (!data.noChange) setSent((n) => n + 1)
-      return true
-    } catch {
-      setError('Could not reach the server.')
-      return false
-    } finally {
-      setBusy(false)
+  const drain = async () => {
+    if (draining.current) return
+    draining.current = true
+
+    while (queue.current.length > 0) {
+      const dir = queue.current.shift()
+      setPending(queue.current.length)
+      try {
+        const data = await post({ action: 'move', dir })
+        if (typeof data.ms === 'number') setTimes((t) => [...t.slice(-49), data.ms])
+        if (data.ok && !data.noChange) {
+          setSent((n) => n + 1)
+          if (data.signature) remember(data.signature)
+        } else if (!data.ok) {
+          setError(data.detail ? `${data.error} (${data.detail})` : data.error)
+        }
+      } catch {
+        setError('Could not reach the server.')
+      }
     }
+
+    draining.current = false
+    setPending(0)
+    // Everything has landed, so it is safe to check the chain agrees.
+    load()
   }
 
   const newGame = async () => {
+    setStarting(true)
+    setError(null)
+    queue.current = []
     setSent(0)
     setTimes([])
-    if (await send({ action: 'new' })) await load()
+    try {
+      const data = await post({ action: 'new' })
+      if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
+      if (data.signature) remember(data.signature)
+      await load()
+    } catch {
+      setError('Could not reach the server.')
+    } finally {
+      setStarting(false)
+    }
   }
 
-  const move = async (dir) => {
-    if (busy || !local || me?.status !== STATUS_PLAYING) return
+  const move = (dir) => {
+    if (!local || over || starting) return
 
-    // Show the slide immediately. The spawned tile only appears once the chain
-    // has decided where it goes, which is the one thing we cannot predict.
-    const preview = applyMove(local, dir)
-    if (!preview.changed) return
-    setLocal(preview.board)
+    const slid = applyMove(local, dir)
+    if (!slid.changed) return // nothing shifted, so the program would reject it
 
-    if (await send({ action: 'move', dir })) await load()
-    else await load() // reconcile even on failure, so the board never lies
+    const spawned = spawnTile(slid.board, rng)
+
+    setLocal(spawned.board)
+    setRng(spawned.rng)
+    setScore((s) => s + slid.gained)
+    setMoves((m) => m + 1)
+
+    // Cheap local check so the board stops accepting input the moment it is
+    // finished, rather than waiting for the chain to say so.
+    const stuck = ![0, 1, 2, 3].some((d) => applyMove(spawned.board, d).changed)
+    if (stuck) setOver(true)
+
+    queue.current.push(dir)
+    setPending(queue.current.length)
+    drain()
   }
 
   useEffect(() => {
@@ -1914,7 +1985,6 @@ function Game2048() {
     const dx = e.changedTouches[0].clientX - touch.current.x
     const dy = e.changedTouches[0].clientY - touch.current.y
     touch.current = null
-    // Ignore anything too small to be a deliberate swipe.
     if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return
     if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 1 : 0)
     else move(dy > 0 ? 3 : 2)
@@ -1922,7 +1992,7 @@ function Game2048() {
 
   const avg = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null
   const cells = local ?? Array(16).fill(0)
-  const playing = me?.status === STATUS_PLAYING
+  const started = Boolean(local)
 
   return (
     <>
@@ -1943,9 +2013,10 @@ function Game2048() {
         )}
 
         <div className="meter">
-          <span>score <b>{(me?.score ?? 0).toLocaleString()}</b></span>
-          <span>moves <b>{me?.moves ?? 0}</b></span>
+          <span>score <b>{score.toLocaleString()}</b></span>
+          <span>moves <b>{moves}</b></span>
           <span>sent <b>{sent}</b></span>
+          {pending > 0 && <span>queued <b>{pending}</b></span>}
           {avg !== null && <span>avg <b>{avg}ms</b></span>}
         </div>
 
@@ -1960,34 +2031,53 @@ function Game2048() {
           })}
         </div>
 
-        {playing && (
+        {started && !over && (
           <div className="pad">
-            <button className="up" onClick={() => move(2)} disabled={busy} aria-label="Up">↑</button>
-            <button onClick={() => move(0)} disabled={busy} aria-label="Left">←</button>
-            <button onClick={() => move(3)} disabled={busy} aria-label="Down">↓</button>
-            <button onClick={() => move(1)} disabled={busy} aria-label="Right">→</button>
+            <button className="up" onClick={() => move(2)} aria-label="Up">↑</button>
+            <button onClick={() => move(0)} aria-label="Left">←</button>
+            <button onClick={() => move(3)} aria-label="Down">↓</button>
+            <button onClick={() => move(1)} aria-label="Right">→</button>
           </div>
         )}
 
         <p className="fine" style={{ textAlign: 'center', marginTop: 0 }}>
-          {playing ? 'Swipe, use the arrow keys, or tap the pad.' : 'Start a game to play.'}
+          {started
+            ? 'Swipe, use the arrow keys, or tap the pad. Moves land on chain in the background.'
+            : 'Start a game to play.'}
         </p>
 
-        {me?.status === STATUS_OVER && (
+        {over && (
           <div className="result">
             <h3>No moves left</h3>
             <p className="fine" style={{ margin: '4px 0 0' }}>
-              {me.score.toLocaleString()} points over {me.moves} moves, all of them on chain.
+              {score.toLocaleString()} points over {moves} moves, all of them on chain.
             </p>
           </div>
         )}
 
         {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
 
-        <button className="btn full" onClick={newGame} disabled={busy} style={{ marginTop: 12 }}>
-          {busy ? 'Working' : playing ? 'Start over' : 'New game'}
+        <button className="btn full" onClick={newGame} disabled={starting} style={{ marginTop: 12 }}>
+          {starting ? 'Starting' : started ? 'Start over' : 'New game'}
         </button>
       </section>
+
+      {history.length > 0 && (
+        <section className="card">
+          <button className="disclose" onClick={() => setHistory((h) => h)} style={{ cursor: 'default' }}>
+            <div>
+              <h2 className="h2">Your transactions</h2>
+              <p className="sub">The last {history.length} moves you sent, kept in this browser</p>
+            </div>
+          </button>
+          <div className="chips" style={{ marginTop: 12 }}>
+            {history.slice(0, 12).map((h) => <Address key={h.signature} value={h.signature} />)}
+          </div>
+          <p className="fine" style={{ marginBottom: 0 }}>
+            Paste any of these into the <Link to="/">Explorer</Link> to see what the chain did with it.
+          </p>
+        </section>
+      )}
 
       {board && (
         <>
@@ -2012,7 +2102,7 @@ function Game2048() {
                 <h2 className="h2">Best scores</h2>
                 <p className="sub">Highest single game</p>
               </div>
-              <button className="btn ghost" onClick={load} disabled={busy}>Refresh</button>
+              <button className="btn ghost" onClick={() => load()}>Refresh</button>
             </div>
 
             {board.entries.length === 0 ? (
@@ -2085,9 +2175,15 @@ function GamesPage() {
           : 'Slide tiles together to reach 2048. Every single swipe is its own transaction, and the board itself lives on chain between moves, so the chain is playing along rather than just keeping score.'}
       </p>
 
-      <div className="view-toggle">
-        <button aria-pressed={game === 'wordle'} onClick={() => pick('wordle')}>Wordle</button>
-        <button aria-pressed={game === '2048'} onClick={() => pick('2048')}>2048</button>
+      <div className="game-picker">
+        <button aria-pressed={game === 'wordle'} onClick={() => pick('wordle')}>
+          <strong>Wordle</strong>
+          <span>Guess the word</span>
+        </button>
+        <button aria-pressed={game === '2048'} onClick={() => pick('2048')}>
+          <strong>2048</strong>
+          <span>Slide and merge</span>
+        </button>
       </div>
 
       {game === 'wordle' ? (

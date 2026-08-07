@@ -857,6 +857,36 @@ textarea.field { resize: vertical; min-height: 84px; }
 .board-count { font-family: var(--mono); font-size: 14px; font-weight: 600; flex-shrink: 0; }
 .board-count span { font-size: 11px; color: var(--muted); font-weight: 400; font-family: var(--sans); }
 
+/* Two games is a choice, not a filter, so the picker is a pair of cards
+   rather than a quiet toggle nobody notices. */
+.game-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+
+.game-picker button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+}
+
+.game-picker button strong { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+.game-picker button span { font-size: 12px; color: var(--muted); }
+.game-picker button:hover { border-color: var(--ink); }
+
+.game-picker button[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--canvas);
+}
+
+.game-picker button[aria-pressed="true"] span { color: rgba(241, 240, 237, 0.62); }
+
 /* ---------- 2048 ---------- */
 
 .grid2048 {
