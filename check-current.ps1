@@ -14,6 +14,7 @@ Set-Location $repo
 # One marker per change, newest first. A missing marker means that file on disk
 # is older than the version you were given.
 $markers = [ordered]@{
+  "src/App.jsx          tx toast"        = @("src\App.jsx", "function ToastHost")
   "src/lib/identity.js  registry"        = @("src\lib\identity.js", "decodeRegistry")
   "api/play.js          merged"           = @("api\play.js", "2048-move")
   "src/App.jsx          identity panel"   = @("src\App.jsx", "function Identity")

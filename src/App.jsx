@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -14,6 +14,9 @@ import {
 } from './lib/game2048'
 import { decodeRegistry, displayName, nameProblem, nameTaken } from './lib/identity'
 import QRCode from 'qrcode'
+import {
+  renderWordleCard, render2048Card, wordleShareText, share2048Text, downloadCard,
+} from './lib/sharecard'
 import './styles.css'
 
 // All chain reads go through /api/rpc, a serverless function that talks to the
@@ -457,6 +460,71 @@ function Field({ label, value, onChange, placeholder, required, type }) {
   )
 }
 
+/* ---------- toasts ----------
+   A tiny context rather than prop drilling, because anything that writes to
+   the chain should be able to confirm it without every component in between
+   knowing about toasts. */
+
+const ToastContext = createContext(() => {})
+const useToast = () => useContext(ToastContext)
+
+function ToastHost({ children }) {
+  const [items, setItems] = useState([])
+
+  const dismiss = useCallback((id) => setItems((list) => list.filter((t) => t.id !== id)), [])
+
+  const show = useCallback((toast) => {
+    const id = Math.random().toString(36).slice(2)
+    setItems((list) => [...list.slice(-2), { ...toast, id }])
+    // Long enough to read a signature and decide, short enough not to linger.
+    setTimeout(() => dismiss(id), toast.signature ? 9000 : 4500)
+  }, [dismiss])
+
+  return (
+    <ToastContext.Provider value={show}>
+      {children}
+
+      <div className="toasts">
+        {items.map((t) => <Toast key={t.id} toast={t} onClose={() => dismiss(t.id)} />)}
+      </div>
+    </ToastContext.Provider>
+  )
+}
+
+function Toast({ toast, onClose }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    navigator.clipboard?.writeText(toast.signature)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <div className="toast">
+      <div className="toast-top">
+        <div>
+          <div className="toast-title">{toast.title}</div>
+          {toast.sub && <div className="toast-sub">{toast.sub}</div>}
+        </div>
+        <button className="toast-close" onClick={onClose} aria-label="Dismiss">×</button>
+      </div>
+
+      {toast.signature && (
+        <>
+          <span className="toast-sig">{toast.signature.slice(0, 22)}…{toast.signature.slice(-10)}</span>
+          <div className="toast-actions">
+            {/* Deep link straight into the Explorer's transaction lookup, so
+                the payload is one tap away rather than a copy-and-paste. */}
+            <Link to={`/?tx=${toast.signature}`} onClick={onClose}>See the transaction</Link>
+            <button onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /* ---------- shell ---------- */
 
 // Live block height, read through the proxy. It is the one number that proves
@@ -700,12 +768,30 @@ function NameServiceCard({ account }) {
 
   return (
     <section className="card accent">
-      <div className="card-head">
-        <div>
-          <p className="eyebrow">Name service</p>
-          <h2 className="h2">{isDomain ? decoded.domainName : decoded.rootName}</h2>
+      <div className="hero">
+        <span className="hero-tag">{isDomain ? 'Domain' : 'Root registrar'}</span>
+        <p className="hero-eyebrow">Name service</p>
+        <h2 className="hero-title mono">{isDomain ? decoded.domainName : decoded.rootName}</h2>
+
+        <div className="hero-stats">
+          {isDomain ? (
+            <>
+              <span className="hero-stat">
+                <b>{decoded.recordCount}</b>
+                <span>{decoded.recordCount === 1 ? 'record' : 'records'}</span>
+              </span>
+              <span className="hero-stat">
+                <b>{registrationDate(decoded)?.toLocaleDateString() ?? '-'}</b>
+                <span>registered</span>
+              </span>
+            </>
+          ) : (
+            <span className="hero-stat">
+              <b>{decoded.totalSubdomains?.toString() ?? '0'}</b>
+              <span>subdomains</span>
+            </span>
+          )}
         </div>
-        <span className="pill tag">{isDomain ? 'Domain' : 'Root registrar'}</span>
       </div>
 
       {isDomain ? (
@@ -713,13 +799,12 @@ function NameServiceCard({ account }) {
           <div className="rows">
             <AddrRow k="Owner" v={decoded.owner} />
             <AddrRow k="Parent" v={decoded.parent} />
-            <Row k="Registered" v={registrationDate(decoded)?.toLocaleString()} />
-            <Row k="Records" v={decoded.recordCount} mono />
           </div>
 
           {decoded.records.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <p className="eyebrow">Records</p>
+              <div className="rec-grid">
               {decoded.records.map((r) => (
                 <div className="rec" key={r.key}>
                   <p className="rec-k">{r.key}</p>
@@ -732,13 +817,13 @@ function NameServiceCard({ account }) {
                   </p>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </div>
       ) : (
         <div className="rows">
           <AddrRow k="Authority" v={decoded.authority} />
-          <Row k="Subdomains" v={decoded.totalSubdomains?.toString()} mono />
         </div>
       )}
     </section>
@@ -766,19 +851,38 @@ function TokenCard({ account }) {
 
   return (
     <section className="card accent">
-      <div className="card-head">
-        <div>
-          <p className="eyebrow">Token program</p>
-          <h2 className="h2">{isMint ? (decoded.ticker || 'Unnamed token') : 'Token balance'}</h2>
+      <div className="hero">
+        <span className="hero-tag">{isMint ? 'Mint' : 'Token account'}</span>
+        <p className="hero-eyebrow">Token program</p>
+        <h2 className="hero-title">{isMint ? (decoded.ticker || 'Unnamed token') : formatAmount(decoded.amount, 0)}</h2>
+
+        <div className="hero-stats">
+          {isMint ? (
+            <>
+              <span className="hero-stat">
+                <b>{decoded.supplyDisplay}</b>
+                <span>supply</span>
+              </span>
+              <span className="hero-stat">
+                <b>{decoded.decimals}</b>
+                <span>decimals</span>
+              </span>
+              <span className="hero-stat">
+                <b>{decoded.hasFreezeAuthority ? 'Yes' : 'No'}</b>
+                <span>freezable</span>
+              </span>
+            </>
+          ) : (
+            <span className="hero-stat">
+              <b>{decoded.isFrozen ? 'Frozen' : 'Active'}</b>
+              <span>status</span>
+            </span>
+          )}
         </div>
-        <span className="pill tag">{isMint ? 'Mint' : 'Token account'}</span>
       </div>
 
       {isMint ? (
         <div className="rows">
-          <Row k="Ticker" v={decoded.ticker || '-'} />
-          <Row k="Supply" v={`${decoded.supplyDisplay} ${decoded.ticker}`.trim()} mono />
-          <Row k="Decimals" v={decoded.decimals} mono />
           <Row k="Base units" v={decoded.supply.toString()} mono />
           <AddrRow k="Mint authority" v={decoded.mintAuthority} />
           <AddrRow k="Creator" v={decoded.creator} />
@@ -789,10 +893,8 @@ function TokenCard({ account }) {
       ) : (
         <>
           <div className="rows">
-            <Row k="Amount" v={formatAmount(decoded.amount, 0)} mono />
             <AddrRow k="Mint" v={decoded.mint} />
             <AddrRow k="Owner" v={decoded.owner} />
-            <FlagRow k="Frozen" v={decoded.isFrozen} />
           </div>
           <p className="fine" style={{ marginBottom: 0 }}>
             Amount is in base units. Look up the mint to see its decimals and ticker.
@@ -852,21 +954,39 @@ function AccountLookup({ prefillKey, onPrefillUsed }) {
         {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
         {account && meta && (
-          <div className="rows" style={{ marginTop: 18 }}>
+          <>
+          <div className="hero" style={{ marginTop: 18 }}>
+            {flags?.isProgram && <span className="hero-tag">Program</span>}
+            <p className="hero-eyebrow">Account</p>
+            <h2 className="hero-title">{Number(meta.balance ?? 0).toLocaleString()} <span style={{ fontSize: 18, opacity: 0.55 }}>THRU</span></h2>
+
+            <div className="hero-stats">
+              <span className="hero-stat">
+                <b>{Number(meta.dataSize ?? 0).toLocaleString()}</b>
+                <span>bytes of data</span>
+              </span>
+              <span className="hero-stat">
+                <b>{meta.seq ?? 0}</b>
+                <span>sequence</span>
+              </span>
+              <span className="hero-stat">
+                <b>{meta.nonce ?? 0}</b>
+                <span>nonce</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="rows">
             <AddrRow k="Public key" v={account.address ?? input.trim()} />
-            <Row k="Balance" v={`${Number(meta.balance ?? 0).toLocaleString()} THRU`} mono />
-            <Row k="Data size" v={`${Number(meta.dataSize ?? 0).toLocaleString()} bytes`} mono />
-            <Row k="Nonce" v={meta.nonce} mono />
-            <Row k="Seq" v={meta.seq} mono />
             <Row k="Version" v={meta.version} mono />
             {meta.owner && <AddrRow k="Owner program" v={meta.owner} />}
-            {flags && <FlagRow k="Is program" v={flags.isProgram} />}
             {flags && <FlagRow k="Is new" v={flags.isNew} />}
             {flags && <FlagRow k="Is ephemeral" v={flags.isEphemeral} />}
             {flags && <FlagRow k="Is deleted" v={flags.isDeleted} />}
             {flags && <FlagRow k="Is privileged" v={flags.isPrivileged} />}
             {flags && <FlagRow k="Is compressed" v={flags.isCompressed} />}
           </div>
+          </>
         )}
       </section>
 
@@ -888,14 +1008,14 @@ function AccountChips({ label, list }) {
   )
 }
 
-function TransactionLookup() {
+function TransactionLookup({ prefill, onPrefillUsed }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [tx, setTx] = useState(null)
   const [error, setError] = useState(null)
 
-  const lookup = async () => {
-    const target = input.trim()
+  const lookup = async (given) => {
+    const target = (given || input).trim()
     if (!target) return
     setLoading(true)
     setError(null)
@@ -908,6 +1028,12 @@ function TransactionLookup() {
       setLoading(false)
     }
   }
+
+  // A toast links here with ?tx=..., so the transaction is already loading by
+  // the time the page renders.
+  useEffect(() => {
+    if (prefill) { setInput(prefill); lookup(prefill); onPrefillUsed() }
+  }, [prefill])
 
   const exec = tx?.execution
   // Both codes read zero when nothing went wrong. vmError is an enum where the
@@ -928,24 +1054,38 @@ function TransactionLookup() {
           <input className="field mono" value={input} onChange={(e) => { setInput(e.target.value); setTx(null); setError(null) }} onKeyDown={(e) => e.key === 'Enter' && lookup()} placeholder="ts..." />
           {input && <button className="btn ghost" onClick={() => { setInput(''); setTx(null); setError(null) }}>Clear</button>}
         </div>
-        <button className="btn" onClick={lookup} disabled={loading || !input.trim()}>{loading ? 'Looking up' : 'Look up'}</button>
+        <button className="btn" onClick={() => lookup()} disabled={loading || !input.trim()}>{loading ? 'Looking up' : 'Look up'}</button>
       </div>
 
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
       {tx && (
         <div style={{ marginTop: 18 }}>
-          <div className="card-head" style={{ marginBottom: 4 }}>
-            <span className={failed ? 'pill off' : 'pill on'}>{failed ? 'Failed' : 'Succeeded'}</span>
-            {tx.status?.label && <span className="pill tag">{tx.status.label}</span>}
+          <div className="hero">
+            {tx.status?.label && <span className="hero-tag">{tx.status.label}</span>}
+            <p className="hero-eyebrow">Transaction</p>
+            <h2 className="hero-title">{failed ? 'Failed' : 'Succeeded'}</h2>
+
+            <div className="hero-stats">
+              <span className="hero-stat">
+                <b>{Number(exec?.consumedCompute ?? 0).toLocaleString()}</b>
+                <span>compute units</span>
+              </span>
+              <span className="hero-stat">
+                <b>{tx.slot ? Number(tx.slot).toLocaleString() : '-'}</b>
+                <span>slot</span>
+              </span>
+              <span className="hero-stat">
+                <b>{Number(tx.fee ?? 0).toLocaleString()}</b>
+                <span>fee</span>
+              </span>
+            </div>
           </div>
 
           <div className="rows">
             <AddrRow k="Signature" v={tx.signature ?? input.trim()} />
-            <Row k="Slot" v={tx.slot ? Number(tx.slot).toLocaleString() : '-'} mono />
             <AddrRow k="Fee payer" v={tx.feePayer} />
             <AddrRow k="Program" v={tx.program} />
-            <Row k="Fee" v={`${Number(tx.fee ?? 0).toLocaleString()} THRU`} mono />
             <Row k="Nonce" v={tx.nonce} mono />
             <Row k="Instruction data" v={`${Number(tx.instructionDataSize ?? 0).toLocaleString()} bytes`} mono />
           </div>
@@ -975,6 +1115,13 @@ function TransactionLookup() {
 
 function ExplorerPage() {
   const [lookupPrefill, setLookupPrefill] = useState(null)
+  const [txPrefill, setTxPrefill] = useState(() => new URLSearchParams(window.location.search).get('tx'))
+
+  // Clear the query string once it has been read, so a refresh or a shared
+  // link does not keep re-triggering the same lookup.
+  useEffect(() => {
+    if (txPrefill) window.history.replaceState({}, '', window.location.pathname)
+  }, [])
 
   return (
     <div className="wrap">
@@ -984,7 +1131,7 @@ function ExplorerPage() {
 
       <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
       <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
-      <TransactionLookup />
+      <TransactionLookup prefill={txPrefill} onPrefillUsed={() => setTxPrefill(null)} />
 
       <section className="card">
         <h2 className="h2">Browser wallet</h2>
@@ -1209,6 +1356,7 @@ function WallEntry({ entry }) {
 }
 
 function BrowserPostForm({ onPosted }) {
+  const toast = useToast()
   const [who, setWho] = useState('')
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
@@ -1232,6 +1380,7 @@ function BrowserPostForm({ onPosted }) {
       if (!data.ok) { setError(data.error || 'That did not post.'); return }
       setSignature(data.signature)
       setMessage('')
+      toast({ title: 'Posted to the wall', sub: 'Written into an account on Thru', signature: data.signature })
       onPosted()
     } catch {
       setError('Could not reach the server. Try again.')
@@ -1477,9 +1626,68 @@ function WallPage() {
 
 /* ---------- games ---------- */
 
+/**
+ * Renders a result card and offers the two ways people actually share things:
+ * an image to attach, and text to paste. The image looks better; the text
+ * travels further because it needs no upload and survives anywhere.
+ */
+function ShareResult({ render, text, filename }) {
+  const [image, setImage] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    render()
+      .then((url) => { if (alive) setImage(url) })
+      .catch(() => { if (alive) setFailed(true) })
+    return () => { alive = false }
+  }, [])
+
+  const copy = () => {
+    navigator.clipboard?.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
+  }
+
+  const post = () => {
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank', 'noopener')
+  }
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Share it</h2>
+          <p className="sub">Nobody else can produce this card</p>
+        </div>
+      </div>
+
+      {image
+        ? <img className="share-card" src={image} alt="Your result card" />
+        : !failed && <p className="fine">Drawing your card</p>}
+
+      <div className="share-actions">
+        <button className="btn" onClick={post}>Post to X</button>
+        <button className="btn ghost" onClick={copy}>{copied ? 'Copied' : 'Copy text'}</button>
+        {image && (
+          <button className="btn ghost" onClick={() => downloadCard(image, filename)}>Save image</button>
+        )}
+      </div>
+
+      <p className="fine" style={{ marginBottom: 0 }}>
+        Posting opens X with the text ready. Save the image and attach it there — X cannot take an image from a link.
+      </p>
+    </section>
+  )
+}
+
+
+
 const KEY_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
 
 function WordleGame({ onFinished, registry }) {
+  const toast = useToast()
   const [answer, setAnswer] = useState(randomWord)
   const [guesses, setGuesses] = useState([])
   const [current, setCurrent] = useState('')
@@ -1515,6 +1723,11 @@ function WordleGame({ onFinished, registry }) {
         return
       }
       setSignature(data.signature)
+      toast({
+        title: solved ? `Solved in ${allGuesses.length}` : 'Game recorded',
+        sub: solved ? `${pointsFor(true, allGuesses.length)} points, written to Thru` : 'Written to Thru',
+        signature: data.signature,
+      })
       onFinished()
     } catch {
       setError('Could not reach the server. Your game still counts, it just was not recorded.')
@@ -1586,7 +1799,10 @@ function WordleGame({ onFinished, registry }) {
     )
   }
 
+  const marks = guesses.map((g) => scoreGuess(g, answer))
+
   return (
+    <>
     <section className="card">
       <div className="card-head">
         <div>
@@ -1642,29 +1858,52 @@ function WordleGame({ onFinished, registry }) {
           ))}
         </div>
       ) : (
-        <div className="result">
-          <h3>{status === 'won' ? `Solved in ${guesses.length}` : 'Out of guesses'}</h3>
-          <p className="answer">{answer}</p>
-          <p className="fine" style={{ margin: '8px 0 0' }}>
-            {status === 'won' ? `${pointsFor(true, guesses.length)} points` : 'No points this time'}
-            {sending && ' · recording on chain'}
-          </p>
+        <div>
+          <div className="hero">
+            <p className="hero-eyebrow">{status === 'won' ? `Solved in ${guesses.length}` : 'Out of guesses'}</p>
+            <p className="hero-value">
+              {answer.toUpperCase()}
+              {status === 'won' && <span className="unit">{pointsFor(true, guesses.length)} pts</span>}
+            </p>
+            <p className="hero-note">
+              {sending ? 'Recording on chain' : signature ? 'Recorded on chain' : 'The word was scored by a program on Thru'}
+            </p>
+          </div>
 
           {error && <p className="notice bad" style={{ marginTop: 12, textAlign: 'left' }}>{error}</p>}
 
-          {signature && (
-            <div style={{ marginTop: 12 }}>
-              <p className="fine" style={{ margin: '0 0 6px' }}>Recorded on chain</p>
-              <Address value={signature} />
-            </div>
-          )}
+          {signature && <Address value={signature} />}
 
-          <button className="btn" onClick={newGame} style={{ marginTop: 14 }} disabled={sending}>
+          <button className="btn full" onClick={newGame} style={{ marginTop: 14 }} disabled={sending}>
             {sending ? 'Saving' : 'Play again'}
           </button>
         </div>
       )}
     </section>
+
+    {status !== 'playing' && (
+      <ShareResult
+        key={signature ?? answer}
+        filename={`thruwordle-${answer}.png`}
+        render={() => renderWordleCard({
+          name: myName,
+          guesses,
+          marks,
+          solved: status === 'won',
+          points: pointsFor(status === 'won', guesses.length),
+          streak: 0,
+          signature,
+        })}
+        text={wordleShareText({
+          name: myName,
+          marks,
+          solved: status === 'won',
+          points: pointsFor(status === 'won', guesses.length),
+          signature,
+        })}
+      />
+    )}
+    </>
   )
 }
 
@@ -1734,6 +1973,7 @@ function WordleBoard({ board, registry, refresh, loading }) {
  * why scanning it on a second device brings everything with it.
  */
 function Identity({ registry, onChanged }) {
+  const toast = useToast()
   const [open, setOpen] = useState(false)
   const [code, setCode] = useState(getPlayerId)
   const [name, setName] = useState('')
@@ -1775,6 +2015,11 @@ function Identity({ registry, onChanged }) {
       const data = await res.json()
       if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
       setDone(mine ? 'Name changed.' : 'Name claimed.')
+      toast({
+        title: mine ? `You are now ${name.trim()}` : `${name.trim()} is yours`,
+        sub: 'Registered on chain',
+        signature: data.signature,
+      })
       onChanged()
     } catch {
       setError('Could not reach the server.')
@@ -1879,6 +2124,7 @@ function Identity({ registry, onChanged }) {
 const DIR_KEYS = { ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3, a: 0, d: 1, w: 2, s: 3 }
 
 function Game2048({ registry }) {
+  const toast = useToast()
   const [board, setBoard] = useState(null)
   const [me, setMe] = useState(null)
 
@@ -1975,7 +2221,14 @@ function Game2048({ registry }) {
         if (typeof data.ms === 'number') setTimes((t) => [...t.slice(-49), data.ms])
         if (data.ok && !data.noChange) {
           setSent((n) => n + 1)
-          if (data.signature) remember(data.signature)
+          if (data.signature) {
+            remember(data.signature)
+            // One toast per move would be unbearable at this pace, so only the
+            // move that ended the game gets one.
+            if (queue.current.length === 0 && over) {
+              toast({ title: 'Final move recorded', sub: `${score.toLocaleString()} points over ${moves} moves`, signature: data.signature })
+            }
+          }
         } else if (!data.ok) {
           setError(data.detail ? `${data.error} (${data.detail})` : data.error)
         }
@@ -2007,7 +2260,10 @@ function Game2048({ registry }) {
     try {
       const data = await post({ action: '2048-new' })
       if (!data.ok) { setError(data.detail ? `${data.error} (${data.detail})` : data.error); return }
-      if (data.signature) remember(data.signature)
+      if (data.signature) {
+        remember(data.signature)
+        toast({ title: 'New board on chain', sub: 'Every swipe from here is its own transaction', signature: data.signature })
+      }
       // A new game resets the chain's move count to zero, so wait for it to
       // actually appear rather than adopting the previous game's board.
       for (let attempt = 0; attempt < 8; attempt++) {
@@ -2125,11 +2381,12 @@ function Game2048({ registry }) {
         </p>
 
         {over && (
-          <div className="result">
-            <h3>No moves left</h3>
-            <p className="fine" style={{ margin: '4px 0 0' }}>
-              {score.toLocaleString()} points over {moves} moves, all of them on chain.
+          <div className="hero">
+            <p className="hero-eyebrow">No moves left</p>
+            <p className="hero-value">
+              {score.toLocaleString()}<span className="unit">points</span>
             </p>
+            <p className="hero-note">{moves} moves, every one its own transaction on Thru.</p>
           </div>
         )}
 
@@ -2139,6 +2396,22 @@ function Game2048({ registry }) {
           {starting ? 'Starting' : started ? 'Start over' : 'New game'}
         </button>
       </section>
+
+      {over && (
+        <ShareResult
+          key={`2048-${moves}`}
+          filename={`thru2048-${score}.png`}
+          render={() => render2048Card({
+            name: myName,
+            board: cells,
+            score,
+            moves,
+            best: Math.max(score, me?.bestScore ?? 0),
+            signature: history[0]?.signature,
+          })}
+          text={share2048Text({ name: myName, score, moves, signature: history[0]?.signature })}
+        />
+      )}
 
       {history.length > 0 && (
         <>
@@ -2750,7 +3023,8 @@ function CommunityPage() {
 export default function App() {
   return (
     <BrowserRouter>
-      <Shell>
+      <ToastHost>
+        <Shell>
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
           <Route path="/wall" element={<WallPage />} />
@@ -2760,8 +3034,9 @@ export default function App() {
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/community" element={<CommunityPage />} />
-        </Routes>
-      </Shell>
+          </Routes>
+        </Shell>
+      </ToastHost>
     </BrowserRouter>
   )
 }

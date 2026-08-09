@@ -888,6 +888,227 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .game-picker button[aria-pressed="true"] span { color: rgba(241, 240, 237, 0.62); }
 
+/* ---------- hero blocks ----------
+   Decoded results were rows of grey labels, which read as a database dump. A
+   hero band puts the one thing you actually looked up in ink at full size,
+   with the detail underneath, so a name service lookup or a token now has an
+   answer rather than just data. */
+.hero {
+  background: var(--ink);
+  color: var(--canvas);
+  border-radius: var(--r-md);
+  padding: 18px 20px;
+  margin: 0 0 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Faint dot field, matching the share cards, so the family is obvious. */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(241, 240, 237, 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+  pointer-events: none;
+}
+
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(241, 240, 237, 0.5);
+  margin: 0 0 6px;
+}
+
+.hero-value {
+  margin: 0;
+  font-size: clamp(24px, 6vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  word-break: break-word;
+}
+
+.hero-value .unit { font-size: 0.5em; font-weight: 500; color: rgba(241, 240, 237, 0.55); margin-left: 6px; }
+.hero-note { margin: 8px 0 0; font-size: 12.5px; color: rgba(241, 240, 237, 0.62); }
+
+.hero-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; position: relative; }
+
+.hero-tag {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(241, 240, 237, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hero-tag.on { background: var(--signal); }
+
+/* ---------- share ---------- */
+
+.share-card {
+  display: block;
+  width: 100%;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.share-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.share-actions .btn { flex: 1; min-width: 120px; }
+
+/* ---------- hero panel ----------
+   For cards whose subject deserves a headline rather than another key-value
+   row. A decoded name or token is the answer to what somebody just searched
+   for, so it gets stated at size instead of hiding among its own metadata. */
+.hero {
+  position: relative;
+  background: var(--ink);
+  color: var(--canvas);
+  border-radius: var(--r-md);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+/* The same diagonal weave the share card uses, so a decoded result on the
+   site and a posted card read as the same family. */
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(241, 240, 237, 0.05) 0 1px,
+    transparent 1px 14px
+  );
+  pointer-events: none;
+}
+
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(241, 240, 237, 0.5);
+  margin: 0 0 6px;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  word-break: break-word;
+}
+
+.hero-title.mono { font-family: var(--mono); font-size: 25px; }
+
+.hero-stats { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 14px; }
+.hero-stat b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.hero-stat span { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(241, 240, 237, 0.5); }
+
+.hero-tag {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(241, 240, 237, 0.55);
+  border: 1px solid rgba(241, 240, 237, 0.2);
+  border-radius: 999px;
+  padding: 3px 10px;
+  z-index: 1;
+}
+
+/* Records read better as their own tiles than as another table. */
+.rec-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+
+@media (min-width: 620px) { .rec-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- toast ----------
+   Confirmation belongs where you are looking, not in a panel further down the
+   page. This sits above everything, gets out of the way on its own, and its
+   whole job is to make the transaction one tap away while the moment is still
+   fresh. */
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--ink);
+  color: var(--canvas);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  box-shadow: 0 6px 24px rgba(22, 24, 29, 0.28);
+  animation: toast-in 0.18s ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toast-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.toast-title { font-size: 13.5px; font-weight: 600; }
+.toast-sub { font-size: 11.5px; color: rgba(241, 240, 237, 0.6); }
+
+.toast-sig {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: rgba(241, 240, 237, 0.72);
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+.toast-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+.toast-actions a,
+.toast-actions button {
+  flex: 1;
+  text-align: center;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--canvas);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.toast-actions a:hover,
+.toast-actions button:hover { background: rgba(255, 255, 255, 0.24); }
+
+.toast-close {
+  background: none;
+  border: 0;
+  color: rgba(241, 240, 237, 0.55);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
 /* ---------- identity ---------- */
 
 .ident {
