@@ -102,7 +102,8 @@ const GUIDES = [
         note: 'On Windows, if the version looks wrong, this shows every copy on your system:',
         noteCommand: 'Get-Command thru -All',
         verify: 'thru --version',
-        verifyNote: 'Should print 0.3.2 or newer.',
+        verifyNote:
+          'Thru ships updates often, and an old CLI can fail in confusing ways against a newer network. The same install command updates it later, and the Updates tab always shows the current version.',
       },
       {
         title: 'Check you can reach the network',
@@ -2728,6 +2729,31 @@ function UpdatesPage() {
       <p className="eyebrow">Network</p>
       <h1 className="h1">Releases</h1>
       <p className="lede">Every version Unto Labs has shipped, newest first, each with a plain-language summary.</p>
+
+      {/* The most common reason anyone opens this page is to find out whether
+          they are behind. Answer that first, with the command already written
+          out, rather than making them go and look it up. */}
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2 className="h2">Stay up to date</h2>
+            <p className="sub">
+              {releases[0]
+                ? `Latest release is ${releases[0].tag_name}, ${timeAgo(releases[0].published_at)}`
+                : 'Update the CLI to the newest version'}
+            </p>
+          </div>
+        </div>
+
+        <Code code="npm install -g thru@latest" label="Update the CLI" />
+        <Code code="thru --version" label="Check what you are on" />
+
+        <p className="fine" style={{ marginBottom: 0, lineHeight: 1.65 }}>
+          Windows and WSL keep separate installs, so run it in both if you build C programs. If the version still looks
+          old afterwards, an older copy is shadowing it on your PATH — <InlineCode>Get-Command thru -All</InlineCode> on
+          Windows or <InlineCode>which -a thru</InlineCode> on Linux will show every one it can find.
+        </p>
+      </section>
 
       <div className="inline" style={{ marginBottom: 18 }}>
         <button className="btn ghost" onClick={() => fetchReleases(true)} disabled={refreshing}>{refreshing ? 'Refreshing' : 'Refresh'}</button>
