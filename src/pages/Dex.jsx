@@ -22,14 +22,16 @@ import {
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
-  buildBuyInstruction, buildSellInstruction, STATE_GRADUATED,
+  buildBuyInstruction, buildSellInstruction, buildLaunchInstruction,
 } from '../lib/pad.js'
 
+import { decodeMintAccount } from '../lib/token.js'
 import {
   THRUSWAP_PROGRAM as SWAP_PROGRAM,
   THRUSWAP_REGISTRY as SWAP_REGISTRY,
   THRUPAD_PROGRAM as PAD_PROGRAM,
   THRUPAD_REGISTRY as PAD_REGISTRY,
+  TUSD_MINT,
 } from '../lib/addresses.js'
 
 const DECIMALS = 6
@@ -109,12 +111,20 @@ function NotLive({ what }) {
   )
 }
 
-/** Fetch a registry plus the vault balances the page needs, in one go. */
-function useChainData(registry, decode, vaultsOf) {
-  const [state, setState] = useState({ loading: true, error: null, data: null, balances: {} })
+/**
+ * Fetch a registry, the vault balances the page needs, and the ticker of every
+ * mint involved, in one pass.
+ *
+ * Tickers are a separate read because a pool record stores mint ADDRESSES, not
+ * names: the program has no use for a name and storing one would be 8 wasted
+ * bytes per pool. The name lives in the mint account, where the token program
+ * put it, so the page fetches it rather than the chain duplicating it.
+ */
+function useChainData(registry, decode, vaultsOf, mintsOf) {
+  const [state, setState] = useState({ loading: true, error: null, data: null, balances: {}, tickers: {} })
 
   const load = useCallback(async () => {
-    if (!registry) { setState({ loading: false, error: null, data: null, balances: {} }); return }
+    if (!registry) { setState({ loading: false, error: null, data: null, balances: {}, tickers: {} }); return }
     setState((s) => ({ ...s, loading: true, error: null }))
     try {
       const acc = await getAccount(registry)
@@ -123,14 +133,26 @@ function useChainData(registry, decode, vaultsOf) {
       // Reserves are read live from the vaults rather than cached in the
       // record, so a price can never be quoted against a balance that is not
       // actually there.
-      const wanted = [...new Set(vaultsOf(data))]
-      const results = await Promise.all(wanted.map((v) => getAccount(v).catch(() => null)))
-      const balances = {}
-      wanted.forEach((v, i) => { balances[v] = results[i] ? readTokenAmount(results[i]) : 0n })
+      const wantVaults = [...new Set(vaultsOf(data))]
+      const wantMints = [...new Set((mintsOf ? mintsOf(data) : []).filter(Boolean))]
 
-      setState({ loading: false, error: null, data, balances })
+      const [vaultRes, mintRes] = await Promise.all([
+        Promise.all(wantVaults.map((v) => getAccount(v).catch(() => null))),
+        Promise.all(wantMints.map((m) => getAccount(m).catch(() => null))),
+      ])
+
+      const balances = {}
+      wantVaults.forEach((v, i) => { balances[v] = vaultRes[i] ? readTokenAmount(vaultRes[i]) : 0n })
+
+      const tickers = {}
+      wantMints.forEach((m, i) => {
+        try { tickers[m] = decodeMintAccount(mintRes[i]?.data?.base64).ticker || null }
+        catch { tickers[m] = null }
+      })
+
+      setState({ loading: false, error: null, data, balances, tickers })
     } catch (err) {
-      setState({ loading: false, error: String(err?.message ?? err), data: null, balances: {} })
+      setState({ loading: false, error: String(err?.message ?? err), data: null, balances: {}, tickers: {} })
     }
   }, [registry])
 
@@ -138,16 +160,234 @@ function useChainData(registry, decode, vaultsOf) {
   return { ...state, reload: load }
 }
 
+/* ---------- faucet ---------- */
+
+/**
+ * tUSD is what every pool and every launch is priced in, so without a way to
+ * get some the whole thing works for exactly one person: whoever holds the
+ * mint authority.
+ *
+ * The faucet only mints. Creating the destination account needs a state proof,
+ * which the CLI already does well and a browser does not, so the first command
+ * below is the user's to run. Doing less server-side means the part that
+ * matters cannot fail for a reason nobody can debug from here.
+ */
+function FaucetCard() {
+  const [account, setAccount] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+
+  const claim = async () => {
+    setBusy(true); setError(null); setResult(null)
+    try {
+      const r = await fetch('/api/faucet', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ account: account.trim() }),
+      })
+      const j = await r.json()
+      if (j.ok) setResult(j)
+      else setError(j.error || 'That did not go through.')
+    } catch {
+      setError('Could not reach the faucet.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const setupCommand =
+    `thru token initialize-account ${TUSD_MINT} YOUR_ADDRESS \\\n` +
+    `  0000000000000000000000000000000000000000000000000000000000000000 \\\n` +
+    `  --fee-payer YOUR_KEY_NAME`
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Get tUSD</h2>
+          <p className="sub">The test currency every pool and launch is priced in</p>
+        </div>
+      </div>
+
+      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+        You need a tUSD token account first. Run this once with your own CLI key, replacing
+        <code className="mono"> YOUR_ADDRESS</code> with your public key and
+        <code className="mono"> YOUR_KEY_NAME</code> with your key's name. It prints an address.
+      </p>
+      <CopyBlock text={setupCommand} label="Copy setup command" />
+
+      <div className="stack" style={{ marginTop: 18 }}>
+        <input
+          className="field mono"
+          value={account}
+          onChange={(e) => { setAccount(e.target.value); setError(null); setResult(null) }}
+          placeholder="Paste the token account address it printed"
+        />
+        <button className="btn" onClick={claim} disabled={busy || !account.trim()}>
+          {busy ? 'Sending' : 'Send me 1,000 tUSD'}
+        </button>
+      </div>
+
+      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+      {result && (
+        <div className="rows" style={{ marginTop: 14 }}>
+          <div className="row"><span>Sent</span><b className="mono">{fmt(result.amount)} tUSD</b></div>
+          <div className="row"><span>To</span><span className="mono">{short(result.account)}</span></div>
+        </div>
+      )}
+
+      <p className="fine" style={{ marginTop: 14 }}>
+        One claim per account every six hours. This is alphanet: tUSD is a test token with no value,
+        and everything here disappears when the network resets from genesis.
+      </p>
+    </section>
+  )
+}
+
+/* ---------- creating a launch ---------- */
+
+function randomSeed() {
+  const b = new Uint8Array(32)
+  crypto.getRandomValues(b)
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Launching needs four transactions and the last one cannot be written until
+ * the first three have run, because it refers to accounts they create. So this
+ * is deliberately two phases rather than a single button that lies about it.
+ */
+function CreateLaunchCard({ nextId, registry }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ name: '', symbol: '', supply: '1000000000', feePct: '1', virtQuote: '30' })
+  const [seeds] = useState(() => ({ mint: randomSeed(), tokenVault: randomSeed(), quoteVault: randomSeed() }))
+  const [made, setMade] = useState({ mint: '', tokenVault: '', quoteVault: '' })
+  const [launchId, setLaunchId] = useState(String(nextId))
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const setMk = (k) => (e) => setMade((m) => ({ ...m, [k]: e.target.value.trim() }))
+
+  const symbol = form.symbol.trim().toUpperCase().slice(0, 8)
+  const feeBps = Math.round(Math.min(10, Math.max(0, Number(form.feePct) || 0)) * 100)
+
+  const phaseOne = [
+    `# 1. the token, with thrupad as its mint authority so the supply is fixed`,
+    `thru token initialize-mint YOUR_ADDRESS ${symbol || 'TICKER'} ${seeds.mint} \\`,
+    `  --decimals 6 --mint-authority ${PAD_PROGRAM} --fee-payer YOUR_KEY_NAME`,
+    ``,
+    `# 2. the curve's own token vault, owned by thrupad`,
+    `thru token initialize-account THE_MINT_FROM_STEP_1 ${PAD_PROGRAM} ${seeds.tokenVault} \\`,
+    `  --fee-payer YOUR_KEY_NAME`,
+    ``,
+    `# 3. the curve's tUSD vault, owned by thrupad`,
+    `thru token initialize-account ${TUSD_MINT} ${PAD_PROGRAM} ${seeds.quoteVault} \\`,
+    `  --fee-payer YOUR_KEY_NAME`,
+  ].join('\n')
+
+  const ready = made.mint && made.tokenVault && made.quoteVault && symbol && form.name.trim()
+
+  const phaseTwo = useMemo(() => {
+    if (!ready) return null
+    try {
+      const built = buildLaunchInstruction({
+        registry,
+        launchId: Number(launchId) || 0,
+        mint: made.mint,
+        tokenVault: made.tokenVault,
+        quoteVault: made.quoteVault,
+        feeBps,
+        supply: toUnits(form.supply),
+        virtQuote: toUnits(form.virtQuote),
+        name: form.name,
+        symbol,
+      })
+      return cliCommand(PAD_PROGRAM, built)
+    } catch (err) {
+      return `# ${String(err?.message ?? err)}`
+    }
+  }, [ready, registry, launchId, made, feeBps, form.supply, form.virtQuote, form.name, symbol])
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Launch a token</h2>
+          <p className="sub">Four commands. The chain does the rest.</p>
+        </div>
+        <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? 'Close' : 'Create'}</button>
+      </div>
+
+      {open && (
+        <>
+          <div className="stack" style={{ marginTop: 16 }}>
+            <div className="form-row">
+              <label className="label">Name</label>
+              <input className="field" value={form.name} onChange={set('name')} placeholder="Thru Cat" maxLength={32} />
+            </div>
+            <div className="form-row">
+              <label className="label">Ticker</label>
+              <input className="field mono" value={form.symbol} onChange={set('symbol')} placeholder="TCAT" maxLength={8} />
+            </div>
+            <div className="form-row">
+              <label className="label">Supply</label>
+              <input className="field mono" value={form.supply} onChange={set('supply')} inputMode="decimal" />
+            </div>
+            <div className="form-row">
+              <label className="label">Your fee, percent</label>
+              <input className="field mono" value={form.feePct} onChange={set('feePct')} inputMode="decimal" placeholder="1" />
+            </div>
+            <div className="form-row">
+              <label className="label">Opening liquidity, tUSD</label>
+              <input className="field mono" value={form.virtQuote} onChange={set('virtQuote')} inputMode="decimal" />
+            </div>
+            <div className="form-row">
+              <label className="label">Slot</label>
+              <input className="field mono" value={launchId} onChange={(e) => setLaunchId(e.target.value)} inputMode="numeric" />
+            </div>
+          </div>
+
+          <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
+            Your fee is capped at 10% and is charged on every buy and sell, claimable at any time.
+            Opening liquidity is virtual: it sets the starting price without you putting anything in,
+            and a smaller number means a steeper curve.
+          </p>
+
+          <p className="eyebrow" style={{ marginTop: 20 }}>Step one, run these three</p>
+          <CopyBlock text={phaseOne} label="Copy commands" />
+
+          <p className="eyebrow" style={{ marginTop: 20 }}>Step two, paste what they printed</p>
+          <div className="stack">
+            <input className="field mono" value={made.mint} onChange={setMk('mint')} placeholder="mint address from step 1" />
+            <input className="field mono" value={made.tokenVault} onChange={setMk('tokenVault')} placeholder="token account from step 2" />
+            <input className="field mono" value={made.quoteVault} onChange={setMk('quoteVault')} placeholder="token account from step 3" />
+          </div>
+
+          {phaseTwo
+            ? <CopyBlock text={phaseTwo} label="Copy the launch command" />
+            : <p className="fine" style={{ marginTop: 12 }}>Fill in the three addresses and the launch command appears here.</p>}
+        </>
+      )}
+    </section>
+  )
+}
+
 /* ==========================================================================
    SWAP
    ========================================================================== */
 
-function PoolCard({ pool, balances, program, registry }) {
+function PoolCard({ pool, balances, tickers, program, registry }) {
   const [amount, setAmount] = useState('')
   const [flipped, setFlipped] = useState(false)
 
   const reserveA = balances[pool.vaultA] ?? 0n
   const reserveB = balances[pool.vaultB] ?? 0n
+
+  // A pool record stores mint addresses, not names. The ticker comes from the
+  // mint account itself, so it falls back to a short address when that read
+  // has not landed yet rather than showing nothing.
+  const symA = tickers?.[pool.mintA] || short(pool.mintA)
+  const symB = tickers?.[pool.mintB] || short(pool.mintB)
 
   const vaultIn = flipped ? pool.vaultB : pool.vaultA
   const vaultOut = flipped ? pool.vaultA : pool.vaultB
@@ -178,8 +418,8 @@ function PoolCard({ pool, balances, program, registry }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <h2 className="h2">Pool {pool.id}</h2>
-          <p className="sub">{pool.feeBps / 100}% to liquidity providers</p>
+          <h2 className="h2">{symA} / {symB}</h2>
+          <p className="sub">Pool {pool.id} · {pool.feeBps / 100}% to liquidity providers</p>
         </div>
         <span className="hero-tag">{Number(pool.swapCount)} swap{Number(pool.swapCount) === 1 ? '' : 's'}</span>
       </div>
@@ -190,14 +430,14 @@ function PoolCard({ pool, balances, program, registry }) {
           {fmt(reserveA)} <span style={{ opacity: 0.55, fontSize: 15 }}>/</span> {fmt(reserveB)}
         </h2>
         <div className="hero-stats">
-          <span className="hero-stat"><b>{price ? price.toFixed(4) : '0'}</b><span>B per A</span></span>
+          <span className="hero-stat"><b>{price ? price.toFixed(4) : '0'}</b><span>{symB} per {symA}</span></span>
           <span className="hero-stat"><b>{fmt(pool.lpSupply)}</b><span>LP supply</span></span>
         </div>
       </div>
 
       <div className="rows" style={{ marginTop: 4 }}>
-        <div className="row"><span>Token A</span><span className="mono">{short(pool.mintA)}</span></div>
-        <div className="row"><span>Token B</span><span className="mono">{short(pool.mintB)}</span></div>
+        <div className="row"><span>{symA}</span><span className="mono">{short(pool.mintA)}</span></div>
+        <div className="row"><span>{symB}</span><span className="mono">{short(pool.mintB)}</span></div>
       </div>
 
       <div className="stack" style={{ marginTop: 16 }}>
@@ -210,14 +450,14 @@ function PoolCard({ pool, balances, program, registry }) {
             inputMode="decimal"
           />
           <button className="btn ghost" onClick={() => setFlipped((f) => !f)} title="Swap direction">
-            {flipped ? 'B → A' : 'A → B'}
+            {flipped ? `${symB} → ${symA}` : `${symA} → ${symB}`}
           </button>
         </div>
 
         {amountIn > 0n && (
           quote.amountOut > 0n ? (
             <div className="rows">
-              <div className="row"><span>You receive</span><b className="mono">{fmt(quote.amountOut)}</b></div>
+              <div className="row"><span>You receive</span><b className="mono">{fmt(quote.amountOut)} {flipped ? symA : symB}</b></div>
               <div className="row"><span>Price impact</span><span className="mono">{(Number(quote.priceImpactBps) / 100).toFixed(2)}%</span></div>
               <div className="row"><span>Fee</span><span className="mono">{fmt((amountIn * BigInt(pool.feeBps)) / 10000n)}</span></div>
             </div>
@@ -241,10 +481,11 @@ function PoolCard({ pool, balances, program, registry }) {
 }
 
 export function SwapPage() {
-  const { loading, error, data, balances, reload } = useChainData(
+  const { loading, error, data, balances, tickers, reload } = useChainData(
     SWAP_REGISTRY,
     decodeSwapRegistry,
     (d) => d.pools.flatMap((p) => [p.vaultA, p.vaultB]),
+    (d) => d.pools.flatMap((p) => [p.mintA, p.mintB]),
   )
 
   if (!SWAP_PROGRAM || !SWAP_REGISTRY) {
@@ -282,8 +523,11 @@ export function SwapPage() {
       </section>
 
       {data?.pools.map((p) => (
-        <PoolCard key={p.id} pool={p} balances={balances} program={SWAP_PROGRAM} registry={SWAP_REGISTRY} />
+        <PoolCard key={p.id} pool={p} balances={balances} tickers={tickers}
+                  program={SWAP_PROGRAM} registry={SWAP_REGISTRY} />
       ))}
+
+      <FaucetCard />
     </div>
   )
 }
@@ -477,6 +721,11 @@ export function LaunchpadPage() {
         )}
       </section>
 
+      <CreateLaunchCard
+        nextId={data ? (data.launches.reduce((m, l) => Math.max(m, l.id), -1) + 1) : 0}
+        registry={PAD_REGISTRY}
+      />
+
       {data?.launches.map((l) => (
         <LaunchCard
           key={l.id}
@@ -488,6 +737,8 @@ export function LaunchpadPage() {
           slot={slot}
         />
       ))}
+
+      <FaucetCard />
     </div>
   )
 }
