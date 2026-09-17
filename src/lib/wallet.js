@@ -55,6 +55,19 @@ const ENDPOINT = '/api/wallet'
 const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
 const SIGNATURE_DOMAIN_EOA_CREATE = 5
 
+/* Thru's own faucet, which hands out native THRU rather than a test token.
+   Permissionless: the recipient is whoever pays the fee, so a wallet claims for
+   itself and nobody can direct someone else's claim elsewhere. Capped at 10,000
+   per transaction and repeatable.
+
+   WITHDRAW: [u32 op = 1][u32 faucet_account_idx][u64 amount]
+
+   Recovered by decoding a transaction the CLI produced, then confirmed against
+   a second one with a different amount. */
+const NATIVE_FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
+const NATIVE_FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
+const NATIVE_FAUCET_MAX = 10_000n
+
 /* ---------- small helpers ---------- */
 
 const toBytes = (a) => Pubkey.from(a).toBytes()
@@ -251,6 +264,40 @@ export async function registerOnChain() {
   return { already: false, address, txn }
 }
 
+/**
+ * Register, wait for the account to actually appear, then fund it.
+ *
+ * The wait is not optional. Creation lands a slot or two after it is submitted,
+ * and a claim sent before then fails as though the account did not exist,
+ * because it does not. `onStep` lets the page say which of the three things is
+ * happening rather than showing one long spinner.
+ */
+export async function registerAndFund(onStep = () => {}) {
+  onStep('registering')
+  const { already, address } = await registerOnChain()
+
+  if (!already) {
+    onStep('waiting')
+    let live = false
+    for (let i = 0; i < 12 && !live; i++) {
+      await new Promise((r) => setTimeout(r, 1800))
+      live = await accountExists(address)
+    }
+    if (!live) throw new Error('The account did not appear. It may still land; try refreshing in a moment.')
+  }
+
+  // Funding is a nicety, not a requirement, so a failure here should not look
+  // like a failure to register. The wallet still works at a zero fee.
+  try {
+    if ((await nativeBalance()) === 0n) {
+      onStep('funding')
+      await claimNativeThru()
+    }
+  } catch { /* leave it unfunded rather than failing the whole flow */ }
+
+  return { address }
+}
+
 /** Token accounts hold balances; the wallet address itself holds none. The
  *  sponsor opens them because creating an account needs a state proof, and
  *  ownership is recorded in the account rather than proved by a signature. */
@@ -277,31 +324,81 @@ export async function accountExists(address) {
  * instruction's indices were computed against; every builder in swap.js and
  * pad.js returns them that way, so pass them straight through.
  */
-export async function signAndSend({ program, readWrite = [], readOnly = [], data, stateUnits = 60_000 }) {
+export async function signAndSend({
+  program, readWrite = [], readOnly = [], data,
+  computeUnits = 300_000_000, stateUnits = 60_000, memoryUnits = 60_000,
+}) {
   const { address, privateKey } = requireSession()
-  const { nonce, startSlot, chainId } = await api('prepare', { address })
+  const { nonce, startSlot, chainId, balance } = await api('prepare', { address })
+
+  // Pay a real fee when there is a balance to pay it from, and zero when there
+  // is not. A fee above the balance fails the transaction outright rather than
+  // being taken from elsewhere, so a brand new account has to start at zero.
+  // Alphanet accepts zero today; funding the wallet means it does not have to.
+  const fee = BigInt(balance ?? 0) > 0n ? 1n : 0n
 
   const { rawTransaction } = await new TransactionBuilder().buildAndSign({
     feePayer: { publicKey: address, privateKey },
     program,
     accounts: { readWriteAccounts: readWrite, readOnlyAccounts: readOnly },
     header: {
-      // Zero, because a new account has no native balance and any fee above it
-      // fails the transaction outright rather than being taken from elsewhere.
-      fee: 0n,
+      fee,
       nonce: BigInt(nonce),
       startSlot: BigInt(startSlot),
       expiryAfter: 100,
       chainId,
-      computeUnits: 300_000_000,
+      computeUnits,
       stateUnits,
-      memoryUnits: 60_000,
+      memoryUnits,
     },
     instructionData: data,
   })
 
   const { signature } = await api('submit', { raw: b64.encode(rawTransaction) })
   return signature
+}
+
+/**
+ * Claim native THRU from Thru's own faucet, signed and paid for by this wallet.
+ *
+ * This is the step that takes the wallet off its training wheels. Until it has
+ * a native balance it cannot pay a fee at all, so every transaction has to go
+ * out at zero, which alphanet allows and mainnet will not. One claim and the
+ * wallet is paying its own way through the same code path it will use later.
+ *
+ * Nothing about it is sponsored. The faucet pays whoever paid the fee, so a
+ * wallet can only ever claim for itself.
+ */
+export async function claimNativeThru(amount = NATIVE_FAUCET_MAX) {
+  const capped = amount > NATIVE_FAUCET_MAX ? NATIVE_FAUCET_MAX : amount
+
+  const data = new Uint8Array(16)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 1, true)          // WITHDRAW
+  dv.setUint32(4, 2, true)          // the faucet account, the only read-write, at index 2
+  dv.setBigUint64(8, capped, true)
+
+  return signAndSend({
+    program: NATIVE_FAUCET_PROGRAM,
+    readWrite: [NATIVE_FAUCET_ACCOUNT],
+    data,
+    computeUnits: 300_000,
+    stateUnits: 10_000,
+    memoryUnits: 10_000,
+  })
+}
+
+/** Claim tUSD. The endpoint opens the token account first if there is not one. */
+export async function claimTusd() {
+  const { address } = requireSession()
+  return api('faucet', { owner: address })
+}
+
+/** The wallet's own native balance, in base units. */
+export async function nativeBalance() {
+  const { address } = requireSession()
+  const { balance } = await api('prepare', { address })
+  return BigInt(balance ?? 0)
 }
 
 /** Poll until the chain has a verdict, so the UI can say what happened rather

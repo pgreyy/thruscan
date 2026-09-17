@@ -25,8 +25,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createWallet, importWallet, unlock, locked, forgetWallet,
   hasWallet, storedWallet, isUnlocked, currentAddress,
-  registerOnChain, openTokenAccount, tokenBalances, accountExists,
+  registerAndFund, openTokenAccount, tokenBalances, accountExists,
   deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
+  claimNativeThru, claimTusd, nativeBalance,
 } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
 
@@ -42,6 +43,7 @@ let state = {
   address: currentAddress(),
   unlocked: isUnlocked(),
   registered: false,
+  native: 0n,          // native THRU, which is what pays fees
   balances: {},        // mint -> { account, exists, amount (BigInt) }
 }
 
@@ -62,15 +64,16 @@ export function useWallet() {
     if (!isUnlocked()) return
     const wanted = Array.from(new Set([TUSD_MINT, ...mints, ...Object.keys(state.balances)]))
     try {
-      const [registered, rows] = await Promise.all([
+      const [registered, native, rows] = await Promise.all([
         accountExists(currentAddress()),
+        nativeBalance().catch(() => 0n),
         wanted.length ? tokenBalances(wanted) : Promise.resolve([]),
       ])
       const balances = { ...state.balances }
       for (const r of rows) {
         balances[r.mint] = { account: r.account, exists: r.exists, amount: BigInt(r.amount) }
       }
-      setState({ registered, balances, address: currentAddress(), unlocked: true })
+      setState({ registered, native, balances, address: currentAddress(), unlocked: true })
     } catch { /* leave what we had; a failed refresh is not a failed wallet */ }
   }, [])
 
@@ -325,35 +328,46 @@ function Balances({ wallet, mints }) {
   )
 }
 
-function Faucet({ wallet }) {
-  const [busy, setBusy] = useState(false)
+/**
+ * Two currencies, two buttons, and they are genuinely different things.
+ *
+ * tUSD is our test token: it is what pools and launches are priced in, and
+ * ThruScan mints it. THRU is the network's own asset, it is what pays fees, and
+ * it comes from Thru's faucet rather than from us. The wallet claims that one
+ * for itself, signing and paying for the claim, because the faucet pays
+ * whoever paid the fee and so cannot be pointed at anybody else.
+ */
+export function TopUpCard() {
+  const wallet = useWallet()
+  const [busy, setBusy] = useState(null)
   const [note, setNote] = useState(null)
   const [error, setError] = useState(null)
-  const tusd = wallet.balances[TUSD_MINT]
 
-  const claim = async () => {
-    setBusy(true); setError(null); setNote(null)
+  const claimTokens = async () => {
+    setBusy('tusd'); setError(null); setNote(null)
     try {
-      let account = tusd?.account
-      if (!tusd?.exists) {
-        const opened = await openTokenAccount(TUSD_MINT)
-        account = opened.account
-        await new Promise((r) => setTimeout(r, 2500))
-      }
-      const r = await fetch('/api/faucet', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ account }),
-      })
-      const j = await r.json()
-      if (!j.ok) throw new Error(j.error || 'That did not go through.')
+      const j = await claimTusd()
       setNote(`${fmt(j.amount)} tUSD on the way.`)
       await new Promise((r) => setTimeout(r, 2500))
       await wallet.refresh()
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
-      setBusy(false)
+      setBusy(null)
+    }
+  }
+
+  const claimGas = async () => {
+    setBusy('thru'); setError(null); setNote(null)
+    try {
+      await claimNativeThru()
+      setNote('10,000 THRU on the way. That is what pays your transaction fees.')
+      await new Promise((r) => setTimeout(r, 3000))
+      await wallet.refresh()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -361,17 +375,41 @@ function Faucet({ wallet }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <h2 className="h2">Get tUSD</h2>
-          <p className="sub">The test currency every pool and every launch is priced in</p>
+          <h2 className="h2">Top up</h2>
+          <p className="sub">tUSD to trade with, THRU to pay fees with</p>
         </div>
-        <button className="btn" onClick={claim} disabled={busy}>
-          {busy ? 'Sending' : 'Claim 1,000 tUSD'}
-        </button>
       </div>
+
+      <div className="rows" style={{ marginTop: 12 }}>
+        <div className="row">
+          <span>
+            <b>tUSD</b>{' '}
+            <span className="fine">what pools and launches are priced in</span>
+          </span>
+          <button className="btn" onClick={claimTokens} disabled={busy !== null}>
+            {busy === 'tusd' ? 'Sending' : 'Claim 1,000'}
+          </button>
+        </div>
+        <div className="row">
+          <span>
+            <b>THRU</b>{' '}
+            <span className="fine">
+              the network's own asset, {wallet.native?.toString() ?? '0'} held
+            </span>
+          </span>
+          <button className="btn ghost" onClick={claimGas} disabled={busy !== null}>
+            {busy === 'thru' ? 'Claiming' : 'Claim 10,000'}
+          </button>
+        </div>
+      </div>
+
       {note && <p className="notice" style={{ marginTop: 14 }}>{note}</p>}
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      <p className="fine" style={{ marginTop: 12 }}>
-        One claim per account every six hours. If you have no tUSD account yet, this opens one first.
+
+      <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+        tUSD is capped at one claim per account every six hours, and opens your token account for
+        you if you do not have one. THRU comes from Thru's own faucet rather than from ThruScan, so
+        it is capped at 10,000 a time by the network and you can come back for more.
       </p>
     </section>
   )
@@ -421,25 +459,27 @@ function Danger({ wallet }) {
   )
 }
 
+const STEP_LABEL = {
+  registering: 'Registering',
+  waiting: 'Waiting for the chain',
+  funding: 'Claiming THRU for fees',
+}
+
 function LiveWallet({ wallet, mints }) {
-  const [busy, setBusy] = useState(false)
+  const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => { wallet.refresh(mints.map((m) => m.mint)) /* eslint-disable-next-line */ }, [])
 
   const register = async () => {
-    setBusy(true); setError(null)
+    setStep('registering'); setError(null)
     try {
-      await registerOnChain()
-      for (let i = 0; i < 10 && !state.registered; i++) {
-        await new Promise((r) => setTimeout(r, 1800))
-        await wallet.refresh(mints.map((m) => m.mint))
-        if (state.registered) break
-      }
+      await registerAndFund(setStep)
+      await wallet.refresh(mints.map((m) => m.mint))
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
-      setBusy(false)
+      setStep(null)
     }
   }
 
@@ -460,10 +500,11 @@ function LiveWallet({ wallet, mints }) {
               This key exists, but it has no account on chain yet. A brand new key cannot pay its
               own way into existence, so ThruScan pays for that one transaction. It is authorised by
               a signature made here with your key, which names this chain and this payer, so it
-              cannot be reused for anything else.
+              cannot be reused for anything else. Straight after, the wallet claims THRU from Thru's
+              own faucet and starts paying its own fees.
             </p>
-            <button className="btn" style={{ marginTop: 14 }} onClick={register} disabled={busy}>
-              {busy ? 'Registering' : 'Register on chain'}
+            <button className="btn" style={{ marginTop: 14 }} onClick={register} disabled={step !== null}>
+              {step ? `${STEP_LABEL[step] ?? 'Working'}…` : 'Register on chain'}
             </button>
           </>
         )}
@@ -471,6 +512,12 @@ function LiveWallet({ wallet, mints }) {
         {wallet.registered && (
           <div className="rows" style={{ marginTop: 12 }}>
             <div className="row"><span>Status</span><b>Live on alphanet</b></div>
+            <div className="row">
+              <span>Fees</span>
+              <b className="mono">
+                {wallet.native > 0n ? `${wallet.native.toString()} THRU` : 'unfunded, paying zero'}
+              </b>
+            </div>
             <div className="row">
               <span>Explorer</span>
               <a className="mono" href={`/account/${wallet.address}`}>{short(wallet.address)}</a>
@@ -481,7 +528,7 @@ function LiveWallet({ wallet, mints }) {
         {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
       </section>
 
-      {wallet.registered && <Faucet wallet={wallet} />}
+      {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
       <Danger wallet={wallet} />
     </>

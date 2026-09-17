@@ -2,18 +2,20 @@
 //
 // The Swap and Launchpad pages.
 //
-// Both are read-and-quote rather than click-to-trade. A trade moves real
-// balances, so the tokens have to sit in somebody's account, and the sponsored
-// model the games use would mean everyone shared one pot: one visitor could
-// spend what another just bought. Rather than ship something that looks like a
-// wallet and is not, these pages price the trade exactly as the chain will and
-// hand over the command to run with your own key. The wall already works this
-// way with its "Post from your terminal" tab.
+// Both trade, and both also print the command, because those are two audiences
+// and neither should be made to use the other's tool.
+//
+// A trade moves real balances, so the tokens have to sit in somebody's account.
+// The sponsored model the games use would mean everyone shared one pot, where
+// one visitor could spend what another just bought, so that was never an
+// option. What makes the buttons honest instead is the in-app wallet: a Thru
+// transaction carries one signature, the fee payer's, so the only way to spend
+// your tokens is to hold the key, and the key is in your browser.
 //
 // The quotes are not approximations. quoteSwap and quoteBuy reproduce the
 // programs' arithmetic in BigInt, and the instruction builders were checked
 // byte for byte against transactions that already executed on chain, so the
-// number shown here is the number that lands.
+// number shown here is the number that lands, by either route.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAccount } from '../lib/rpcClient.js'
@@ -26,6 +28,8 @@ import {
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
+import { useWallet, sendBuilt, TopUpCard } from './Wallet.jsx'
+import { deriveTokenAccount, openTokenAccount } from '../lib/wallet.js'
 import {
   THRUSWAP_PROGRAM as SWAP_PROGRAM,
   THRUSWAP_REGISTRY as SWAP_REGISTRY,
@@ -95,6 +99,96 @@ function CopyBlock({ text, label = 'Copy command' }) {
         <pre className="mono" style={{ margin: 0, padding: 12, fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text}</pre>
       </div>
       <button className="btn" style={{ marginTop: 8 }} onClick={copy}>{done ? 'Copied' : label}</button>
+    </div>
+  )
+}
+
+/**
+ * A quote becomes a button when there is a wallet, and stays a command when
+ * there is not.
+ *
+ * Both paths send exactly the same bytes. The builders in swap.js and pad.js
+ * sort the accounts and derive every index from the sorted order, so what the
+ * button signs and what the command would have run are the same transaction,
+ * and the number shown above it is the number that lands either way.
+ *
+ * `needs` maps a name the caller's builder expects to the mint whose token
+ * account should fill it. Those accounts are derived rather than asked for, and
+ * opened on the spot if they do not exist yet, because "you need a TCAT account
+ * before you can be paid in TCAT" is a true but useless thing to tell someone
+ * mid-trade.
+ */
+function Execute({ program, needs, buildWith, cli, label }) {
+  const wallet = useWallet()
+  const [step, setStep] = useState(null)
+  const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
+  const go = async () => {
+    setError(null); setDone(null)
+    try {
+      const resolved = {}
+      for (const [key, mint] of Object.entries(needs)) {
+        const account = await deriveTokenAccount(mint, wallet.address)
+        const known = wallet.balances[mint]
+        if (!known?.exists) {
+          setStep('opening')
+          const made = await openTokenAccount(mint)
+          // Opening lands a slot or two later, and trading into an account that
+          // is not there yet fails for a reason nobody could guess from the UI.
+          if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+          resolved[key] = made.account ?? account
+        } else {
+          resolved[key] = known.account ?? account
+        }
+      }
+
+      setStep('signing')
+      const built = buildWith(resolved)
+      const result = await sendBuilt(program, built)
+
+      if (result.settled && !result.succeeded) {
+        throw new Error(`The chain rejected it (error ${result.userError || result.vmError}).`)
+      }
+      setDone(result.signature)
+      await wallet.refresh(Object.values(needs))
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setStep(null)
+    }
+  }
+
+  if (!wallet.unlocked) {
+    return (
+      <>
+        <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
+          <a href="/wallet">Open a wallet</a> to do this in one click, or run it yourself: replace
+          the placeholder accounts with your own and <code className="mono">YOUR_KEY_NAME</code>{' '}
+          with your CLI key.
+        </p>
+        <CopyBlock text={cli} />
+      </>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <button className="btn" onClick={go} disabled={step !== null} style={{ width: '100%' }}>
+        {step === 'opening' ? 'Opening your token account…'
+          : step === 'signing' ? 'Signing…'
+          : label}
+      </button>
+      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+      {done && (
+        <p className="notice" style={{ marginTop: 12 }}>
+          Done. <a className="mono" href={`/tx/${done}`}>{short(done)}</a>
+        </p>
+      )}
+      <details style={{ marginTop: 12 }}>
+        <summary className="fine">Run it from the terminal instead</summary>
+        <CopyBlock text={cli} />
+      </details>
     </div>
   )
 }
@@ -181,10 +275,13 @@ function FaucetCard() {
   const claim = async () => {
     setBusy(true); setError(null); setResult(null)
     try {
-      const r = await fetch('/api/faucet', {
+      // The faucet lives inside /api/wallet rather than having a function of
+      // its own: Vercel's Hobby plan allows twelve, and a faucet is three lines
+      // of difference from what that endpoint already does.
+      const r = await fetch('/api/wallet', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ account: account.trim() }),
+        body: JSON.stringify({ action: 'faucet', account: account.trim() }),
       })
       const j = await r.json()
       if (j.ok) setResult(j)
@@ -390,6 +487,8 @@ function PoolCard({ pool, balances, tickers, program, registry }) {
   const vaultOut = flipped ? pool.vaultA : pool.vaultB
   const reserveIn = flipped ? reserveB : reserveA
   const reserveOut = flipped ? reserveA : reserveB
+  const mintIn = flipped ? pool.mintB : pool.mintA
+  const mintOut = flipped ? pool.mintA : pool.mintB
 
   const amountIn = toUnits(amount)
   const quote = useMemo(
@@ -465,13 +564,16 @@ function PoolCard({ pool, balances, tickers, program, registry }) {
       </div>
 
       {built && (
-        <>
-          <p className="fine" style={{ marginTop: 16 }}>
-            Replace the two placeholder accounts with your own token accounts for each side, and
-            <code className="mono"> YOUR_KEY_NAME</code> with your CLI key.
-          </p>
-          <CopyBlock text={cliCommand(program, built)} />
-        </>
+        <Execute
+          program={program}
+          needs={{ userIn: mintIn, userOut: mintOut }}
+          buildWith={(a) => buildSwapInstruction({
+            registry, poolId: pool.id, vaultIn, vaultOut,
+            userIn: a.userIn, userOut: a.userOut, amountIn, minOut: 1n,
+          })}
+          cli={cliCommand(program, built)}
+          label={`Swap ${amount} ${flipped ? symB : symA}`}
+        />
       )}
     </section>
   )
@@ -644,12 +746,23 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
       </div>
 
       {built && (
-        <>
-          <p className="fine" style={{ marginTop: 16 }}>
-            Replace the placeholder accounts with your own, and <code className="mono">YOUR_KEY_NAME</code> with your CLI key.
-          </p>
-          <CopyBlock text={cliCommand(program, built)} />
-        </>
+        <Execute
+          program={program}
+          needs={{ userToken: launch.mint, userQuote: TUSD_MINT }}
+          buildWith={(a) => {
+            const args = {
+              registry, launchId: launch.id,
+              tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
+              userToken: a.userToken, userQuote: a.userQuote,
+              amountIn, minOut: 1n,
+            }
+            return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
+          }}
+          cli={cliCommand(program, built)}
+          label={side === 'buy'
+            ? `Buy ${launch.symbol} with ${amount} tUSD`
+            : `Sell ${amount} ${launch.symbol}`}
+        />
       )}
     </section>
   )
@@ -755,15 +868,31 @@ export function LaunchpadPage() {
    ========================================================================== */
 
 export function FaucetPage() {
+  const wallet = useWallet()
+
   return (
     <div className="wrap">
       <p className="eyebrow">Get started</p>
       <h1 className="h1">Faucet</h1>
       <p className="lede">
-        tUSD is the test currency every pool and every launch is priced in. It has no value and
-        disappears whenever alphanet resets from genesis, which is the point: you can experiment
-        with it without risking anything.
+        tUSD is the test currency every pool and every launch is priced in, and THRU is what pays
+        transaction fees. Neither has any value, and both disappear whenever alphanet resets from
+        genesis, which is the point: you can experiment without risking anything.
       </p>
+
+      {wallet.unlocked && wallet.registered
+        ? <TopUpCard />
+        : (
+          <section className="card">
+            <h2 className="h2">The short way</h2>
+            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+              With a wallet this is two buttons and no addresses. <a href="/wallet">Open one</a>,
+              which takes about fifteen seconds, and it claims both currencies for you and opens the
+              token accounts they need. The longer way below still works if you would rather use
+              your own key from the terminal.
+            </p>
+          </section>
+        )}
 
       <FaucetCard />
 

@@ -46,6 +46,12 @@ const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
 const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 const ADDRESS_RE = /^ta[A-Za-z0-9_-]{44}$/
 
+const TUSD_MINT = process.env.THRU_TUSD_MINT || 'tabAx2SejGxnH7qDY02xofs0rrhBV2Cdoxg0yeG0hv7Z0R'
+
+/* 1,000 tUSD at six decimals. Enough to trade with and seed a small pool, not
+   so much that one person can move every price on the network. */
+const FAUCET_AMOUNT = BigInt(process.env.THRU_FAUCET_AMOUNT || '1000000000')
+
 /* State proof types: UNSPECIFIED 0, CREATING 1, UPDATING 2, EXISTING 3. */
 const PROOF_CREATING = 1
 
@@ -82,6 +88,27 @@ function charge(key) {
 function refund(key) {
   const mine = recent.get(key)
   if (mine?.length) recent.set(key, mine.slice(0, -1))
+}
+
+/* tUSD claims are capped per account for much longer than per IP, because the
+   point is to stop one person draining the supply rather than to stop a
+   double-click. Only recorded once the mint actually lands, so a failure does
+   not lock someone out for six hours. */
+const CLAIM_WINDOW = 6 * 60 * 60 * 1000
+const claims = new Map()
+
+function claimedTooRecently(who) {
+  const now = Date.now()
+  for (const [k, at] of claims) if (now - at > CLAIM_WINDOW * 2) claims.delete(k)
+  const last = claims.get(who)
+  return last && now - last < CLAIM_WINDOW ? CLAIM_WINDOW - (now - last) : 0
+}
+
+function human(ms) {
+  const mins = Math.ceil(ms / 60000)
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'}`
+  const hrs = Math.ceil(mins / 60)
+  return `${hrs} hour${hrs === 1 ? '' : 's'}`
 }
 
 /* ---------- bytes ---------- */
@@ -173,6 +200,10 @@ async function prepare(c, { address }) {
     ok: true,
     exists: account !== null,
     nonce: (account?.meta?.nonce ?? 0n).toString(),
+    // The wallet's native balance decides whether it can pay a fee at all. A
+    // freshly created account holds nothing, and any fee above its balance
+    // fails the whole transaction rather than being taken from elsewhere.
+    balance: (account?.meta?.balance ?? 0n).toString(),
     startSlot: height.finalized.toString(),
     chainId,
     sponsor: process.env.THRU_SPONSOR_PUBKEY,
@@ -269,6 +300,74 @@ async function balances(c, { owner, mints }) {
   return { ok: true, balances: out }
 }
 
+/**
+ * The tUSD faucet, which used to be its own function.
+ *
+ * It lives here because Vercel's Hobby plan allows twelve serverless functions
+ * and a faucet is not worth one of them when it is three lines of difference
+ * from what this file already does.
+ *
+ * Two ways in. A wallet passes its owner address and the account is derived and
+ * opened if needed, so claiming is one button. Someone using the CLI passes the
+ * token account directly, because their account was made elsewhere and we
+ * should not assume the default seed.
+ *
+ * MINT_TO, opcode 0x03: [0x03][mint u16][dest u16][authority u16][amount u64].
+ * The sponsor holds the mint authority and is also the fee payer, so the
+ * authority index is 0.
+ */
+async function faucet(c, { owner, account }) {
+  let dest = account
+
+  if (!dest) {
+    if (!owner) return { ok: false, error: 'Pass a wallet address or a token account.' }
+    dest = deriveTokenAccount(TUSD_MINT, owner)
+    if (!(await getAccount(c, dest))) {
+      const made = await open(c, { owner, mint: TUSD_MINT })
+      if (!made.ok) return made
+      // The account lands a slot or two later. Minting into an account that is
+      // not there yet fails with a number nobody can interpret, so wait.
+      for (let i = 0; i < 8 && !(await getAccount(c, dest)); i++) {
+        await new Promise((r) => setTimeout(r, 1500))
+      }
+    }
+  }
+
+  const held = await getAccount(c, dest)
+  if (!held) {
+    return { ok: false, error: 'No account at that address. Open your tUSD account first.' }
+  }
+  if ((held?.meta?.dataSize ?? 0) !== TOKEN_ACCOUNT_SIZE) {
+    return {
+      ok: false,
+      error: 'That is an account, but not a token account. Paste the address that '
+        + 'thru token initialize-account printed, not your wallet address.',
+    }
+  }
+
+  const raw = Buffer.from(held?.data?.data ?? [])
+  if (raw.length >= 32 && !raw.subarray(0, 32).equals(Buffer.from(toBytes(TUSD_MINT)))) {
+    return { ok: false, error: 'That token account is for a different token. It has to be a tUSD account.' }
+  }
+
+  const readWrite = sortAccounts([TUSD_MINT, dest])
+  const at = (a) => 2 + readWrite.indexOf(a)
+  const data = Buffer.alloc(15)
+  data.writeUInt8(0x03, 0)
+  data.writeUInt16LE(at(TUSD_MINT), 1)
+  data.writeUInt16LE(at(dest), 3)
+  data.writeUInt16LE(0, 5)
+  data.writeBigUInt64LE(FAUCET_AMOUNT, 7)
+
+  const signature = await sponsorSend(c, {
+    program: TOKEN_PROGRAM,
+    readWrite,
+    data: new Uint8Array(data),
+    stateUnits: 20_000,
+  })
+  return { ok: true, signature, amount: FAUCET_AMOUNT.toString(), account: dest }
+}
+
 /** Forwards bytes the browser already signed. Nothing here can change them:
  *  the signature covers the whole body, so a tampered transaction is simply
  *  rejected by the node. */
@@ -309,6 +408,7 @@ export default async function handler(req, res) {
   if (body.address !== undefined && !ADDRESS_RE.test(body.address)) return bad('address')
   if (body.owner !== undefined && !ADDRESS_RE.test(body.owner)) return bad('owner')
   if (body.mint !== undefined && !ADDRESS_RE.test(body.mint)) return bad('mint')
+  if (body.account !== undefined && !ADDRESS_RE.test(body.account)) return bad('account')
   if (body.mints !== undefined) {
     if (!Array.isArray(body.mints) || body.mints.length > 40) {
       return json(res, 400, { ok: false, error: 'Ask for at most 40 mints at a time.' })
@@ -318,7 +418,7 @@ export default async function handler(req, res) {
 
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown'
-  const metered = action === 'create' || action === 'open'
+  const metered = action === 'create' || action === 'open' || action === 'faucet'
 
   if (metered) {
     const wait = overBudget(ip)
@@ -328,12 +428,32 @@ export default async function handler(req, res) {
     charge(ip)
   }
 
+  // tUSD is capped per account as well as per IP. An IP limit alone is beaten
+  // by a phone on mobile data, and an account limit alone by making new
+  // accounts, so neither is sufficient and both are cheap.
+  if (action === 'faucet') {
+    const who = body.account || body.owner
+    const wait = claimedTooRecently(who)
+    if (wait > 0) {
+      refund(ip)
+      return json(res, 429, {
+        ok: false,
+        error: `That account already claimed. It can claim again in ${human(wait)}.`,
+      })
+    }
+  }
+
   try {
     const c = client()
     switch (action) {
       case 'prepare':  return json(res, 200, await prepare(c, body))
       case 'create':   return json(res, 200, await create(c, body))
       case 'open':     return json(res, 200, await open(c, body))
+      case 'faucet': {
+        const out = await faucet(c, body)
+        if (out.ok) claims.set(body.account || body.owner, Date.now())
+        return json(res, 200, out)
+      }
       case 'balances': return json(res, 200, await balances(c, body))
       case 'submit':   return json(res, 200, await submit(c, body))
       case 'status':   return json(res, 200, await status(c, body))
