@@ -258,8 +258,7 @@ function randomSeed() {
  * the first three have run, because it refers to accounts they create. So this
  * is deliberately two phases rather than a single button that lies about it.
  */
-function CreateLaunchCard({ nextId, registry }) {
-  const [open, setOpen] = useState(false)
+function CreateLaunchCard({ nextId, registry, onClose }) {
   const [form, setForm] = useState({ name: '', symbol: '', supply: '1000000000', feePct: '1', virtQuote: '30' })
   const [seeds] = useState(() => ({ mint: randomSeed(), tokenVault: randomSeed(), quoteVault: randomSeed() }))
   const [made, setMade] = useState({ mint: '', tokenVault: '', quoteVault: '' })
@@ -315,11 +314,10 @@ function CreateLaunchCard({ nextId, registry }) {
           <h2 className="h2">Launch a token</h2>
           <p className="sub">Four commands. The chain does the rest.</p>
         </div>
-        <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? 'Close' : 'Create'}</button>
+        <button className="btn ghost" onClick={onClose}>Close</button>
       </div>
 
-      {open && (
-        <>
+      <>
           <div className="stack" style={{ marginTop: 16 }}>
             <div className="form-row">
               <label className="label">Name</label>
@@ -366,8 +364,7 @@ function CreateLaunchCard({ nextId, registry }) {
           {phaseTwo
             ? <CopyBlock text={phaseTwo} label="Copy the launch command" />
             : <p className="fine" style={{ marginTop: 12 }}>Fill in the three addresses and the launch command appears here.</p>}
-        </>
-      )}
+      </>
     </section>
   )
 }
@@ -526,8 +523,6 @@ export function SwapPage() {
         <PoolCard key={p.id} pool={p} balances={balances} tickers={tickers}
                   program={SWAP_PROGRAM} registry={SWAP_REGISTRY} />
       ))}
-
-      <FaucetCard />
     </div>
   )
 }
@@ -662,6 +657,7 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
 
 export function LaunchpadPage() {
   const [slot, setSlot] = useState(null)
+  const [creating, setCreating] = useState(false)
   const { loading, error, data, balances, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
@@ -696,12 +692,30 @@ export function LaunchpadPage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Launch</p>
-      <h1 className="h1">Launchpad</h1>
+      {/* The action belongs beside the title, not buried below the list. Someone
+          arriving to launch something should not have to scroll to find out
+          they can. */}
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Launch</p>
+          <h1 className="h1">Launchpad</h1>
+        </div>
+        <button className="btn" onClick={() => setCreating((c) => !c)}>
+          {creating ? 'Close' : 'Create a token'}
+        </button>
+      </div>
       <p className="lede">
         Every launch puts its whole supply on a bonding curve priced in tUSD. There is no second
         instruction that mints, so the supply is fixed by construction rather than by promise.
       </p>
+
+      {creating && (
+        <CreateLaunchCard
+          nextId={data ? (data.launches.reduce((m, l) => Math.max(m, l.id), -1) + 1) : 0}
+          registry={PAD_REGISTRY}
+          onClose={() => setCreating(false)}
+        />
+      )}
 
       <section className="card">
         <div className="card-head">
@@ -721,11 +735,6 @@ export function LaunchpadPage() {
         )}
       </section>
 
-      <CreateLaunchCard
-        nextId={data ? (data.launches.reduce((m, l) => Math.max(m, l.id), -1) + 1) : 0}
-        registry={PAD_REGISTRY}
-      />
-
       {data?.launches.map((l) => (
         <LaunchCard
           key={l.id}
@@ -737,8 +746,35 @@ export function LaunchpadPage() {
           slot={slot}
         />
       ))}
+    </div>
+  )
+}
+
+/* ==========================================================================
+   FAUCET
+   ========================================================================== */
+
+export function FaucetPage() {
+  return (
+    <div className="wrap">
+      <p className="eyebrow">Get started</p>
+      <h1 className="h1">Faucet</h1>
+      <p className="lede">
+        tUSD is the test currency every pool and every launch is priced in. It has no value and
+        disappears whenever alphanet resets from genesis, which is the point: you can experiment
+        with it without risking anything.
+      </p>
 
       <FaucetCard />
+
+      <section className="card">
+        <h2 className="h2">What to do with it</h2>
+        <div className="rows" style={{ marginTop: 12 }}>
+          <div className="row"><span>Trade it</span><span className="fine">On the Swap page, against any pool</span></div>
+          <div className="row"><span>Buy a launch</span><span className="fine">On the Launchpad, along a bonding curve</span></div>
+          <div className="row"><span>Launch your own</span><span className="fine">Create a token and earn fees on every trade</span></div>
+        </div>
+      </section>
     </div>
   )
 }

@@ -1342,3 +1342,14 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .foot { margin-top: 34px; text-align: center; }
 .foot p { margin: 0 0 4px; }
+
+/* A page title with an action beside it. Wraps on narrow screens so the button
+   drops under the heading instead of crushing it. */
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-head .h1 { margin-bottom: 0; }
