@@ -906,97 +906,6 @@ function TokenCard({ account }) {
   )
 }
 
-function AccountLookup({ prefillKey, onPrefillUsed }) {
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [account, setAccount] = useState(null)
-  const [error, setError] = useState(null)
-
-  const lookup = async (key) => {
-    const target = (key || input).trim()
-    if (!target) return
-    setLoading(true)
-    setError(null)
-    setAccount(null)
-    try {
-      setAccount(await fetchAccountFromChain(target))
-    } catch {
-      setError('No account at that address on alphanet. Check the key, and note that 0 and O look alike in these addresses.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (prefillKey) { setInput(prefillKey); lookup(prefillKey); onPrefillUsed() }
-  }, [prefillKey])
-
-  const meta = account?.meta
-  const flags = meta?.flags
-
-  return (
-    <>
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Look up an account</h2>
-            <p className="sub">Any public key, token mint, program, or name</p>
-          </div>
-        </div>
-
-        <div className="stack">
-          <div className="inline">
-            <input className="field mono" value={input} onChange={(e) => { setInput(e.target.value); setAccount(null); setError(null) }} onKeyDown={(e) => e.key === 'Enter' && lookup()} placeholder="ta..." />
-            {input && <button className="btn ghost" onClick={() => { setInput(''); setAccount(null); setError(null) }}>Clear</button>}
-          </div>
-          <button className="btn" onClick={() => lookup()} disabled={loading || !input.trim()}>{loading ? 'Looking up' : 'Look up'}</button>
-        </div>
-
-        {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-
-        {account && meta && (
-          <>
-          <div className="hero" style={{ marginTop: 18 }}>
-            {flags?.isProgram && <span className="hero-tag">Program</span>}
-            <p className="hero-eyebrow">Account</p>
-            <h2 className="hero-title">{Number(meta.balance ?? 0).toLocaleString()} <span style={{ fontSize: 18, opacity: 0.55 }}>THRU</span></h2>
-
-            <div className="hero-stats">
-              <span className="hero-stat">
-                <b>{Number(meta.dataSize ?? 0).toLocaleString()}</b>
-                <span>bytes of data</span>
-              </span>
-              <span className="hero-stat">
-                <b>{meta.seq ?? 0}</b>
-                <span>sequence</span>
-              </span>
-              <span className="hero-stat">
-                <b>{meta.nonce ?? 0}</b>
-                <span>nonce</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="rows">
-            <AddrRow k="Public key" v={account.address ?? input.trim()} />
-            <Row k="Version" v={meta.version} mono />
-            {meta.owner && <AddrRow k="Owner program" v={meta.owner} />}
-            {flags && <FlagRow k="Is new" v={flags.isNew} />}
-            {flags && <FlagRow k="Is ephemeral" v={flags.isEphemeral} />}
-            {flags && <FlagRow k="Is deleted" v={flags.isDeleted} />}
-            {flags && <FlagRow k="Is privileged" v={flags.isPrivileged} />}
-            {flags && <FlagRow k="Is compressed" v={flags.isCompressed} />}
-          </div>
-          </>
-        )}
-      </section>
-
-      {account && <NameServiceCard account={account} />}
-      {account && <TokenCard account={account} />}
-    </>
-  )
-}
-
 function AccountChips({ label, list }) {
   if (!list || list.length === 0) return null
   return (
@@ -1009,119 +918,207 @@ function AccountChips({ label, list }) {
   )
 }
 
-function TransactionLookup({ prefill, onPrefillUsed }) {
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [tx, setTx] = useState(null)
-  const [error, setError] = useState(null)
+function AccountResult({ account, fallbackAddress }) {
+  const meta = account?.meta
+  const flags = meta?.flags
+  if (!account || !meta) return null
 
-  const lookup = async (given) => {
-    const target = (given || input).trim()
-    if (!target) return
-    setLoading(true)
-    setError(null)
-    setTx(null)
-    try {
-      setTx(await getTransaction(target))
-    } catch {
-      setError('No transaction with that signature. Alphanet prunes history on network resets, so older transactions may be gone.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  return (
+    <>
+      <div className="hero" style={{ marginTop: 18 }}>
+        {flags?.isProgram && <span className="hero-tag">Program</span>}
+        <p className="hero-eyebrow">Account</p>
+        <h2 className="hero-title">{Number(meta.balance ?? 0).toLocaleString()} <span style={{ fontSize: 18, opacity: 0.55 }}>THRU</span></h2>
 
-  // A toast links here with ?tx=..., so the transaction is already loading by
-  // the time the page renders.
-  useEffect(() => {
-    if (prefill) { setInput(prefill); lookup(prefill); onPrefillUsed() }
-  }, [prefill])
+        <div className="hero-stats">
+          <span className="hero-stat">
+            <b>{Number(meta.dataSize ?? 0).toLocaleString()}</b>
+            <span>bytes of data</span>
+          </span>
+          <span className="hero-stat">
+            <b>{meta.seq ?? 0}</b>
+            <span>sequence</span>
+          </span>
+          <span className="hero-stat">
+            <b>{meta.nonce ?? 0}</b>
+            <span>nonce</span>
+          </span>
+        </div>
+      </div>
 
-  const exec = tx?.execution
+      <div className="rows">
+        <AddrRow k="Public key" v={account.address ?? fallbackAddress} />
+        <Row k="Version" v={meta.version} mono />
+        {meta.owner && <AddrRow k="Owner program" v={meta.owner} />}
+        {flags && <FlagRow k="Is new" v={flags.isNew} />}
+        {flags && <FlagRow k="Is ephemeral" v={flags.isEphemeral} />}
+        {flags && <FlagRow k="Is deleted" v={flags.isDeleted} />}
+        {flags && <FlagRow k="Is privileged" v={flags.isPrivileged} />}
+        {flags && <FlagRow k="Is compressed" v={flags.isCompressed} />}
+      </div>
+    </>
+  )
+}
+
+function TransactionResult({ tx, fallbackSignature }) {
+  if (!tx) return null
+
+  const exec = tx.execution
   // Both codes read zero when nothing went wrong. vmError is an enum where the
   // zero value means no error, so treat missing and zero the same way.
   const failed = exec && (exec.userErrorCode !== '0' || (exec.vmError ?? 0) !== 0)
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Look up a transaction</h2>
-          <p className="sub">Paste a signature from any CLI command that wrote to the chain</p>
+    <div style={{ marginTop: 18 }}>
+      <div className="hero">
+        {tx.status?.label && <span className="hero-tag">{tx.status.label}</span>}
+        <p className="hero-eyebrow">Transaction</p>
+        <h2 className="hero-title">{failed ? 'Failed' : 'Succeeded'}</h2>
+
+        <div className="hero-stats">
+          <span className="hero-stat">
+            <b>{Number(exec?.consumedCompute ?? 0).toLocaleString()}</b>
+            <span>compute units</span>
+          </span>
+          <span className="hero-stat">
+            <b>{tx.slot ? Number(tx.slot).toLocaleString() : '-'}</b>
+            <span>slot</span>
+          </span>
+          <span className="hero-stat">
+            <b>{Number(tx.fee ?? 0).toLocaleString()}</b>
+            <span>fee</span>
+          </span>
         </div>
       </div>
 
-      <div className="stack">
-        <div className="inline">
-          <input className="field mono" value={input} onChange={(e) => { setInput(e.target.value); setTx(null); setError(null) }} onKeyDown={(e) => e.key === 'Enter' && lookup()} placeholder="ts..." />
-          {input && <button className="btn ghost" onClick={() => { setInput(''); setTx(null); setError(null) }}>Clear</button>}
-        </div>
-        <button className="btn" onClick={() => lookup()} disabled={loading || !input.trim()}>{loading ? 'Looking up' : 'Look up'}</button>
+      <div className="rows">
+        <AddrRow k="Signature" v={tx.signature ?? fallbackSignature} />
+        <AddrRow k="Fee payer" v={tx.feePayer} />
+        <AddrRow k="Program" v={tx.program} />
+        <Row k="Nonce" v={tx.nonce} mono />
+        <Row k="Instruction data" v={`${Number(tx.instructionDataSize ?? 0).toLocaleString()} bytes`} mono />
       </div>
 
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-
-      {tx && (
-        <div style={{ marginTop: 18 }}>
-          <div className="hero">
-            {tx.status?.label && <span className="hero-tag">{tx.status.label}</span>}
-            <p className="hero-eyebrow">Transaction</p>
-            <h2 className="hero-title">{failed ? 'Failed' : 'Succeeded'}</h2>
-
-            <div className="hero-stats">
-              <span className="hero-stat">
-                <b>{Number(exec?.consumedCompute ?? 0).toLocaleString()}</b>
-                <span>compute units</span>
-              </span>
-              <span className="hero-stat">
-                <b>{tx.slot ? Number(tx.slot).toLocaleString() : '-'}</b>
-                <span>slot</span>
-              </span>
-              <span className="hero-stat">
-                <b>{Number(tx.fee ?? 0).toLocaleString()}</b>
-                <span>fee</span>
-              </span>
-            </div>
-          </div>
-
+      {exec && (
+        <div style={{ marginTop: 16 }}>
+          <p className="eyebrow">Resources used</p>
           <div className="rows">
-            <AddrRow k="Signature" v={tx.signature ?? input.trim()} />
-            <AddrRow k="Fee payer" v={tx.feePayer} />
-            <AddrRow k="Program" v={tx.program} />
-            <Row k="Nonce" v={tx.nonce} mono />
-            <Row k="Instruction data" v={`${Number(tx.instructionDataSize ?? 0).toLocaleString()} bytes`} mono />
+            <Row k="Compute units" v={`${Number(exec.consumedCompute ?? 0).toLocaleString()} of ${Number(tx.requested?.compute ?? 0).toLocaleString()}`} mono />
+            <Row k="State units" v={`${Number(exec.consumedState ?? 0).toLocaleString()} of ${Number(tx.requested?.state ?? 0).toLocaleString()}`} mono />
+            <Row k="Memory units" v={`${Number(exec.consumedMemory ?? 0).toLocaleString()} of ${Number(tx.requested?.memory ?? 0).toLocaleString()}`} mono />
+            <Row k="Memory pages" v={exec.pagesUsed} mono />
+            <Row k="Events" v={exec.eventsCount} mono />
+            {failed && <Row k="VM error" v={exec.vmError} mono />}
+            {failed && <Row k="Program error code" v={exec.userErrorCode} mono />}
           </div>
-
-          {exec && (
-            <div style={{ marginTop: 16 }}>
-              <p className="eyebrow">Resources used</p>
-              <div className="rows">
-                <Row k="Compute units" v={`${Number(exec.consumedCompute ?? 0).toLocaleString()} of ${Number(tx.requested?.compute ?? 0).toLocaleString()}`} mono />
-                <Row k="State units" v={`${Number(exec.consumedState ?? 0).toLocaleString()} of ${Number(tx.requested?.state ?? 0).toLocaleString()}`} mono />
-                <Row k="Memory units" v={`${Number(exec.consumedMemory ?? 0).toLocaleString()} of ${Number(tx.requested?.memory ?? 0).toLocaleString()}`} mono />
-                <Row k="Memory pages" v={exec.pagesUsed} mono />
-                <Row k="Events" v={exec.eventsCount} mono />
-                {failed && <Row k="VM error" v={exec.vmError} mono />}
-                {failed && <Row k="Program error code" v={exec.userErrorCode} mono />}
-              </div>
-            </div>
-          )}
-
-          <AccountChips label="Accounts written" list={tx.readWriteAccounts} />
-          <AccountChips label="Accounts read" list={tx.readOnlyAccounts} />
         </div>
       )}
-    </section>
+
+      <AccountChips label="Accounts written" list={tx.readWriteAccounts} />
+      <AccountChips label="Accounts read" list={tx.readOnlyAccounts} />
+    </div>
+  )
+}
+
+/* One box for everything the chain can be asked about. Thru's prefixes make
+   the type obvious before any network call: ts is a transaction signature,
+   everything else is an account, mint, program or name. The prefix only picks
+   which lookup runs first, though. If it misses we try the other kind rather
+   than telling someone they used the wrong box, which is what makes a name or
+   an unusual address still resolve. */
+function UniversalLookup({ prefill, onPrefillUsed }) {
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [account, setAccount] = useState(null)
+  const [tx, setTx] = useState(null)
+  const [error, setError] = useState(null)
+
+  const clearResults = () => { setAccount(null); setTx(null); setError(null) }
+
+  const lookup = async (given) => {
+    const target = (given || input).trim()
+    if (!target) return
+
+    setLoading(true)
+    clearResults()
+
+    const looksLikeTx = target.startsWith('ts')
+    const asAccount = async () => setAccount(await fetchAccountFromChain(target))
+    const asTransaction = async () => setTx(await getTransaction(target))
+    const [first, second] = looksLikeTx ? [asTransaction, asAccount] : [asAccount, asTransaction]
+
+    try {
+      try {
+        await first()
+      } catch {
+        await second()
+      }
+    } catch {
+      setError(looksLikeTx
+        ? 'No transaction with that signature. Alphanet prunes history on network resets, so older transactions may be gone.'
+        : 'Nothing on alphanet at that address. Check the key, and note that 0 and O look alike in these addresses.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // The dev account card and a shared ?tx= or ?account= link both land here,
+  // so the lookup is already running by the time the page renders.
+  useEffect(() => {
+    if (prefill) { setInput(prefill); lookup(prefill); onPrefillUsed() }
+  }, [prefill])
+
+  const onChange = (e) => { setInput(e.target.value); clearResults() }
+  const onClear = () => { setInput(''); clearResults() }
+
+  return (
+    <>
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2 className="h2">Look up anything</h2>
+            <p className="sub">An account, token mint, program, name, or a transaction signature</p>
+          </div>
+        </div>
+
+        <div className="stack">
+          <div className="inline">
+            <input
+              className="field mono"
+              value={input}
+              onChange={onChange}
+              onKeyDown={(e) => e.key === 'Enter' && lookup()}
+              placeholder="ta... or ts..."
+            />
+            {input && <button className="btn ghost" onClick={onClear}>Clear</button>}
+          </div>
+          <button className="btn" onClick={() => lookup()} disabled={loading || !input.trim()}>
+            {loading ? 'Looking up' : 'Look up'}
+          </button>
+        </div>
+
+        {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+
+        <AccountResult account={account} fallbackAddress={input.trim()} />
+        <TransactionResult tx={tx} fallbackSignature={input.trim()} />
+      </section>
+
+      {account && <NameServiceCard account={account} />}
+      {account && <TokenCard account={account} />}
+    </>
   )
 }
 
 function ExplorerPage() {
-  const [lookupPrefill, setLookupPrefill] = useState(null)
-  const [txPrefill, setTxPrefill] = useState(() => new URLSearchParams(window.location.search).get('tx'))
+  const [prefill, setPrefill] = useState(() => {
+    const q = new URLSearchParams(window.location.search)
+    return q.get('tx') || q.get('account') || null
+  })
 
   // Clear the query string once it has been read, so a refresh or a shared
   // link does not keep re-triggering the same lookup.
   useEffect(() => {
-    if (txPrefill) window.history.replaceState({}, '', window.location.pathname)
+    if (prefill) window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
   return (
@@ -1130,9 +1127,8 @@ function ExplorerPage() {
       <h1 className="h1">Read anything on Thru alphanet</h1>
       <p className="lede">Accounts, tokens, names and transactions, decoded straight from the chain.</p>
 
-      <DevAccountCard onLookup={(key) => setLookupPrefill(key)} />
-      <AccountLookup prefillKey={lookupPrefill} onPrefillUsed={() => setLookupPrefill(null)} />
-      <TransactionLookup prefill={txPrefill} onPrefillUsed={() => setTxPrefill(null)} />
+      <DevAccountCard onLookup={(key) => setPrefill(key)} />
+      <UniversalLookup prefill={prefill} onPrefillUsed={() => setPrefill(null)} />
 
       <section className="card">
         <h2 className="h2">Browser wallet</h2>
