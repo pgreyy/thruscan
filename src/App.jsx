@@ -906,6 +906,30 @@ function TokenCard({ account }) {
   )
 }
 
+/* What a thing actually is, said plainly. The chain only reports a flag for
+   programs, so the rest is inferred: an account owned by a program is that
+   program's storage, while one owned by the system loader (an address that is
+   a long run of A's) is a plain wallet. ThruScan's own five are named outright,
+   because "ThruWall messages" tells a reader more than "data account". */
+const KNOWN_ACCOUNTS = [
+  [WALL_PROGRAM, 'ThruWall program'],
+  [WALL_ACCOUNT, 'ThruWall messages'],
+  [WORDLE_BOARD, 'Wordle scoreboard'],
+  [G2048_BOARD, '2048 board'],
+  [ID_REGISTRY, 'Username registry'],
+]
+
+const knownLabel = (address) =>
+  (KNOWN_ACCOUNTS.find(([addr]) => addr && addr === address) || [])[1] || null
+
+function describeAccount(address, meta) {
+  const known = knownLabel(address)
+  if (known) return known
+  if (meta?.flags?.isProgram) return 'Program'
+  if (meta?.owner && !/^taA{20,}/.test(meta.owner)) return 'Data account'
+  return 'Wallet account'
+}
+
 function AccountChips({ label, list }) {
   if (!list || list.length === 0) return null
   return (
@@ -923,10 +947,12 @@ function AccountResult({ account, fallbackAddress }) {
   const flags = meta?.flags
   if (!account || !meta) return null
 
+  const kind = describeAccount(account.address ?? fallbackAddress, meta)
+
   return (
     <>
       <div className="hero" style={{ marginTop: 18 }}>
-        {flags?.isProgram && <span className="hero-tag">Program</span>}
+        <span className="hero-tag">{kind}</span>
         <p className="hero-eyebrow">Account</p>
         <h2 className="hero-title">{Number(meta.balance ?? 0).toLocaleString()} <span style={{ fontSize: 18, opacity: 0.55 }}>THRU</span></h2>
 
@@ -995,6 +1021,7 @@ function TransactionResult({ tx, fallbackSignature }) {
         <AddrRow k="Signature" v={tx.signature ?? fallbackSignature} />
         <AddrRow k="Fee payer" v={tx.feePayer} />
         <AddrRow k="Program" v={tx.program} />
+        {knownLabel(tx.program) && <Row k="Which program" v={knownLabel(tx.program)} />}
         <Row k="Nonce" v={tx.nonce} mono />
         <Row k="Instruction data" v={`${Number(tx.instructionDataSize ?? 0).toLocaleString()} bytes`} mono />
       </div>
