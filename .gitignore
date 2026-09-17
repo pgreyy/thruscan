@@ -25,3 +25,11 @@ dist-ssr
 
 .vercel
 .env*
+
+# build and deployment scratch
+*.backup
+new-env.txt
+envcheck.txt
+token-abi*.txt
+cpi-test*.txt
+swap-*.txt
