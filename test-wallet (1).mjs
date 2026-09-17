@@ -77,18 +77,31 @@ async function main() {
   line(`signature   ${sigBytes.length} bytes`)
 
   step(4, 'the sponsor builds a creation proof for that address')
+  // proofType is an enum, not a string: UNSPECIFIED 0, CREATING 1, UPDATING 2,
+  // EXISTING 3. The first attempt called it "kind" and the node said so.
   const STATE_PROOF_CREATING = 1
   let proof
   try {
-    proof = await client.proofs.generateStateProof({ address: user.address, proofType: STATE_PROOF_CREATING })
-    line('bound form worked')
+    proof = await client.proofs.generateStateProof({
+      address: user.address,
+      proofType: STATE_PROOF_CREATING,
+    })
+    line('bound form worked: client.proofs.generateStateProof(options)')
   } catch (e) {
-    line('bound form failed: ' + String(e?.message ?? e).slice(0, 140))
-    proof = await proofs.generateStateProof(client.ctx, { address: user.address, proofType: STATE_PROOF_CREATING })
-    line('unbound form worked')
+    line(`bound form failed: ${String(e?.message ?? e).slice(0, 140)}`)
+    proof = await proofs.generateStateProof(client.ctx, {
+      address: user.address,
+      proofType: STATE_PROOF_CREATING,
+    })
+    line('unbound form worked: proofs.generateStateProof(ctx, options)')
   }
   const proofData = proof?.proof ?? proof?.proofData ?? proof
-  line('proof       ' + (proofData?.length ?? 'unknown') + ' bytes, slot ' + (proof?.slot ?? '?'))
+  line(`proof       ${proofData?.length ?? 'unknown'} bytes, slot ${proof?.slot ?? '?'}`)
+  if (!(proofData instanceof Uint8Array)) {
+    line(`!!! expected bytes, got ${typeof proofData}`)
+    process.exit(1)
+  }
+
   step(5, 'the sponsor submits it, paying the fee')
   // The new account is the only read-write account, so it lands at index 2.
   const instruction = eoa.buildCreateEOAInstruction(2, sigBytes, proofData)

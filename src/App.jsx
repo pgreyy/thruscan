@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, FaucetPage } from './pages/Dex.jsx'
+import { WalletPage } from './pages/Wallet.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
@@ -44,6 +45,7 @@ const NAV = [
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
+  { to: '/wallet', label: 'Wallet', icon: 'wallet' },
   { to: '/games', label: 'Games', icon: 'game' },
   { to: '/guides', label: 'Guides', icon: 'book' },
   { to: '/projects', label: 'Projects', icon: 'box' },
@@ -65,6 +67,7 @@ const ICON_PATHS = {
   panel: 'M4 5h16v14H4zM10 5v14',
   swap: 'M7 4v13M4 14l3 3 3-3M17 20V7M20 10l-3-3-3 3',
   drop: 'M12 3.2c3.1 3.4 5.4 6.4 5.4 9.1a5.4 5.4 0 0 1-10.8 0c0-2.7 2.3-5.7 5.4-9.1zM9.4 13.3a2.6 2.6 0 0 0 2.6 2.6',
+  wallet: 'M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7.5V17M16 12.5h1.5',
   rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
 }
 
@@ -3087,6 +3090,7 @@ export default function App() {
           <Route path="/swap" element={<SwapPage />} />
           <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
+          <Route path="/wallet" element={<WalletPage />} />
           <Route path="/moderate" element={<ModeratePage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/guides" element={<GuidesPage />} />
