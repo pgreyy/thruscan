@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
+import { SwapPage, LaunchpadPage } from './pages/Dex.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
@@ -40,6 +41,8 @@ const ID_REGISTRY = import.meta.env.VITE_THRU_ID_REGISTRY || ''
 const NAV = [
   { to: '/', label: 'Explorer', icon: 'search' },
   { to: '/wall', label: 'Wall', icon: 'message' },
+  { to: '/swap', label: 'Swap', icon: 'swap' },
+  { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/games', label: 'Games', icon: 'game' },
   { to: '/guides', label: 'Guides', icon: 'book' },
   { to: '/projects', label: 'Projects', icon: 'box' },
@@ -59,6 +62,8 @@ const ICON_PATHS = {
   bell: 'M12 3a6 6 0 0 0-6 6c0 5-2 6-2 6h16s-2-1-2-6a6 6 0 0 0-6-6zM10.5 21a1.9 1.9 0 0 0 3 0',
   menu: 'M4 6h16M4 12h16M4 18h16',
   panel: 'M4 5h16v14H4zM10 5v14',
+  swap: 'M7 4v13M4 14l3 3 3-3M17 20V7M20 10l-3-3-3 3',
+  rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
 }
 
 function Icon({ name, size = 17 }) {
@@ -3077,6 +3082,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
           <Route path="/wall" element={<WallPage />} />
+          <Route path="/swap" element={<SwapPage />} />
+          <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/moderate" element={<ModeratePage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/guides" element={<GuidesPage />} />
