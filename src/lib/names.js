@@ -68,8 +68,20 @@ export const NAME_FIELD = 64
 export const KEY_FIELD = 32
 export const VALUE_FIELD = 256
 
-/** version + parent + owner + name + name_len + registered_at */
-export const DOMAIN_HEADER = 1 + 32 + 32 + NAME_FIELD + 8 + 8   // 145
+/**
+ * version(1) + parent(32) + owner(32) + name(64) + name_len(u32) +
+ * registered_at(u64) + 4 bytes of tail = 145.
+ *
+ *   [0]        version
+ *   [1..32]    parent registrar
+ *   [33..64]   owner
+ *   [65..128]  name, null padded
+ *   [129..132] name length, u32
+ *   [133..140] registered at, u64
+ *
+ * Confirmed byte by byte against a live domain account rather than assumed.
+ */
+export const DOMAIN_HEADER = 145
 export const RECORD_SIZE = 4 + KEY_FIELD + 4 + VALUE_FIELD      // 296
 
 /* ---------- names ---------- */
@@ -129,8 +141,8 @@ function readString(bytes, at, len) {
  *   [1..32]    parent registrar
  *   [33..64]   owner
  *   [65..128]  name, null padded to 64
- *   [129..136] name length
- *   [137..144] registered at
+ *   [129..132] name length, u32
+ *   [133..140] registered at
  *   then zero or more 296-byte records
  *
  * There is no record count in the header, because there does not need to be
@@ -140,13 +152,16 @@ export function decodeDomain(bytes) {
   if (!bytes || bytes.length < DOMAIN_HEADER) return null
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 
-  const nameLen = dv.getBigUint64(129, true)
+  // u32, not u64. Reading eight bytes here picks up the first half of the
+  // registration timestamp as part of the length, which produces a number in
+  // the quintillions and prints the rest of the account as if it were the name.
+  const nameLen = dv.getUint32(129, true)
   const domain = {
     version: bytes[0],
     parent: Pubkey.from(bytes.slice(1, 33)).toThruFmt(),
     owner: Pubkey.from(bytes.slice(33, 65)).toThruFmt(),
     name: readString(bytes, 65, nameLen),
-    registeredAt: dv.getBigUint64(137, true),
+    registeredAt: dv.getBigUint64(133, true),
     records: [],
   }
 

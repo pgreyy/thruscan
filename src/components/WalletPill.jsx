@@ -20,10 +20,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './wallet-pill.css'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { useWallet } from '../pages/Wallet.jsx'
 import { locked, unlock } from '../lib/wallet.js'
 import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
+import { withSuffix } from '../lib/names.js'
 
 const DECIMALS = 6
 
@@ -34,6 +36,15 @@ function fmt(units, decimals = DECIMALS, maxFrac = 2) {
 }
 
 const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
+
+/** The first `.id` name this browser claimed for an address, if any. */
+function primaryName(address) {
+  if (!address) return null
+  try {
+    const held = JSON.parse(localStorage.getItem(`thruscan.names.${address}`) || '[]')
+    return held.length ? withSuffix(held[0]) : null
+  } catch { return null }
+}
 
 /**
  * An identicon from the address itself.
@@ -132,6 +143,12 @@ function Panel({ wallet, onClose }) {
 
   return (
     <div className="pill-panel">
+      {primaryName(wallet.address) && (
+        <div className="pill-row" style={{ cursor: 'default' }}>
+          <span className="fine">Name</span>
+          <b>{primaryName(wallet.address)}</b>
+        </div>
+      )}
       <CopyRow label="Address" value={wallet.address} />
 
       <div className="pill-divider" />
@@ -152,9 +169,9 @@ function Panel({ wallet, onClose }) {
 
       <div className="pill-divider" />
 
-      <a className="pill-row" href="/wallet" onClick={onClose}><span>Wallet</span><span>→</span></a>
-      <a className="pill-row" href="/names" onClick={onClose}><span>Names</span><span>→</span></a>
-      <a className="pill-row" href="/faucet" onClick={onClose}><span>Top up</span><span>→</span></a>
+      <Link className="pill-row" to="/wallet" onClick={onClose}><span>Wallet</span><span>→</span></Link>
+      <Link className="pill-row" to="/names" onClick={onClose}><span>Names</span><span>→</span></Link>
+      <Link className="pill-row" to="/faucet" onClick={onClose}><span>Top up</span><span>→</span></Link>
 
       <div className="pill-divider" />
 
@@ -198,12 +215,18 @@ export function WalletPill() {
   const tusd = wallet.balances?.[TUSD_MINT]
   const address = wallet.address ?? storedWallet()?.address ?? null
 
+  /* Once a name points at this wallet it IS the wallet, as far as anyone else
+     is concerned, so the pill wears it and the address moves into the panel.
+     The list is what this browser claimed; a name claimed elsewhere still
+     resolves on chain, it just is not known here. */
+  const label = primaryName(address) ?? short(address)
+
   const body = (
     <div className="wallet-pill-mount" ref={boxRef}>
       {!hasWallet() ? (
-        <a className="wallet-pill" href="/wallet">
+        <Link className="wallet-pill" to="/wallet">
           <span className="pill-strong">Connect wallet</span>
-        </a>
+        </Link>
       ) : (
         <>
           <button className="wallet-pill" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -211,7 +234,7 @@ export function WalletPill() {
               <span className="pill-balance mono">{fmt(tusd.amount)} tUSD</span>
             )}
             <Avatar address={address} />
-            <span className="pill-strong mono">{short(address)}</span>
+            <span className={label.endsWith('.id') ? 'pill-strong' : 'pill-strong mono'}>{label}</span>
             <span className="pill-caret" aria-hidden="true">▾</span>
           </button>
           {open && <Panel wallet={wallet} onClose={() => setOpen(false)} />}

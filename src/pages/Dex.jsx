@@ -17,7 +17,8 @@
 // byte for byte against transactions that already executed on chain, so the
 // number shown here is the number that lands, by either route.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
   decodeSwapRegistry, quoteSwap, buildSwapInstruction, toHex,
@@ -29,7 +30,8 @@ import {
 
 import { decodeMintAccount } from '../lib/token.js'
 import { useWallet, sendBuilt, TopUpCard } from './Wallet.jsx'
-import { deriveTokenAccount, openTokenAccount } from '../lib/wallet.js'
+import { deriveTokenAccount, openTokenAccount, hasWallet } from '../lib/wallet.js'
+import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import {
   THRUSWAP_PROGRAM as SWAP_PROGRAM,
   THRUSWAP_REGISTRY as SWAP_REGISTRY,
@@ -77,6 +79,26 @@ function short(addr) {
   return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : ''
 }
 
+const fmtRaw = (units, decimals) => fmt(units, decimals ?? DECIMALS)
+
+/**
+ * What a revert probably meant.
+ *
+ * The chain reports a failed trade as VM_REVERT with whatever code the program
+ * raised, and the token program's codes reach us through the caller, so the
+ * useful ones are worth naming. "The chain rejected it (error -765)" is true
+ * and tells nobody anything; almost every rejection in testing was spending a
+ * token the wallet did not hold.
+ */
+function explainRevert(result) {
+  const code = Number(result?.userError ?? 0)
+  if (code === 4) return 'Not enough of that token in your account.'
+  if (code === 20) return 'That account already exists.'
+  if (code !== 0) return `The program rejected it (error ${code}).`
+  return 'The chain rejected it. The usual cause is not holding enough of the token you are spending, '
+    + 'or a pool too thin for a trade that size.'
+}
+
 /** The command to run, built from the same bytes the chain will receive. */
 function cliCommand(program, built) {
   const parts = [`thru txn execute ${program} ${toHex(built.data)}`]
@@ -119,14 +141,32 @@ function CopyBlock({ text, label = 'Copy command' }) {
  * before you can be paid in TCAT" is a true but useless thing to tell someone
  * mid-trade.
  */
-function Execute({ program, needs, buildWith, cli, label }) {
+function Execute({ program, needs, buildWith, cli, label, spend }) {
   const wallet = useWallet()
+  const gate = useUnlockGate()
   const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
 
+  /* Refuse before sending rather than after. A trade paid for with a token the
+     wallet does not hold comes back as a bare revert with no code, so the only
+     place this can be explained is here. */
+  const shortfall = (() => {
+    if (!spend || !wallet.unlocked) return null
+    const held = wallet.balances?.[spend.mint]?.amount ?? 0n
+    if (spend.amount <= held) return null
+    const ticker = wallet.tickers?.[spend.mint] || short(spend.mint)
+    return held === 0n
+      ? `You have no ${ticker}. Get some first, then come back.`
+      : `You only have ${fmtRaw(held, wallet.decimals?.[spend.mint])} ${ticker}.`
+  })()
+
   const go = async () => {
     setError(null); setDone(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
     try {
       const resolved = {}
       for (const [key, mint] of Object.entries(needs)) {
@@ -148,9 +188,7 @@ function Execute({ program, needs, buildWith, cli, label }) {
       const built = buildWith(resolved)
       const result = await sendBuilt(program, built)
 
-      if (result.settled && !result.succeeded) {
-        throw new Error(`The chain rejected it (error ${result.userError || result.vmError}).`)
-      }
+      if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
       setDone(result.signature)
       await wallet.refresh(Object.values(needs))
     } catch (e) {
@@ -160,11 +198,11 @@ function Execute({ program, needs, buildWith, cli, label }) {
     }
   }
 
-  if (!wallet.unlocked) {
+  if (!hasWallet()) {
     return (
       <>
         <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
-          <a href="/wallet">Open a wallet</a> to do this in one click, or run it yourself: replace
+          <Link to="/wallet">Open a wallet</Link> to do this in one click, or run it yourself: replace
           the placeholder accounts with your own and <code className="mono">YOUR_KEY_NAME</code>{' '}
           with your CLI key.
         </p>
@@ -175,7 +213,9 @@ function Execute({ program, needs, buildWith, cli, label }) {
 
   return (
     <div style={{ marginTop: 16 }}>
-      <button className="btn" onClick={go} disabled={step !== null} style={{ width: '100%' }}>
+      {gate.modal}
+      {shortfall && <p className="notice bad" style={{ marginBottom: 12 }}>{shortfall}</p>}
+      <button className="btn" onClick={go} disabled={step !== null || !!shortfall} style={{ width: '100%' }}>
         {step === 'opening' ? 'Opening your token account…'
           : step === 'signing' ? 'Signing…'
           : label}
@@ -183,7 +223,7 @@ function Execute({ program, needs, buildWith, cli, label }) {
       {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
       {done && (
         <p className="notice" style={{ marginTop: 12 }}>
-          Done. <a className="mono" href={`/tx/${done}`}>{short(done)}</a>
+          Done. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
         </p>
       )}
       <details style={{ marginTop: 12 }}>
@@ -216,10 +256,10 @@ function NotLive({ what }) {
  * put it, so the page fetches it rather than the chain duplicating it.
  */
 function useChainData(registry, decode, vaultsOf, mintsOf) {
-  const [state, setState] = useState({ loading: true, error: null, data: null, balances: {}, tickers: {} })
+  const [state, setState] = useState({ loading: true, error: null, data: null, balances: {}, tickers: {}, decimals: {} })
 
   const load = useCallback(async () => {
-    if (!registry) { setState({ loading: false, error: null, data: null, balances: {}, tickers: {} }); return }
+    if (!registry) { setState({ loading: false, error: null, data: null, balances: {}, tickers: {}, decimals: {} }); return }
     setState((s) => ({ ...s, loading: true, error: null }))
     try {
       const acc = await getAccount(registry)
@@ -239,15 +279,21 @@ function useChainData(registry, decode, vaultsOf, mintsOf) {
       const balances = {}
       wantVaults.forEach((v, i) => { balances[v] = vaultRes[i] ? readTokenAmount(vaultRes[i]) : 0n })
 
+      // Decimals matter as much as the ticker: WTHRU is 8 and tUSD is 6, so a
+      // balance formatted at the wrong scale is off by a hundred.
       const tickers = {}
+      const decimals = {}
       wantMints.forEach((m, i) => {
-        try { tickers[m] = decodeMintAccount(mintRes[i]?.data?.base64).ticker || null }
-        catch { tickers[m] = null }
+        try {
+          const d = decodeMintAccount(mintRes[i]?.data?.base64)
+          tickers[m] = d?.ticker || null
+          decimals[m] = d?.decimals ?? DECIMALS
+        } catch { tickers[m] = null; decimals[m] = DECIMALS }
       })
 
-      setState({ loading: false, error: null, data, balances, tickers })
+      setState({ loading: false, error: null, data, balances, tickers, decimals })
     } catch (err) {
-      setState({ loading: false, error: String(err?.message ?? err), data: null, balances: {}, tickers: {} })
+      setState({ loading: false, error: String(err?.message ?? err), data: null, balances: {}, tickers: {}, decimals: {} })
     }
   }, [registry])
 
@@ -500,122 +546,354 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
    SWAP
    ========================================================================== */
 
-function PoolCard({ pool, balances, tickers, program, registry }) {
-  const [amount, setAmount] = useState('')
-  const [flipped, setFlipped] = useState(false)
+/* ---------- the swap panel ----------
+ *
+ * A pair of token pickers rather than a card per pool, because nobody thinks in
+ * pools. They think "I have this, I want that", and the pool is an
+ * implementation detail the page should find for them.
+ *
+ * Three things this does that the old card did not:
+ *
+ *   It knows what you hold. The amount field carries your balance and a MAX,
+ *   and the button refuses before it sends if you do not have the tokens. Every
+ *   rejected trade in testing was this: buying with an asset the wallet held
+ *   none of, which the chain reports as a bare revert with no useful code.
+ *
+ *   It says when a pool is too thin. These pools are small, and a trade that
+ *   moves the price 96% is not a trade, it is a donation. That gets said before
+ *   the button rather than after the failure.
+ *
+ *   It picks the pool. Either orientation, whichever holds both mints.
+ */
 
-  const reserveA = balances[pool.vaultA] ?? 0n
-  const reserveB = balances[pool.vaultB] ?? 0n
+function TokenPicker({ tokens, value, onChange, exclude, label }) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef(null)
 
-  // A pool record stores mint addresses, not names. The ticker comes from the
-  // mint account itself, so it falls back to a short address when that read
-  // has not landed yet rather than showing nothing.
-  const symA = tickers?.[pool.mintA] || short(pool.mintA)
-  const symB = tickers?.[pool.mintB] || short(pool.mintB)
+  useEffect(() => {
+    if (!open) return
+    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [open])
 
-  const vaultIn = flipped ? pool.vaultB : pool.vaultA
-  const vaultOut = flipped ? pool.vaultA : pool.vaultB
-  const reserveIn = flipped ? reserveB : reserveA
-  const reserveOut = flipped ? reserveA : reserveB
-  const mintIn = flipped ? pool.mintB : pool.mintA
-  const mintOut = flipped ? pool.mintA : pool.mintB
-
-  const amountIn = toUnits(amount)
-  const quote = useMemo(
-    () => quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps }),
-    [reserveIn, reserveOut, amountIn, pool.feeBps],
-  )
-
-  const built = useMemo(() => {
-    if (amountIn <= 0n || quote.amountOut <= 0n) return null
-    try {
-      return buildSwapInstruction({
-        registry, poolId: pool.id, vaultIn, vaultOut,
-        userIn: 'YOUR_TOKEN_ACCOUNT_IN', userOut: 'YOUR_TOKEN_ACCOUNT_OUT',
-        amountIn, minOut: 1n,
-      })
-    } catch { return null }
-  }, [registry, pool.id, vaultIn, vaultOut, amountIn, quote.amountOut])
-
-  const price = reserveA > 0n && reserveB > 0n
-    ? (Number(reserveB) / Number(reserveA)) : 0
+  const chosen = tokens.find((t) => t.mint === value)
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">{symA} / {symB}</h2>
-          <p className="sub">Pool {pool.id} · {pool.feeBps / 100}% to liquidity providers</p>
+    <div className="picker" ref={boxRef}>
+      <button className="picker-trigger" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        {chosen
+          ? <><b>{chosen.ticker}</b><span className="picker-caret">›</span></>
+          : <><span>{label}</span><span className="picker-caret">›</span></>}
+      </button>
+
+      {open && (
+        <div className="picker-menu">
+          {tokens.filter((t) => t.mint !== exclude).map((t) => (
+            <button
+              key={t.mint}
+              className="picker-item"
+              onClick={() => { onChange(t.mint); setOpen(false) }}
+            >
+              <span className="picker-item-name">
+                <b>{t.ticker}</b>
+                <span className="fine mono">{short(t.mint)}</span>
+              </span>
+              <span className="mono fine">{fmt(t.balance, t.decimals)}</span>
+            </button>
+          ))}
+          {tokens.filter((t) => t.mint !== exclude).length === 0 && (
+            <p className="fine" style={{ padding: 10 }}>Nothing to pick yet.</p>
+          )}
         </div>
-        <span className="hero-tag">{Number(pool.swapCount)} swap{Number(pool.swapCount) === 1 ? '' : 's'}</span>
-      </div>
+      )}
+    </div>
+  )
+}
 
-      <div className="hero" style={{ marginTop: 14 }}>
-        <p className="hero-eyebrow">Reserves</p>
-        <h2 className="hero-title" style={{ fontSize: 22 }}>
-          {fmt(reserveA)} <span style={{ opacity: 0.55, fontSize: 15 }}>/</span> {fmt(reserveB)}
-        </h2>
-        <div className="hero-stats">
-          <span className="hero-stat"><b>{price ? price.toFixed(4) : '0'}</b><span>{symB} per {symA}</span></span>
-          <span className="hero-stat"><b>{fmt(pool.lpSupply)}</b><span>LP supply</span></span>
+function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
+  const wallet = useWallet()
+  const gate = useUnlockGate()
+
+  // Every mint that any pool touches, with whatever this wallet holds of it.
+  const tokens = useMemo(() => {
+    const seen = new Map()
+    for (const p of pools) {
+      for (const mint of [p.mintA, p.mintB]) {
+        if (seen.has(mint)) continue
+        seen.set(mint, {
+          mint,
+          ticker: tickers?.[mint] || short(mint),
+          decimals: decimalsOf(mint),
+          balance: wallet.balances?.[mint]?.amount ?? 0n,
+        })
+      }
+    }
+    return [...seen.values()]
+  }, [pools, tickers, wallet.balances])
+
+  const [fromMint, setFromMint] = useState(null)
+  const [toMint, setToMint] = useState(null)
+  const [amount, setAmount] = useState('')
+  const [step, setStep] = useState(null)
+  const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
+  // Open on the pair the wallet can actually trade, so the first thing you see
+  // is something you could do rather than something you cannot.
+  useEffect(() => {
+    if (fromMint || tokens.length < 2) return
+    const held = tokens.find((t) => t.balance > 0n) ?? tokens[0]
+    const other = tokens.find((t) => t.mint !== held.mint)
+    setFromMint(held.mint)
+    setToMint(other?.mint ?? null)
+  }, [tokens, fromMint])
+
+  const from = tokens.find((t) => t.mint === fromMint)
+  const to = tokens.find((t) => t.mint === toMint)
+
+  const pool = useMemo(() => {
+    if (!fromMint || !toMint) return null
+    return pools.find(
+      (p) => (p.mintA === fromMint && p.mintB === toMint) || (p.mintB === fromMint && p.mintA === toMint),
+    ) ?? null
+  }, [pools, fromMint, toMint])
+
+  const flipped = pool ? pool.mintA !== fromMint : false
+  const vaultIn = pool ? (flipped ? pool.vaultB : pool.vaultA) : null
+  const vaultOut = pool ? (flipped ? pool.vaultA : pool.vaultB) : null
+  const reserveIn = pool ? (balances[vaultIn] ?? 0n) : 0n
+  const reserveOut = pool ? (balances[vaultOut] ?? 0n) : 0n
+
+  const amountIn = toUnits(amount, from?.decimals ?? DECIMALS)
+  const quote = useMemo(
+    () => (pool ? quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps }) : null),
+    [pool, reserveIn, reserveOut, amountIn],
+  )
+
+  const impactBps = quote?.priceImpactBps ?? 0n
+  const shortOfFunds = from && amountIn > from.balance
+
+  /* Everything that should stop a trade before it is sent, in the order a
+     person would notice them. The chain reports every one of these as the same
+     bare revert, so saying which it is has to happen here. */
+  const blocker = (() => {
+    if (!from || !to) return 'Pick two tokens.'
+    if (!pool) return `There is no ${from.ticker} / ${to.ticker} pool yet.`
+    if (reserveIn === 0n || reserveOut === 0n) return 'This pool has no liquidity yet.'
+    if (amountIn <= 0n) return null
+    if (shortOfFunds) {
+      return from.balance === 0n
+        ? `You have no ${from.ticker}. Get some first, then come back.`
+        : `You only have ${fmt(from.balance, from.decimals)} ${from.ticker}.`
+    }
+    if (!quote || quote.amountOut <= 0n) {
+      return quote?.reason ? `Cannot quote: ${quote.reason}.` : 'Cannot quote that.'
+    }
+    if (amountIn >= reserveIn) {
+      return `That is more ${from.ticker} than the pool holds. Try a fraction of ${fmt(reserveIn, from.decimals)}.`
+    }
+    return null
+  })()
+
+  const thin = impactBps >= 1000n && !blocker      // 10% and up
+  const veryThin = impactBps >= 5000n && !blocker  // half the pool
+
+  const swap = async () => {
+    setError(null); setDone(null)
+    try {
+      await gate.ensure()
+    } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+
+    try {
+      setStep('opening')
+      const accounts = {}
+      for (const [key, mint] of [['userIn', fromMint], ['userOut', toMint]]) {
+        const known = wallet.balances[mint]
+        if (known?.exists) { accounts[key] = known.account; continue }
+        const made = await openTokenAccount(mint)
+        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+        accounts[key] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
+      }
+
+      setStep('signing')
+      const built = buildSwapInstruction({
+        registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
+        userIn: accounts.userIn, userOut: accounts.userOut,
+        amountIn, minOut: 1n,
+      })
+      const result = await sendBuilt(SWAP_PROGRAM, built)
+
+      if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
+      setDone(result.signature)
+      setAmount('')
+      await wallet.refresh(tokens.map((t) => t.mint))
+      reload()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setStep(null)
+    }
+  }
+
+  const flip = () => { setFromMint(toMint); setToMint(fromMint); setAmount('') }
+
+  return (
+    <section className="card swap-card">
+      {gate.modal}
+
+      <div className="swap-side">
+        <div className="swap-side-head">
+          <span className="fine">Sell</span>
+          {from && (
+            <span className="fine">
+              Balance {fmt(from.balance, from.decimals)}
+              {from.balance > 0n && (
+                <button
+                  className="linkish"
+                  onClick={() => setAmount(String(Number(from.balance) / 10 ** from.decimals))}
+                >MAX</button>
+              )}
+            </span>
+          )}
         </div>
-      </div>
-
-      <div className="rows" style={{ marginTop: 4 }}>
-        <div className="row"><span>{symA}</span><span className="mono">{short(pool.mintA)}</span></div>
-        <div className="row"><span>{symB}</span><span className="mono">{short(pool.mintB)}</span></div>
-      </div>
-
-      <div className="stack" style={{ marginTop: 16 }}>
-        <div className="inline">
+        <div className="swap-side-body">
           <input
-            className="field mono"
+            className="swap-amount mono"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.0"
+            placeholder="0"
             inputMode="decimal"
           />
-          <button className="btn ghost" onClick={() => setFlipped((f) => !f)} title="Swap direction">
-            {flipped ? `${symB} → ${symA}` : `${symA} → ${symB}`}
-          </button>
+          <TokenPicker tokens={tokens} value={fromMint} onChange={setFromMint} exclude={toMint} label="Select" />
         </div>
-
-        {amountIn > 0n && (
-          quote.amountOut > 0n ? (
-            <div className="rows">
-              <div className="row"><span>You receive</span><b className="mono">{fmt(quote.amountOut)} {flipped ? symA : symB}</b></div>
-              <div className="row"><span>Price impact</span><span className="mono">{(Number(quote.priceImpactBps) / 100).toFixed(2)}%</span></div>
-              <div className="row"><span>Fee</span><span className="mono">{fmt((amountIn * BigInt(pool.feeBps)) / 10000n)}</span></div>
-            </div>
-          ) : (
-            <p className="notice bad">{quote.reason === 'empty pool' ? 'This pool has no liquidity yet.' : `Cannot quote: ${quote.reason}.`}</p>
-          )
-        )}
       </div>
 
-      {built && (
-        <Execute
-          program={program}
-          needs={{ userIn: mintIn, userOut: mintOut }}
-          buildWith={(a) => buildSwapInstruction({
-            registry, poolId: pool.id, vaultIn, vaultOut,
-            userIn: a.userIn, userOut: a.userOut, amountIn, minOut: 1n,
-          })}
-          cli={cliCommand(program, built)}
-          label={`Swap ${amount} ${flipped ? symB : symA}`}
-        />
+      <div className="swap-flip">
+        <button className="flip-btn" onClick={flip} title="Swap direction" aria-label="Swap direction">↓</button>
+      </div>
+
+      <div className="swap-side">
+        <div className="swap-side-head">
+          <span className="fine">Buy</span>
+          {to && <span className="fine">Balance {fmt(to.balance, to.decimals)}</span>}
+        </div>
+        <div className="swap-side-body">
+          <span className="swap-amount mono" style={{ opacity: quote?.amountOut ? 1 : 0.4 }}>
+            {quote?.amountOut ? fmt(quote.amountOut, to?.decimals ?? DECIMALS) : '0'}
+          </span>
+          <TokenPicker tokens={tokens} value={toMint} onChange={setToMint} exclude={fromMint} label="Select" />
+        </div>
+      </div>
+
+      {pool && amountIn > 0n && !blocker && (
+        <div className="rows" style={{ marginTop: 14 }}>
+          <div className="row"><span>Rate</span><span className="mono">
+            1 {from.ticker} = {fmt((quote.amountOut * 10n ** BigInt(from.decimals)) / (amountIn || 1n), to.decimals)} {to.ticker}
+          </span></div>
+          <div className="row"><span>Price impact</span>
+            <span className="mono" style={veryThin ? { fontWeight: 600 } : undefined}>
+              {(Number(impactBps) / 100).toFixed(2)}%
+            </span>
+          </div>
+          <div className="row"><span>Fee</span><span className="mono">
+            {fmt((amountIn * BigInt(pool.feeBps)) / 10000n, from.decimals)} {from.ticker}
+          </span></div>
+          <div className="row"><span>Pool holds</span><span className="mono fine">
+            {fmt(reserveIn, from.decimals)} {from.ticker} · {fmt(reserveOut, to.decimals)} {to.ticker}
+          </span></div>
+        </div>
+      )}
+
+      {veryThin && (
+        <p className="notice bad" style={{ marginTop: 14 }}>
+          This pool is very thin, and a trade this size would move the price by{' '}
+          {(Number(impactBps) / 100).toFixed(0)}%. You would get back a small fraction of what the
+          rate suggests. Try an amount closer to a hundredth of the pool.
+        </p>
+      )}
+      {thin && !veryThin && (
+        <p className="notice" style={{ marginTop: 14 }}>
+          Thin pool: this moves the price {(Number(impactBps) / 100).toFixed(1)}%. Smaller trades get
+          a better rate.
+        </p>
+      )}
+
+      {blocker && <p className="notice bad" style={{ marginTop: 14 }}>{blocker}</p>}
+
+      <button
+        className="btn"
+        style={{ width: '100%', marginTop: 14 }}
+        onClick={swap}
+        disabled={!!blocker || amountIn <= 0n || step !== null}
+      >
+        {step === 'opening' ? 'Opening your token account…'
+          : step === 'signing' ? 'Signing…'
+          : !hasWallet() ? 'Create a wallet to swap'
+          : from && to ? `Swap ${from.ticker} for ${to.ticker}`
+          : 'Swap'}
+      </button>
+
+      {!hasWallet() && (
+        <p className="fine" style={{ marginTop: 10 }}>
+          <Link to="/wallet">Open a wallet</Link> first. It takes about fifteen seconds and the key
+          never leaves your browser.
+        </p>
+      )}
+
+      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+      {done && (
+        <p className="notice" style={{ marginTop: 12 }}>
+          Swapped. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
+        </p>
+      )}
+
+      {pool && amountIn > 0n && !blocker && (
+        <details style={{ marginTop: 14 }}>
+          <summary className="fine">Run it from the terminal instead</summary>
+          <CopyBlock text={cliCommand(SWAP_PROGRAM, buildSwapInstruction({
+            registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
+            userIn: 'YOUR_TOKEN_ACCOUNT_IN', userOut: 'YOUR_TOKEN_ACCOUNT_OUT',
+            amountIn, minOut: 1n,
+          }))} />
+        </details>
       )}
     </section>
   )
 }
 
+/** A pool, read only. The trading happens in the panel above. */
+function PoolRow({ pool, balances, tickers, decimalsOf }) {
+  const symA = tickers?.[pool.mintA] || short(pool.mintA)
+  const symB = tickers?.[pool.mintB] || short(pool.mintB)
+  const dpA = decimalsOf(pool.mintA)
+  const dpB = decimalsOf(pool.mintB)
+  const a = balances[pool.vaultA] ?? 0n
+  const b = balances[pool.vaultB] ?? 0n
+
+  return (
+    <div className="row" style={{ alignItems: 'flex-start' }}>
+      <span>
+        <b>{symA} / {symB}</b>{' '}
+        <span className="fine">pool {pool.id} · {pool.feeBps / 100}% · {Number(pool.swapCount)} swaps</span>
+      </span>
+      <span className="mono fine">{fmt(a, dpA)} · {fmt(b, dpB)}</span>
+    </div>
+  )
+}
+
+
 export function SwapPage() {
-  const { loading, error, data, balances, tickers, reload } = useChainData(
+  const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
     SWAP_REGISTRY,
     decodeSwapRegistry,
     (d) => d.pools.flatMap((p) => [p.vaultA, p.vaultB]),
     (d) => d.pools.flatMap((p) => [p.mintA, p.mintB]),
   )
+  const decimalsOf = useCallback((m) => decimals?.[m] ?? DECIMALS, [decimals])
 
   if (!SWAP_PROGRAM || !SWAP_REGISTRY) {
     return (
@@ -637,6 +915,18 @@ export function SwapPage() {
         owns, so no one signs for them and the price is whatever the ratio says it is.
       </p>
 
+      {error && <p className="notice bad">Could not read the pool registry. It may be mid-reset.</p>}
+
+      {data?.pools?.length > 0 && (
+        <SwapPanel
+          pools={data.pools}
+          balances={balances}
+          tickers={tickers}
+          decimalsOf={decimalsOf}
+          reload={reload}
+        />
+      )}
+
       <section className="card">
         <div className="card-head">
           <div>
@@ -645,23 +935,18 @@ export function SwapPage() {
           </div>
           <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
         </div>
-        {error && <p className="notice bad" style={{ marginTop: 12 }}>Could not read the pool registry. It may be mid-reset.</p>}
         {!error && data && data.pools.length === 0 && (
           <p className="fine" style={{ marginTop: 12 }}>No pools have been created yet.</p>
         )}
+        <div className="rows" style={{ marginTop: 12 }}>
+          {data?.pools.map((p) => (
+            <PoolRow key={p.id} pool={p} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
+          ))}
+        </div>
       </section>
-
-      {data?.pools.map((p) => (
-        <PoolCard key={p.id} pool={p} balances={balances} tickers={tickers}
-                  program={SWAP_PROGRAM} registry={SWAP_REGISTRY} />
-      ))}
     </div>
   )
 }
-
-/* ==========================================================================
-   LAUNCHPAD
-   ========================================================================== */
 
 function LaunchCard({ launch, balances, tickers, threshold, program, registry, slot }) {
   // What this curve is priced in, according to the curve rather than to us.
@@ -782,6 +1067,7 @@ function LaunchCard({ launch, balances, tickers, threshold, program, registry, s
         <Execute
           program={program}
           needs={{ userToken: launch.mint, userQuote: quoteMint }}
+          spend={{ mint: side === 'buy' ? quoteMint : launch.mint, amount: amountIn }}
           buildWith={(a) => {
             const args = {
               registry, launchId: launch.id,

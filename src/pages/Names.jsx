@@ -21,11 +21,14 @@
 //   and ThruScan cannot edit a name it gave away.
 
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   nameProblem, withSuffix, decodeDomain, addressOf, ROOT_SUFFIX,
 } from '../lib/names.js'
 import { checkName, claimName, setNameRecord, waitForResult } from '../lib/wallet.js'
 import { useWallet } from './Wallet.jsx'
+import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
+import { hasWallet } from '../lib/wallet.js'
 
 const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
 
@@ -40,6 +43,7 @@ function decodeBase64(b64) {
 /* ---------- claiming ---------- */
 
 function Claim({ wallet, onClaimed }) {
+  const gate = useUnlockGate()
   const [name, setName] = useState('')
   const [state, setState] = useState(null)   // { taken, account } | null
   const [checking, setChecking] = useState(false)
@@ -66,7 +70,14 @@ function Claim({ wallet, onClaimed }) {
   }, [name, problem])
 
   const claim = async () => {
-    setBusy(true); setError(null)
+    setError(null)
+    // Ask for the password here rather than sending them to another page and
+    // leaving them there. Claiming is one action and should feel like one.
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    setBusy(true)
     try {
       const r = await claimName(name)
       if (!r.ok) throw new Error(r.error)
@@ -112,21 +123,21 @@ function Claim({ wallet, onClaimed }) {
             : null
         )}
 
-        {!wallet.unlocked && (
+        {!hasWallet() && (
           <p className="fine">
-            <a href="/wallet">Open a wallet</a> to claim one. The name is registered to your wallet,
-            not to ThruScan.
+            <Link to="/wallet">Open a wallet</Link> to claim one. The name is registered to your
+            wallet, not to ThruScan.
           </p>
         )}
 
-        {wallet.unlocked && !wallet.registered && (
+        {hasWallet() && wallet.unlocked && !wallet.registered && (
           <p className="fine">
-            Your wallet needs an account on chain first. <a href="/wallet">Register it</a>, which
+            Your wallet needs an account on chain first. <Link to="/wallet">Register it</Link>, which
             takes a few seconds.
           </p>
         )}
 
-        {wallet.unlocked && wallet.registered && (
+        {hasWallet() && (wallet.unlocked ? wallet.registered : true) && (
           <button
             className="btn"
             onClick={claim}
@@ -136,6 +147,8 @@ function Claim({ wallet, onClaimed }) {
           </button>
         )}
       </div>
+
+      {gate.modal}
 
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
@@ -197,7 +210,7 @@ function Lookup() {
           <div className="row"><span>Name</span><b className="mono">{withSuffix(result.name)}</b></div>
           <div className="row">
             <span>Owner</span>
-            <a className="mono" href={`/account/${result.owner}`}>{short(result.owner)}</a>
+            <Link className="mono" to={`/account/${result.owner}`}>{short(result.owner)}</Link>
           </div>
           <div className="row">
             <span>Resolves to</span>
@@ -218,13 +231,19 @@ function Lookup() {
 /* ---------- a name you own ---------- */
 
 function OwnedName({ domain, account, wallet, onChanged }) {
+  const gate = useUnlockGate()
   const [key, setKey] = useState('')
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
   const add = async (k, v) => {
-    setBusy(true); setError(null)
+    setError(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    setBusy(true)
     try {
       const sig = await setNameRecord(account, k, v)
       const r = await waitForResult(sig)
@@ -292,6 +311,7 @@ function OwnedName({ domain, account, wallet, onChanged }) {
       </details>
 
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+      {gate.modal}
     </section>
   )
 }

@@ -174,3 +174,197 @@
   .wallet-pill .pill-strong { font-size: 11.5px; }
   .pill-panel { width: calc(100vw - 20px); }
 }
+
+/* ===========================================================================
+   The unlock prompt.
+
+   Unlocking used to mean going to another page, which was already poor and was
+   made worse by every link being a full reload that wiped the key. This asks
+   where you are.
+   =========================================================================== */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  width: 380px;
+  max-width: 100%;
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(128, 128, 128, 0.24);
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  .modal-card { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
+}
+
+/* ===========================================================================
+   The swap panel.
+   =========================================================================== */
+
+.swap-card { padding-top: 18px; }
+
+.swap-side {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.045);
+}
+
+.swap-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.swap-side-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.swap-amount {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 28px;
+  font-weight: 500;
+  padding: 2px 0;
+  outline: none;
+}
+
+.swap-amount::placeholder { opacity: 0.3; }
+
+/* The flip sits between the two sides and overlaps both, so the pair reads as
+   one control rather than two stacked cards. */
+.swap-flip {
+  display: flex;
+  justify-content: center;
+  height: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.flip-btn {
+  width: 34px;
+  height: 34px;
+  margin-top: -17px;
+  border-radius: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.26);
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.flip-btn:hover { border-color: rgba(128, 128, 128, 0.5); }
+
+@media (prefers-color-scheme: dark) {
+  .flip-btn { background: #17171a; border-color: rgba(255, 255, 255, 0.16); }
+}
+
+.picker { position: relative; flex: 0 0 auto; }
+
+.picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, 0.26);
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.picker-trigger:hover { border-color: rgba(128, 128, 128, 0.5); }
+.picker-caret { opacity: 0.4; font-size: 15px; }
+
+.picker-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 270px;
+  max-width: 78vw;
+  max-height: 300px;
+  overflow: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.24);
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-item:hover { background: rgba(128, 128, 128, 0.1); }
+.picker-item-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+@media (prefers-color-scheme: dark) {
+  .picker-trigger { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.16); }
+  .picker-menu { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
+  .picker-item:hover { background: rgba(255, 255, 255, 0.08); }
+}
+
+.linkish {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(128, 128, 128, 0.14);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.linkish:hover { background: rgba(128, 128, 128, 0.24); }
+
+/* ===========================================================================
+   The pill floats over the page, so page headings need room to clear it.
+   Without this, a page title with an action beside it sits underneath.
+   =========================================================================== */
+
+.wrap { padding-top: 56px; }
+
+@media (max-width: 720px) {
+  .wrap { padding-top: 52px; }
+  .swap-amount { font-size: 24px; }
+  .picker-menu { right: auto; left: 0; }
+}
