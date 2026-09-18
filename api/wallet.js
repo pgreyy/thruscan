@@ -37,7 +37,9 @@ import { createThruClient, Pubkey, proofs, deriveProgramAddress, TransactionBuil
 import { createGrpcTransport } from '@connectrpc/connect-node'
 import { createHash } from 'node:crypto'
 
-export const config = { runtime: 'nodejs' }
+// The faucet now asks the chain whether this account already claimed, which is
+// two extra reads. Ten seconds is not always enough for that plus a mint.
+export const config = { runtime: 'nodejs', maxDuration: 60 }
 
 dns.setDefaultResultOrder('ipv4first')
 
@@ -98,16 +100,76 @@ function refund(key) {
 
 /* tUSD claims are capped per account for much longer than per IP, because the
    point is to stop one person draining the supply rather than to stop a
-   double-click. Only recorded once the mint actually lands, so a failure does
-   not lock someone out for a day. */
+   double-click.
+ *
+ * This used to be a Map in this file, which was wrong in a way that took a
+ * while to show. A serverless function is not a server: Vercel starts an
+ * instance, serves whatever arrives, and throws it away. Two requests a second
+ * apart routinely land on two different instances, and a fresh instance has a
+ * fresh, empty Map. So the limit held only by luck, and a hard refresh was
+ * usually enough to miss it entirely, which is exactly what happened.
+ *
+ * There is no database here and there does not need to be one, because the
+ * answer is already written down somewhere permanent and public: the chain. A
+ * claim IS a mint from the token program into that token account, signed by the
+ * sponsor. So rather than remembering that we minted, we go and look.
+ *
+ * Two round trips: list the account's recent transactions, and read the block
+ * time of the newest mint among them. Both survive a cold start, a redeploy,
+ * two instances running at once, and someone clearing their browser, because
+ * none of it lives here.
+ */
 const CLAIM_WINDOW = 24 * 60 * 60 * 1000
-const claims = new Map()
+const MINT_OP = 0x03
 
-function claimedTooRecently(who) {
+/* A fast path only, never the answer on its own. It costs nothing and catches
+   the double-click that arrives before the first mint has even landed. */
+const seenHere = new Map()
+
+const sameKey = (a, b) => {
+  try { return Pubkey.from(a).toThruFmt() === Pubkey.from(b).toThruFmt() } catch { return false }
+}
+
+/** Milliseconds still to wait, or 0 to go ahead. */
+async function claimedTooRecently(c, account) {
   const now = Date.now()
-  for (const [k, at] of claims) if (now - at > CLAIM_WINDOW * 2) claims.delete(k)
-  const last = claims.get(who)
-  return last && now - last < CLAIM_WINDOW ? CLAIM_WINDOW - (now - last) : 0
+
+  for (const [k, at] of seenHere) if (now - at > CLAIM_WINDOW * 2) seenHere.delete(k)
+  const local = seenHere.get(account)
+  if (local && now - local < CLAIM_WINDOW) return CLAIM_WINDOW - (now - local)
+
+  let page
+  try {
+    page = await c.transactions.listForAccount(account, { pageSize: 10 })
+  } catch {
+    // If the node will not answer, the balance cap below is still enforced and
+    // the IP limit still applies. Refusing everyone because a read failed would
+    // be worse than letting one claim through.
+    return 0
+  }
+
+  for (const t of page?.transactions ?? []) {
+    if (!sameKey(t.program?.bytes ?? t.program, TOKEN_PROGRAM)) continue
+    if (t.instructionData?.[0] !== MINT_OP) continue
+    const ex = t.executionResult
+    if (!ex || ex.vmError !== 0 || BigInt(ex.userErrorCode ?? 0n) !== 0n) continue
+
+    // Newest first, so the first mint we find is the last claim.
+    let at
+    try {
+      const block = await c.blocks.get({ slot: t.slot })
+      at = Number(block.blockTimeNs / 1_000_000n)
+    } catch {
+      return 0
+    }
+    const since = now - at
+    if (since < CLAIM_WINDOW) {
+      seenHere.set(account, at)
+      return CLAIM_WINDOW - since
+    }
+    return 0
+  }
+  return 0
 }
 
 function human(ms) {
@@ -356,6 +418,18 @@ async function faucet(c, { owner, account }) {
     return { ok: false, error: 'That token account is for a different token. It has to be a tUSD account.' }
   }
 
+  // Once a day, and the chain is what remembers it. This runs before anything
+  // is minted, and it asks about the destination account rather than about
+  // whoever asked, so a second browser or a fresh device makes no difference.
+  const wait = await claimedTooRecently(c, dest)
+  if (wait > 0) {
+    return {
+      ok: false,
+      retryAfterMs: wait,
+      error: `That account already claimed today. It can claim again in ${human(wait)}.`,
+    }
+  }
+
   // The cap is on what the account holds, not on what it has ever been given.
   const balance = raw.length >= 72 ? raw.readBigUInt64LE(64) : 0n
   if (balance >= FAUCET_CAP) {
@@ -382,6 +456,7 @@ async function faucet(c, { owner, account }) {
     data: new Uint8Array(data),
     stateUnits: 20_000,
   })
+  seenHere.set(dest, Date.now())
   return { ok: true, signature, amount: amount.toString(), account: dest, held: balance.toString() }
 }
 
@@ -652,21 +727,6 @@ export default async function handler(req, res) {
     charge(ip)
   }
 
-  // tUSD is capped per account as well as per IP. An IP limit alone is beaten
-  // by a phone on mobile data, and an account limit alone by making new
-  // accounts, so neither is sufficient and both are cheap.
-  if (action === 'faucet') {
-    const who = body.account || body.owner
-    const wait = claimedTooRecently(who)
-    if (wait > 0) {
-      refund(ip)
-      return json(res, 429, {
-        ok: false,
-        error: `That account already claimed. It can claim again in ${human(wait)}.`,
-      })
-    }
-  }
-
   try {
     const c = client()
     switch (action) {
@@ -675,8 +735,10 @@ export default async function handler(req, res) {
       case 'open':     return json(res, 200, await open(c, body))
       case 'faucet': {
         const out = await faucet(c, body)
-        if (out.ok) claims.set(body.account || body.owner, Date.now())
-        return json(res, 200, out)
+        // A refusal is not the visitor's fault and should not also cost them
+        // their per-IP allowance.
+        if (!out.ok && metered) refund(ip)
+        return json(res, out.ok ? 200 : (out.retryAfterMs ? 429 : 400), out)
       }
       case 'balances': return json(res, 200, await balances(c, body))
       case 'pad-accounts':  return json(res, 200, await padAccounts(c, body))

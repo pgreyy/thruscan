@@ -69,9 +69,27 @@ const NATIVE_FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
 const NATIVE_FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
 const NATIVE_FAUCET_MAX = 10_000n
 
+/* The EOA program: account creation, deletion, and native THRU transfer. Its
+   address is thirty-two zero bytes. */
+const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+
 /* ---------- small helpers ---------- */
 
 const toBytes = (a) => Pubkey.from(a).toBytes()
+
+/** Thru sorts a transaction's accounts by their raw public key bytes, not by
+ *  the string they print as. Instruction indices are computed against that
+ *  order, so anything that names accounts by index has to sort first. */
+function sortAddresses(list) {
+  return [...new Set(list)].sort((a, b) => {
+    const x = toBytes(a)
+    const y = toBytes(b)
+    for (let i = 0; i < 32; i++) {
+      if (x[i] !== y[i]) return x[i] - y[i]
+    }
+    return 0
+  })
+}
 
 function concat(...parts) {
   const total = parts.reduce((n, p) => n + p.length, 0)
@@ -454,6 +472,87 @@ export async function claimNativeThru(amount = NATIVE_FAUCET_MAX) {
 export async function claimTusd() {
   const { address } = requireSession()
   return api('faucet', { owner: address })
+}
+
+/* ---------- giving it back ----------
+ *
+ * A testnet faucet is a shared tap, and someone who is done with 9,000 tUSD is
+ * holding it away from everyone else. Both of these are signed by the wallet
+ * itself, which is the whole point: nobody can push a return on your behalf.
+ *
+ * The two work differently because the two assets are different.
+ *
+ * tUSD is burned. ThruScan's sponsor is the mint authority, so the faucet does
+ * not hold a pile it hands out; it mints on demand and the supply goes up. The
+ * exact opposite of that is a burn, which takes the tokens out of existence and
+ * puts the supply back where it was. Sending them to some "faucet wallet"
+ * instead would only move the pile somewhere else.
+ *
+ *   BURN: [0x04][account u16][mint u16][authority u16][amount u64]
+ *
+ * recovered from a live transaction: two read-write accounts, one 115 bytes
+ * (a mint) and one 73 (a token account), with the indices in that order.
+ *
+ * THRU really is transferred, because Thru's own faucet is an account with a
+ * balance, and putting THRU back into it is the thing that lets the next person
+ * draw it out.
+ *
+ *   TRANSFER: [u32 op = 1][u64 amount][u16 from_idx][u16 to_idx]
+ *
+ * recovered by decoding twelve live transfers: the op and the trailing index
+ * pair were identical across all of them and the u64 tracked the amount.
+ */
+
+const TOKEN_OP_BURN = 0x04
+
+/** Burn tokens the wallet holds. Used to hand tUSD back to the faucet. */
+export async function burnToken(mint, amount) {
+  const { address } = requireSession()
+  const account = await deriveTokenAccount(mint, address)
+
+  const readWrite = sortAddresses([mint, account])
+  const at = (a) => 2 + readWrite.indexOf(a)
+
+  const data = new Uint8Array(15)
+  const dv = new DataView(data.buffer)
+  dv.setUint8(0, TOKEN_OP_BURN)
+  dv.setUint16(1, at(account), true)
+  dv.setUint16(3, at(mint), true)
+  dv.setUint16(5, 0, true)             // the authority is the fee payer, index 0
+  dv.setBigUint64(7, BigInt(amount), true)
+
+  return signAndSend({
+    program: TOKEN_PROGRAM,
+    readWrite,
+    data,
+    computeUnits: 1_000_000,
+    stateUnits: 20_000,
+    memoryUnits: 20_000,
+  })
+}
+
+/** Send native THRU somewhere. Used to put it back in Thru's faucet. */
+export async function sendNativeThru(to, amount) {
+  const data = new Uint8Array(16)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 1, true)             // TRANSFER
+  dv.setBigUint64(4, BigInt(amount), true)
+  dv.setUint16(12, 0, true)            // from: the fee payer
+  dv.setUint16(14, 2, true)            // to: the only read-write account
+
+  return signAndSend({
+    program: EOA_PROGRAM,
+    readWrite: [to],
+    data,
+    computeUnits: 300_000,
+    stateUnits: 10_000,
+    memoryUnits: 10_000,
+  })
+}
+
+/** Put native THRU back in the faucet everyone draws from. */
+export async function returnNativeThru(amount) {
+  return sendNativeThru(NATIVE_FAUCET_ACCOUNT, amount)
 }
 
 /**

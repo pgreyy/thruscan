@@ -5,6 +5,7 @@ import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
+import { Tabs } from './components/Tabs.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -45,14 +46,12 @@ const ID_REGISTRY = import.meta.env.VITE_THRU_ID_REGISTRY || ''
 
 const NAV = [
   { to: '/', label: 'Explorer', icon: 'search' },
-  { to: '/wall', label: 'Wall', icon: 'message' },
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/games', label: 'Games', icon: 'game' },
   { to: '/builders', label: 'Builders', icon: 'book' },
-  { to: '/community', label: 'Community', icon: 'users' },
   { to: '/updates', label: 'Updates', icon: 'bell' },
 ]
 
@@ -3090,16 +3089,21 @@ export default function App() {
         <Shell>
         <WalletPill />
         <Routes>
-          <Route path="/" element={<ExplorerPage />} />
-          <Route path="/wall" element={<WallPage />} />
+          <Route path="/" element={<Tabs tabs={[
+            { key: 'explorer', label: 'Explorer', el: <ExplorerPage /> },
+            { key: 'wall', label: 'Wall', el: <WallPage /> },
+          ]} />} />          <Route path="/wall" element={<WallPage />} />
           <Route path="/swap" element={<SwapPage />} />
           <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
-          <Route path="/builders" element={<><BuildersPage /><div className="embed-page"><ProjectsPage /></div></>} />
-          <Route path="/moderate" element={<ModeratePage />} />
+          <Route path="/builders" element={<Tabs tabs={[
+            { key: 'builders', label: 'Builders', el: <BuildersPage /> },
+            { key: 'projects', label: 'Projects', el: <ProjectsPage /> },
+            { key: 'community', label: 'Community', el: <CommunityPage /> },
+          ]} />} />          <Route path="/moderate" element={<ModeratePage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/guides" element={<GuidesPage />} />
           <Route path="/updates" element={<UpdatesPage />} />

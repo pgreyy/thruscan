@@ -31,8 +31,13 @@ import {
 
 import { decodeMintAccount } from '../lib/token.js'
 import { useWallet, sendBuilt, TopUpCard } from './Wallet.jsx'
-import { deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts } from '../lib/wallet.js'
+import {
+  deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
+  burnToken, returnNativeThru,
+} from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
+import { Tabs } from '../components/Tabs.jsx'
+import { useConfirm } from '../components/Confirm.jsx'
 import {
   THRUSWAP_PROGRAM as SWAP_PROGRAM,
   THRUSWAP_REGISTRY as SWAP_REGISTRY,
@@ -346,10 +351,13 @@ function FaucetCard() {
     }
   }
 
+  // One line, no backslashes. PowerShell does not understand a bash line
+  // continuation and silently swallows the rest of the command, which is how
+  // this went wrong the first time.
   const setupCommand =
-    `thru token initialize-account ${TUSD_MINT} YOUR_ADDRESS \\\n` +
-    `  0000000000000000000000000000000000000000000000000000000000000000 \\\n` +
-    `  --fee-payer YOUR_KEY_NAME`
+    `thru token initialize-account ${TUSD_MINT} YOUR_ADDRESS `
+    + `0000000000000000000000000000000000000000000000000000000000000000 `
+    + `--fee-payer YOUR_KEY_NAME`
 
   return (
     <section className="card">
@@ -1249,55 +1257,210 @@ export function SwapPage() {
     )
   }
 
-  return (
-    <div className="wrap">
-      <p className="eyebrow">Trade</p>
-      <h1 className="h1">Swap</h1>
-      <p className="lede">
-        A constant product market maker on Thru. Reserves live in token accounts the program itself
-        owns, so no one signs for them and the price is whatever the ratio says it is.
-      </p>
+  const pools = data?.pools ?? []
+  const shared = { pools, balances, tickers, decimalsOf, reload }
 
+  const swapTab = (
+    <div className="wrap wrap-top">
       {error && <p className="notice bad">Could not read the pool registry. It may be mid-reset.</p>}
+      {pools.length > 0
+        ? <SwapPanel {...shared} />
+        : !error && <EmptyPools loading={loading} />}
+    </div>
+  )
 
-      {data?.pools?.length > 0 && (
-        <SwapPanel
-          pools={data.pools}
-          balances={balances}
-          tickers={tickers}
-          decimalsOf={decimalsOf}
-          reload={reload}
-        />
-      )}
+  const liquidityTab = (
+    <div className="wrap wrap-top">
+      {pools.length > 0
+        ? <LiquidityPanel {...shared} />
+        : <EmptyPools loading={loading} />}
+    </div>
+  )
 
-      {data?.pools?.length > 0 && (
-        <LiquidityPanel
-          pools={data.pools}
-          balances={balances}
-          tickers={tickers}
-          decimalsOf={decimalsOf}
-          reload={reload}
-        />
-      )}
-
+  const poolsTab = (
+    <div className="wrap wrap-top">
       <section className="card">
         <div className="card-head">
           <div>
             <h2 className="h2">Pools</h2>
-            <p className="sub">{data ? `${data.pools.length} of ${data.capacity} slots in use` : 'reading the chain'}</p>
+            <p className="sub">{data ? `${pools.length} of ${data.capacity} slots in use` : 'reading the chain'}</p>
           </div>
           <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
         </div>
-        {!error && data && data.pools.length === 0 && (
+        {!error && data && pools.length === 0 && (
           <p className="fine" style={{ marginTop: 12 }}>No pools have been created yet.</p>
         )}
         <div className="rows" style={{ marginTop: 12 }}>
-          {data?.pools.map((p) => (
+          {pools.map((p) => (
             <PoolRow key={p.id} pool={p} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
           ))}
         </div>
       </section>
     </div>
+  )
+
+  return (
+    <Tabs
+      eyebrow="Trade"
+      title="Swap"
+      lede="A constant product market maker on Thru. Reserves live in token accounts the program itself owns, so no one signs for them and the price is whatever the ratio says it is."
+      tabs={[
+        { key: 'swap', label: 'Swap', el: swapTab },
+        { key: 'liquidity', label: 'Liquidity', el: liquidityTab },
+        { key: 'pools', label: 'Pools', el: poolsTab, badge: pools.length || null },
+      ]}
+    />
+  )
+}
+
+/**
+ * Handing it back.
+ *
+ * A faucet is a shared tap and this is a test network, so someone sitting on
+ * 9,000 tUSD they are finished with is holding it away from the next person.
+ * Neither of these can be undone, so neither happens without a second click.
+ *
+ * The two work differently, and the card says so rather than pretending
+ * otherwise. tUSD is burned, because ThruScan's sponsor is the mint authority:
+ * the faucet does not own a pile it lends out, it creates tokens on demand and
+ * the supply rises. Burning is the exact inverse and puts the supply back.
+ * THRU is genuinely transferred, because Thru's faucet is an account with a
+ * balance in it, and refilling that account is what lets the next person draw.
+ *
+ * Both are signed by this wallet. Nobody, including ThruScan, can push a return
+ * on your behalf.
+ */
+export function ReturnCard() {
+  const wallet = useWallet()
+  const confirm = useConfirm()
+  const gate = useUnlockGate()
+  const [busy, setBusy] = useState(null)
+  const [note, setNote] = useState(null)
+  const [error, setError] = useState(null)
+
+  const tusd = wallet.balances?.[TUSD_MINT]?.amount ?? 0n
+  const thru = wallet.native ?? 0n
+
+  // Fees come out of the native balance, so returning every last unit leaves
+  // the wallet unable to pay for anything, including this transaction. Keep a
+  // float back.
+  const FLOAT = 500n
+  const thruReturnable = thru > FLOAT ? thru - FLOAT : 0n
+
+  const run = async (kind) => {
+    setError(null); setNote(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+
+    const ok = kind === 'tusd'
+      ? await confirm.ask({
+        title: 'Send your tUSD back?',
+        body: 'This burns the whole balance, which is how tUSD returns to the faucet: '
+          + 'the supply goes back down by exactly what you hand in. It cannot be undone, '
+          + 'though you can claim again tomorrow.',
+        detail: [{ label: 'Burning', value: `${fmt(tusd)} tUSD` }],
+        confirmLabel: 'Burn it',
+      })
+      : await confirm.ask({
+        title: 'Send your THRU back?',
+        body: 'This transfers your THRU to Thru\'s own faucet account, where the next person can '
+          + 'draw it. A small float stays behind so your wallet can still pay transaction fees. '
+          + 'It cannot be undone, though the faucet will hand it back on request.',
+        detail: [
+          { label: 'Returning', value: `${thruReturnable.toString()} THRU` },
+          { label: 'Kept for fees', value: `${(thru - thruReturnable).toString()} THRU` },
+        ],
+        confirmLabel: 'Send it back',
+      })
+    if (!ok) return
+
+    setBusy(kind)
+    try {
+      if (kind === 'tusd') {
+        await burnToken(TUSD_MINT, tusd)
+        setNote(`${fmt(tusd)} tUSD returned. The supply is back where it was.`)
+      } else {
+        await returnNativeThru(thruReturnable)
+        setNote(`${thruReturnable.toString()} THRU returned to the faucet.`)
+      }
+      await new Promise((r) => setTimeout(r, 2500))
+      await wallet.refresh()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!wallet.address) return null
+
+  return (
+    <section className="card">
+      {gate.modal}
+      {confirm.modal}
+
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Give it back</h2>
+          <p className="sub">Done testing? Put it back in the tap</p>
+        </div>
+      </div>
+
+      <div className="rows" style={{ marginTop: 12 }}>
+        <div className="row">
+          <span>
+            <b>tUSD</b> <span className="fine">{fmt(tusd)} held, burned on return</span>
+          </span>
+          <button
+            className="btn ghost danger"
+            onClick={() => run('tusd')}
+            disabled={busy !== null || tusd <= 0n}
+          >
+            {busy === 'tusd' ? 'Returning' : 'Return all'}
+          </button>
+        </div>
+        <div className="row">
+          <span>
+            <b>THRU</b>{' '}
+            <span className="fine">
+              {thru.toString()} held, {thruReturnable.toString()} returnable
+            </span>
+          </span>
+          <button
+            className="btn ghost danger"
+            onClick={() => run('thru')}
+            disabled={busy !== null || thruReturnable <= 0n}
+          >
+            {busy === 'thru' ? 'Returning' : 'Return most'}
+          </button>
+        </div>
+      </div>
+
+      {note && <p className="notice" style={{ marginTop: 14 }}>{note}</p>}
+      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+
+      <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+        Nothing here is worth anything and everything disappears at the next genesis reset, so this
+        is politeness rather than accounting. It matters because alphanet's faucets are finite while
+        the reset is not scheduled, and someone who has finished testing holding ten thousand of
+        each is the reason the next person's claim fails.
+      </p>
+    </section>
+  )
+}
+
+function EmptyPools({ loading }) {
+  return (
+    <section className="card">
+      <h2 className="h2">{loading ? 'Reading the chain' : 'No pools yet'}</h2>
+      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+        {loading
+          ? 'Fetching the pool registry.'
+          : 'Nothing has been listed on thruswap yet, so there is nothing to trade against or add to.'}
+      </p>
+    </section>
   )
 }
 
@@ -1550,23 +1713,15 @@ export function LaunchpadPage() {
 export function FaucetPage() {
   const wallet = useWallet()
 
-  return (
-    <div className="wrap">
-      <p className="eyebrow">Get started</p>
-      <h1 className="h1">Faucet</h1>
-      <p className="lede">
-        tUSD is the test currency every pool and every launch is priced in, and THRU is what pays
-        transaction fees. Neither has any value, and both disappear whenever alphanet resets from
-        genesis, which is the point: you can experiment without risking anything.
-      </p>
-
+  const getTab = (
+    <div className="wrap wrap-top">
       {wallet.unlocked && wallet.registered
         ? <TopUpCard />
         : (
           <section className="card">
             <h2 className="h2">The short way</h2>
             <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-              With a wallet this is two buttons and no addresses. <a href="/wallet">Open one</a>,
+              With a wallet this is two buttons and no addresses. <Link to="/wallet">Open one</Link>,
               which takes about fifteen seconds, and it claims both currencies for you and opens the
               token accounts they need. The longer way below still works if you would rather use
               your own key from the terminal.
@@ -1585,5 +1740,34 @@ export function FaucetPage() {
         </div>
       </section>
     </div>
+  )
+
+  const returnTab = (
+    <div className="wrap wrap-top">
+      {wallet.unlocked
+        ? <ReturnCard />
+        : (
+          <section className="card">
+            <h2 className="h2">Unlock first</h2>
+            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+              Returning funds is a transaction your wallet signs, so it needs to be unlocked.
+              Nobody can move your balances for you, which is the same reason nobody can take
+              them. <Link to="/wallet">Open your wallet</Link>.
+            </p>
+          </section>
+        )}
+    </div>
+  )
+
+  return (
+    <Tabs
+      eyebrow="Get started"
+      title="Faucet"
+      lede="tUSD is the test currency every pool and every launch is priced in, and THRU is what pays transaction fees. Neither has any value, and both disappear whenever alphanet resets from genesis, which is the point: you can experiment without risking anything."
+      tabs={[
+        { key: 'get', label: 'Get funds', el: getTab },
+        { key: 'return', label: 'Give it back', el: returnTab },
+      ]}
+    />
   )
 }

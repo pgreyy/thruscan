@@ -282,12 +282,44 @@ function BackupCard({ wallet }) {
           )}
         </>
       ) : (
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          This wallet was made before phrases existed, or imported from a raw key, so there are no
-          words to write down. It still works exactly the same; it just can only be moved by
-          exporting the key below. If you would rather have a phrase, make a new wallet and send
-          your balances across.
-        </p>
+        <>
+          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+            Because this wallet is older than phrases are, or because it was imported from a raw
+            key. Nothing is wrong with it and nothing has been lost.
+          </p>
+
+          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+            A phrase is not a label stuck on an account afterwards; it is where the account comes
+            from. The twelve words are put through a one-way function to produce the private key,
+            and one-way is the entire point: the key cannot be run backwards into words. So a phrase
+            has to be chosen before the key exists. Yours was made the other way round, as a
+            private key drawn straight from the browser's random number generator, which is just as
+            secure and just as much yours. It only travels differently.
+          </p>
+
+          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+            Which means your backup is the key itself, below. It restores this account anywhere,
+            here or in the CLI, exactly as twelve words would. The one thing it will not do is get
+            typed into a phone without mistakes, which is what phrases were invented for.
+          </p>
+
+          <div className="rows" style={{ marginTop: 14 }}>
+            <div className="row">
+              <span>To keep this account</span>
+              <span className="fine">Export the key below and store it somewhere safe</span>
+            </div>
+            <div className="row">
+              <span>To get a phrase</span>
+              <span className="fine">Make a second wallet, then move your balances to it</span>
+            </div>
+          </div>
+
+          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+            There is no rush on the second one. This is alphanet: every balance here disappears at
+            the next genesis reset anyway, so the natural moment to switch to a phrase-backed wallet
+            is whenever that happens.
+          </p>
+        </>
       )}
     </section>
   )
@@ -662,8 +694,10 @@ export function TopUpCard() {
 
       <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
         tUSD is 500 a day per account, capped at 10,000 held at once, and it opens your token
-        account for you if you do not have one. Spend some and you can claim again. THRU comes from Thru's own faucet rather than from ThruScan, so
-        it is capped at 10,000 a time by the network and you can come back for more.
+        account for you if you do not have one. The daily limit is read off the chain rather than
+        remembered by a server, so refreshing does not reset it. THRU comes from Thru's own faucet
+        rather than from ThruScan, so it is capped at 10,000 a time by the network and you can come
+        back for more.
       </p>
     </section>
   )

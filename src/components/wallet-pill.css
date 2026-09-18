@@ -450,3 +450,113 @@
   aspect-ratio: 1;
   object-fit: cover;
 }
+
+/* ===========================================================================
+   Tab strips.
+
+   Scrolling past one feature to reach another is how a page hides its own
+   contents. Swap, liquidity and pools are three jobs, not one long page, and
+   so are builders, projects and community.
+
+   The strip sticks to the top under the header so it stays reachable on a long
+   panel, and it scrolls sideways on a narrow screen rather than wrapping into
+   two rows, which is what a phone expects.
+   =========================================================================== */
+
+.wrap-tight { padding-bottom: 4px; }
+.wrap-top   { padding-top: 0; }
+
+.tabstrip-wrap {
+  /* Not sticky. The wallet pill is fixed to the top right of every page, and a
+     strip pinned to the top edge slides underneath it on a narrow screen. */
+  margin-bottom: 18px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tabstrip-wrap { background: rgba(14, 14, 16, 0.86); }
+}
+
+.tabstrip {
+  display: flex;
+  gap: 4px;
+  max-width: 1080px;
+  margin: 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabstrip::-webkit-scrollbar { display: none; }
+
+.tabstrip-tab {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.94rem;
+  font-weight: 500;
+  color: inherit;
+  opacity: 0.58;
+  padding: 13px 14px 11px;
+  border-bottom: 2px solid transparent;
+  transition: opacity 0.14s ease, border-color 0.14s ease;
+  white-space: nowrap;
+}
+
+.tabstrip-tab:hover { opacity: 0.85; }
+
+.tabstrip-tab[aria-selected="true"] {
+  opacity: 1;
+  font-weight: 600;
+  border-bottom-color: currentColor;
+}
+
+.tabstrip-badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.tabstrip-panel { min-height: 40vh; }
+
+/* Pages under a strip bring their own .wrap, which carries the 56px that keeps
+   content clear of the floating wallet pill. Under a tab strip that pill is
+   already cleared, so the padding would only show as a gap. */
+.tabstrip-panel > .wrap,
+.tabstrip-panel > * > .wrap { padding-top: 0; }
+
+@media (max-width: 720px) {
+  .tabstrip-wrap { padding: 0 14px; }
+  .tabstrip-tab { padding: 12px 11px 10px; font-size: 0.9rem; }
+}
+
+/* A button for the thing you probably do not want to do. Quiet until hovered,
+   so it never looks like the obvious next step. */
+
+.btn.danger {
+  border-color: rgba(200, 60, 60, 0.4);
+  color: #c0392b;
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: rgba(200, 60, 60, 0.75);
+  background: rgba(200, 60, 60, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn.danger { color: #ff8a80; border-color: rgba(255, 138, 128, 0.36); }
+  .btn.danger:hover:not(:disabled) {
+    border-color: rgba(255, 138, 128, 0.7);
+    background: rgba(255, 138, 128, 0.1);
+  }
+}
