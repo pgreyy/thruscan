@@ -42,7 +42,10 @@
 
 import { Pubkey } from '@thru/sdk'
 
-export const PAD_VERSION = 1
+// v2 moved the quote mint out of the header and onto each launch, which grew a
+// launch record from 221 bytes to 253. The two are not interchangeable, so the
+// version byte is checked rather than assumed.
+export const PAD_VERSION = 2
 export const HEADER_SIZE = 77
 export const LAUNCH_SIZE = 253
 
@@ -143,16 +146,18 @@ export function decodePadRegistry(input) {
       mint: readPubkey(bytes, base + 0x4d),
       tokenVault: readPubkey(bytes, base + 0x6d),
       quoteVault: readPubkey(bytes, base + 0x8d),
-      vq: dv.getBigUint64(base + 0xad, true),
-      vt: dv.getBigUint64(base + 0xb5, true),
-      creatorFees: dv.getBigUint64(base + 0xbd, true),
-      tokensSold: dv.getBigUint64(base + 0xc5, true),
-      tradeCount: dv.getBigUint64(base + 0xcd, true),
-      startSlot: dv.getBigUint64(base + 0xd5, true),
       // v2: each launch names its own quote asset, so one pad can price some
-      // curves in tUSD and others in WTHRU. Sits after start_slot, at the end
-      // of the record, which is why every offset above is unchanged from v1.
-      quoteMint: readPubkey(bytes, base + 0xdd),
+      // curves in tUSD and others in WTHRU. It sits immediately after the quote
+      // vault in the C struct, which pushes every number below it along by 32
+      // bytes. Getting this wrong decodes a pubkey as a reserve and prices the
+      // curve off nonsense, so the offsets are spelled out rather than derived.
+      quoteMint: readPubkey(bytes, base + 0xad),
+      vq: dv.getBigUint64(base + 0xcd, true),
+      vt: dv.getBigUint64(base + 0xd5, true),
+      creatorFees: dv.getBigUint64(base + 0xdd, true),
+      tokensSold: dv.getBigUint64(base + 0xe5, true),
+      tradeCount: dv.getBigUint64(base + 0xed, true),
+      startSlot: dv.getBigUint64(base + 0xf5, true),
     })
   }
 
@@ -337,7 +342,14 @@ export function buildLaunchInstruction({
   const at = (a) => 2 + readWrite.indexOf(a)
   const atRo = (a) => 2 + readWrite.length + readOnly.indexOf(a)
 
-  const w = writer(34 + nameBytes.length + symBytes.length)
+  // 35 = the packed struct launch_args in thrupad2.c:
+  //   u8 op + 8 u16 (token prog, registry, launch id, mint, token vault,
+  //   quote vault, quote mint, fee bps) + u64 supply + u64 virt quote
+  //   + u8 name_len + u8 symbol_len.
+  // v1 was 33 and this was allocated as 32, which is a bug that never fired
+  // because every launch so far was built by the deploy script rather than
+  // here. It would have fired the first time someone used the Create card.
+  const w = writer(35 + nameBytes.length + symBytes.length)
   w.u8(OP_LAUNCH)
   w.u16(atRo(TOKEN_PROGRAM))
   w.u16(at(registry))

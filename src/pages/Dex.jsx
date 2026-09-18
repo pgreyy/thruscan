@@ -663,7 +663,10 @@ export function SwapPage() {
    LAUNCHPAD
    ========================================================================== */
 
-function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
+function LaunchCard({ launch, balances, tickers, threshold, program, registry, slot }) {
+  // What this curve is priced in, according to the curve rather than to us.
+  const quoteMint = launch.quoteMint
+  const quote = tickers?.[quoteMint] || short(quoteMint)
   const [side, setSide] = useState('buy')
   const [amount, setAmount] = useState('')
 
@@ -711,7 +714,7 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
 
       <div className="hero" style={{ marginTop: 14 }}>
         <p className="hero-eyebrow">Raised</p>
-        <h2 className="hero-title" style={{ fontSize: 24 }}>{fmt(raised)} <span style={{ fontSize: 15, opacity: 0.55 }}>tUSD</span></h2>
+        <h2 className="hero-title" style={{ fontSize: 24 }}>{fmt(raised)} <span style={{ fontSize: 15, opacity: 0.55 }}>{quote}</span></h2>
         <div className="hero-stats">
           <span className="hero-stat"><b>{(progress * 100).toFixed(1)}%</b><span>to graduation</span></span>
           <span className="hero-stat"><b>{price.toExponential(2)}</b><span>price</span></span>
@@ -747,7 +750,7 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
             className="field mono"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={side === 'buy' ? 'tUSD to spend' : `${launch.symbol} to sell`}
+            placeholder={side === 'buy' ? `${quote} to spend` : `${launch.symbol} to sell`}
             inputMode="decimal"
           />
           {amountIn > 0n && (
@@ -755,11 +758,11 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
               <div className="rows">
                 <div className="row">
                   <span>You receive</span>
-                  <b className="mono">{fmt(out)} {side === 'buy' ? launch.symbol : 'tUSD'}</b>
+                  <b className="mono">{fmt(out)} {side === 'buy' ? launch.symbol : quote}</b>
                 </div>
-                <div className="row"><span>Creator fee</span><span className="mono">{fmt(q.creatorFee)} tUSD</span></div>
+                <div className="row"><span>Creator fee</span><span className="mono">{fmt(q.creatorFee)} {quote}</span></div>
                 {side === 'buy' && q.snipeTax > 0n && (
-                  <div className="row"><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax)} tUSD</span></div>
+                  <div className="row"><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax)} {quote}</span></div>
                 )}
               </div>
             ) : (
@@ -772,13 +775,13 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
       <div className="rows" style={{ marginTop: 16 }}>
         <div className="row"><span>Mint</span><span className="mono">{short(launch.mint)}</span></div>
         <div className="row"><span>Creator</span><span className="mono">{short(launch.creator)}</span></div>
-        <div className="row"><span>Unclaimed fees</span><span className="mono">{fmt(launch.creatorFees)} tUSD</span></div>
+        <div className="row"><span>Unclaimed fees</span><span className="mono">{fmt(launch.creatorFees)} {quote}</span></div>
       </div>
 
       {built && (
         <Execute
           program={program}
-          needs={{ userToken: launch.mint, userQuote: TUSD_MINT }}
+          needs={{ userToken: launch.mint, userQuote: quoteMint }}
           buildWith={(a) => {
             const args = {
               registry, launchId: launch.id,
@@ -790,7 +793,7 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
           }}
           cli={cliCommand(program, built)}
           label={side === 'buy'
-            ? `Buy ${launch.symbol} with ${amount} tUSD`
+            ? `Buy ${launch.symbol} with ${amount} ${quote}`
             : `Sell ${amount} ${launch.symbol}`}
         />
       )}
@@ -801,10 +804,14 @@ function LaunchCard({ launch, balances, threshold, program, registry, slot }) {
 export function LaunchpadPage() {
   const [slot, setSlot] = useState(null)
   const [creating, setCreating] = useState(false)
-  const { loading, error, data, balances, reload } = useChainData(
+  const { loading, error, data, balances, tickers, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
     (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
+    // v2 lets each launch choose its quote asset, so the tickers have to be
+    // read rather than assumed. A WTHRU curve labelled tUSD would be a lie
+    // about what the buyer is spending.
+    (d) => d.launches.map((l) => l.quoteMint),
   )
 
   // The anti-snipe tax decays by slot, so the page needs the current height to
@@ -848,7 +855,7 @@ export function LaunchpadPage() {
         </button>
       </div>
       <p className="lede">
-        Every launch puts its whole supply on a bonding curve priced in tUSD. There is no second
+        Every launch puts its whole supply on a bonding curve, priced in whichever asset its creator chose. There is no second
         instruction that mints, so the supply is fixed by construction rather than by promise.
       </p>
 
@@ -879,7 +886,7 @@ export function LaunchpadPage() {
       </section>
 
       {data?.launches.map((l) => (
-        <LaunchCard
+        <LaunchCard tickers={tickers}
           key={l.id}
           launch={l}
           balances={balances}
