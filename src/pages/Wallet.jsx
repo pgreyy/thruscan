@@ -68,13 +68,20 @@ export function useWallet() {
   }, [])
 
   const refresh = useCallback(async (mints = []) => {
-    if (!isUnlocked()) return
+    /* Locked is not the same as empty. The key lives in memory only, so every
+       hard refresh locks the wallet, and this used to give up here and leave
+       the balances at {}. Everything downstream renders a missing balance as
+       zero, so the page confidently told people they held nothing.
+       An address is all a balance read needs, and that is stored in the clear. */
+    const address = currentAddress()
+    if (!address) return
+
     const wanted = Array.from(new Set([TUSD_MINT, ...mints, ...Object.keys(state.balances)]))
     try {
       const [registered, native, rows] = await Promise.all([
-        accountExists(currentAddress()),
-        nativeBalance().catch(() => 0n),
-        wanted.length ? tokenBalances(wanted) : Promise.resolve([]),
+        accountExists(address),
+        nativeBalance(address).catch(() => 0n),
+        wanted.length ? tokenBalances(wanted, address) : Promise.resolve([]),
       ])
       const balances = { ...state.balances }
       for (const r of rows) {
@@ -102,7 +109,7 @@ export function useWallet() {
         })
       }
 
-      setState({ registered, native, balances, tickers, decimals, address: currentAddress(), unlocked: true })
+      setState({ registered, native, balances, tickers, decimals, address, unlocked: isUnlocked() })
     } catch { /* leave what we had; a failed refresh is not a failed wallet */ }
   }, [])
 

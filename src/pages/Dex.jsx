@@ -688,17 +688,33 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
 
+  /* Ask for the balances of every mint on this page.
+     The wallet store only holds balances something has asked it to fetch, and
+     nothing was asking here, so a mint that had never been fetched read as
+     undefined and was rendered as zero. That is how a wallet holding 76 TCAT
+     came to display "Balance 0" after every hard refresh. */
+  const mintKey = pools.flatMap((p) => [p.mintA, p.mintB]).join(',')
+  useEffect(() => {
+    if (!pools.length || !wallet.address) return
+    wallet.refresh([...new Set(pools.flatMap((p) => [p.mintA, p.mintB]))])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mintKey, wallet.address])
+
   // Every mint that any pool touches, with whatever this wallet holds of it.
   const tokens = useMemo(() => {
     const seen = new Map()
     for (const p of pools) {
       for (const mint of [p.mintA, p.mintB]) {
         if (seen.has(mint)) continue
+        const row = wallet.balances?.[mint]
         seen.set(mint, {
           mint,
           ticker: tickers?.[mint] || short(mint),
           decimals: decimalsOf(mint),
-          balance: wallet.balances?.[mint]?.amount ?? 0n,
+          balance: row?.amount ?? 0n,
+          // Zero and "not looked up yet" are different answers and the second
+          // one must not be shown as the first.
+          known: row !== undefined,
         })
       }
     }
@@ -716,6 +732,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   // is something you could do rather than something you cannot.
   useEffect(() => {
     if (fromMint || tokens.length < 2) return
+    if (!tokens.every((t) => t.known)) return    // wait, rather than guess
     const held = tokens.find((t) => t.balance > 0n) ?? tokens[0]
     const other = tokens.find((t) => t.mint !== held.mint)
     setFromMint(held.mint)
@@ -823,7 +840,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
           <span className="fine">Sell</span>
           {from && (
             <span className="fine">
-              Balance {fmt(from.balance, from.decimals)}
+              Balance {from.known ? fmt(from.balance, from.decimals) : '—'}
               {from.balance > 0n && (
                 <button
                   className="linkish"
@@ -852,7 +869,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       <div className="swap-side">
         <div className="swap-side-head">
           <span className="fine">Buy</span>
-          {to && <span className="fine">Balance {fmt(to.balance, to.decimals)}</span>}
+          {to && <span className="fine">Balance {to.known ? fmt(to.balance, to.decimals) : '—'}</span>}
         </div>
         <div className="swap-side-body">
           <span className="swap-amount mono" style={{ opacity: quote?.amountOut ? 1 : 0.4 }}>

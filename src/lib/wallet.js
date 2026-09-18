@@ -386,9 +386,22 @@ export async function openTokenAccount(mint) {
   return api('open', { owner: address, mint })
 }
 
-export async function tokenBalances(mints) {
-  const { address } = requireSession()
-  const { balances } = await api('balances', { owner: address, mints })
+/**
+ * Balances for a list of mints.
+ *
+ * Deliberately does NOT require the wallet to be unlocked. A token account's
+ * address is derived from the owner's public address and the mint, both public,
+ * and reading it is a public read: the private key has nothing to do with it.
+ *
+ * Requiring a session here was a real bug rather than a strict-is-safer choice.
+ * The key lives in memory only, so a hard refresh locks the wallet, every
+ * balance read then threw, and the UI rendered the failure as zero. Someone
+ * holding 76 TCAT was shown "Balance 0", which is not a cautious answer, it is
+ * a wrong one.
+ */
+export async function tokenBalances(mints, owner = currentAddress()) {
+  if (!owner) throw new Error('No wallet.')
+  const { balances } = await api('balances', { owner, mints })
   return balances
 }
 
@@ -620,9 +633,10 @@ export async function setNameRecord(domainAccount, key, value) {
 }
 
 /** The wallet's own native balance, in base units. */
-export async function nativeBalance() {
-  const { address } = requireSession()
-  const { balance } = await api('prepare', { address })
+/** The native balance, which is also just a public read. */
+export async function nativeBalance(owner = currentAddress()) {
+  if (!owner) throw new Error('No wallet.')
+  const { balance } = await api('prepare', { address: owner })
   return BigInt(balance ?? 0)
 }
 
