@@ -6,6 +6,7 @@ import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
 import { Tabs } from './components/Tabs.jsx'
+import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -3092,10 +3093,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Tabs tabs={[
             { key: 'explorer', label: 'Explorer', el: <ExplorerPage /> },
-            { key: 'wall', label: 'Wall', el: <WallPage /> },
-          ]} />} />          <Route path="/wall" element={<WallPage />} />
+            { key: 'wall', label: 'Wall', el: <WallV2 /> },
+          ]} />} />          <Route path="/wall" element={<WallV2 />} />
           <Route path="/swap" element={<SwapPage />} />
           <Route path="/launch" element={<LaunchpadPage />} />
+          <Route path="/launch/:id" element={<LaunchDetailPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/profile" element={<ProfilePage />} />

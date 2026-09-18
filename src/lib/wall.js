@@ -1,8 +1,23 @@
 // src/lib/wall.js
 //
 // Decoder for the ThruWall account, written alongside the program in
-// thruwall.c rather than reverse-engineered, so the two must be kept in step.
+// thruwall2.c rather than reverse-engineered, so the two must be kept in step.
 // If you change a field size in the C, change it here in the same commit.
+//
+// v2 adds a recipient. A message may now be addressed to an account, which is
+// what turns a feed into something an explorer can file under an address.
+//
+// What that does and does not mean:
+//
+//   The SENDER is proven. It is the transaction's fee payer, read out of the
+//   transaction by the program itself, and nobody can pay a fee for a key they
+//   do not hold. Nothing typed into a form can change it.
+//
+//   The RECIPIENT is not proven and cannot be. Addressing a message to someone
+//   needs no permission from them, exactly as sending them a transaction does
+//   not. So an address's inbox is "messages addressed here", never "messages
+//   this person accepted", and the UI has to say so rather than implying an
+//   endorsement.
 //
 // ---------------------------------------------------------------------------
 // Header, 41 bytes
@@ -13,7 +28,7 @@
 //   0x05    4  total_posted (u32) — every message ever, including overwritten
 //   0x09   32  sponsor pubkey — whoever ran INIT; posts from this key are sponsored
 //
-// Then 128 slots of 260 bytes each:
+// Then N slots of 293 bytes each:
 //
 //   off  size  field
 //   0x00    1  name_len
@@ -25,17 +40,20 @@
 //   0xdb    8  posted_at (u64, nanoseconds since the Unix epoch)
 //   0xe3   32  poster pubkey — the transaction's fee payer, proven not typed
 //   0x103   1  verified (1 when the poster is not the sponsor)
+//   0x104   1  has_to (1 when this message is addressed to someone)
+//   0x105  32  to pubkey — who it is addressed to; zeroes when has_to is 0
 //
-// Total account size is 41 + slots * 260. The slot count is chosen when INIT
+// Total account size is 41 + slots * 293. The two new fields are at the end of
+// the slot, after every field v1 had, so v1's offsets are all still correct. The slot count is chosen when INIT
 // runs rather than fixed here, because the chain caps how large an account can
 // be and that limit is not documented. The decoder works it out from the
 // account's own length.
 
 import { Pubkey } from '@thru/sdk'
 
-export const WALL_VERSION = 1
+export const WALL_VERSION = 2
 export const HEADER_SIZE = 41
-export const SLOT_SIZE = 260
+export const SLOT_SIZE = 293
 
 /** Capacity is whatever INIT allocated, so read it off the account's size. */
 export function wallCapacity(byteLength) {
@@ -126,6 +144,10 @@ export function decodeWall(input) {
       postedAtNs,
       poster: readPubkey(bytes, base + 0xe3),
       verified: bytes[base + 0x103] === 1,
+      // Zero is a real answer here, not a missing one: the program clears the
+      // whole slot before writing, so a public post genuinely has 32 zero
+      // bytes rather than whatever the previous occupant addressed.
+      to: bytes[base + 0x104] === 1 ? readPubkey(bytes, base + 0x105) : null,
     })
   }
 
@@ -145,13 +167,19 @@ export function decodeWall(input) {
 
 /**
  * Build the POST instruction data the program expects:
+ *
  *   [0x01][name_len][name][handle_len][handle][msg_len][message]
+ *   [has_to][to, 32 bytes, only when has_to is 1]
+ *
+ * The two trailing fields are optional in the wire format as well as in
+ * meaning: an instruction that stops after the message is read as a public
+ * post, which is what lets anything built against v1 keep working.
  *
  * Shared by the browser lane (the server calls this before signing) and the
  * CLI lane (the browser calls it to show the user a command to paste), which
  * is exactly why it lives here rather than inside the API route.
  */
-export function buildPostInstruction({ name = '', handle = '', message = '' }) {
+export function buildPostInstruction({ name = '', handle = '', message = '', to = null }) {
   const enc = new TextEncoder()
 
   const nameBytes = enc.encode(name.trim())
@@ -163,7 +191,19 @@ export function buildPostInstruction({ name = '', handle = '', message = '' }) {
   if (handleBytes.length > HANDLE_BYTES) throw new WallDecodeError('handle is too long')
   if (msgBytes.length > MESSAGE_BYTES) throw new WallDecodeError('message is too long')
 
-  const out = new Uint8Array(1 + 1 + nameBytes.length + 1 + handleBytes.length + 1 + msgBytes.length)
+  let toBytes = null
+  if (to) {
+    try {
+      toBytes = Pubkey.from(to).toBytes()
+    } catch {
+      throw new WallDecodeError('that recipient is not a valid Thru address')
+    }
+    if (toBytes.length !== 32) throw new WallDecodeError('that recipient is not a valid Thru address')
+  }
+
+  const size = 1 + 1 + nameBytes.length + 1 + handleBytes.length + 1 + msgBytes.length
+    + 1 + (toBytes ? 32 : 0)
+  const out = new Uint8Array(size)
   let o = 0
   out[o++] = 0x01
   out[o++] = nameBytes.length
@@ -171,8 +211,22 @@ export function buildPostInstruction({ name = '', handle = '', message = '' }) {
   out[o++] = handleBytes.length
   out.set(handleBytes, o); o += handleBytes.length
   out[o++] = msgBytes.length
-  out.set(msgBytes, o)
+  out.set(msgBytes, o); o += msgBytes.length
+  out[o++] = toBytes ? 1 : 0
+  if (toBytes) out.set(toBytes, o)
   return out
+}
+
+/** Every message addressed to one account, newest first. */
+export function inboxFor(wall, address) {
+  if (!wall?.entries || !address) return []
+  return wall.entries.filter((e) => e.to === address)
+}
+
+/** Every message sent by one account, newest first. */
+export function outboxFor(wall, address) {
+  if (!wall?.entries || !address) return []
+  return wall.entries.filter((e) => e.poster === address)
 }
 
 export function toHex(bytes) {

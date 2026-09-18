@@ -753,3 +753,59 @@ button[aria-current="true"] {
   opacity: 1;
   background: rgba(128, 128, 128, 0.14);
 }
+
+/* ===========================================================================
+   The wall.
+   =========================================================================== */
+
+.wall-list { margin-top: 4px; }
+
+.wall-msg {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line, rgba(128, 128, 128, 0.2));
+}
+
+.wall-msg:last-child { border-bottom: 0; }
+
+.wall-msg-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.wall-msg-who {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.wall-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.16);
+  color: var(--muted, #6f7178);
+  text-transform: lowercase;
+}
+
+.wall-badge.ok { background: var(--signal-soft, #edf0fd); color: var(--signal, #2f55e0); }
+.wall-badge.you { background: rgba(128, 128, 128, 0.16); }
+
+.wall-msg-body {
+  margin: 8px 0 0;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.wall-msg-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}

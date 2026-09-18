@@ -23,10 +23,10 @@ export const THRUSWAP_REGISTRY =
   env.VITE_THRUSWAP_REGISTRY || 'taPDf6IsnMvBCa3II-F6OjF-mbZEnMmZXxrdIres0QzGrt'
 
 export const THRUPAD_PROGRAM =
-  env.VITE_THRUPAD_PROGRAM || 'taX1wTP2Zmfddk6T3VAbncDzeDRXtc9HUCwUamm6d8rmPu'
+  env.VITE_THRUPAD_PROGRAM || 'taPrhpGvUsQJQ5RKWNxwm_zMMIxE1qefsTD1SwEWOac8We'
 
 export const THRUPAD_REGISTRY =
-  env.VITE_THRUPAD_REGISTRY || 'taeDl4PfjrwhTYAxUEu4Jzn0RABo3CojWVTLohkIYE_unP'
+  env.VITE_THRUPAD_REGISTRY || 'talx8PESmxMqxxG0gfRgyLPMcxIecfxNI224zQabWGzYCt'
 
 /** The quote currency every pool and every launch is priced against. */
 export const TUSD_MINT =
@@ -53,3 +53,18 @@ export const NAME_ROOT =
 export const NATIVE_FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
 export const NATIVE_FAUCET_ACCOUNT =
   env.VITE_NATIVE_FAUCET || 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
+
+/**
+ * The wall, v2: the version whose messages can be addressed to an account.
+ *
+ * These are blank until thruwall2 is deployed, and the deploy script fills them
+ * in. Blank is a state the wall page handles rather than a crash: it says the
+ * program is not deployed yet, which is true and useful, instead of failing to
+ * read an account at the empty address.
+ *
+ * They live here rather than in App.jsx because App.jsx is already a very large
+ * file that every change has to be surgically cut into, and an address is
+ * configuration.
+ */
+export const WALL_PROGRAM = env.VITE_THRU_WALL2_PROGRAM || ''
+export const WALL_ACCOUNT = env.VITE_THRU_WALL2_ACCOUNT || ''
