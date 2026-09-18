@@ -384,3 +384,69 @@
 
 /* A page embedded under another one does not need its own top gap. */
 .embed-page > .wrap { padding-top: 0; }
+
+/* ===========================================================================
+   Seed phrases.
+
+   Numbered, because the order is the whole point: twelve words wrapped as a
+   paragraph are easy to transcribe out of sequence, and a phrase out of
+   sequence is not the same wallet.
+   =========================================================================== */
+
+.phrase-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.phrase-grid li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.05);
+}
+
+.phrase-grid li .fine { min-width: 14px; opacity: 0.5; font-size: 11px; }
+.phrase-grid li b { font-size: 13px; }
+
+@media (max-width: 560px) {
+  .phrase-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.check-row input { width: 16px; height: 16px; flex: 0 0 16px; }
+
+.qr-wrap { display: flex; flex-direction: column; align-items: center; }
+
+.qr {
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(128, 128, 128, 0.22);
+}
+
+.qr svg { display: block; width: 100%; height: 100%; }
+
+.qr-video {
+  width: 100%;
+  max-width: 320px;
+  border-radius: 12px;
+  background: #000;
+  aspect-ratio: 1;
+  object-fit: cover;
+}

@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
   decodeSwapRegistry, quoteSwap, buildSwapInstruction, toHex,
+  buildAddLiquidityInstruction, buildRemoveLiquidityInstruction,
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
@@ -943,6 +944,291 @@ function PoolRow({ pool, balances, tickers, decimalsOf }) {
 }
 
 
+/**
+ * Adding and removing liquidity.
+ *
+ * This is the honest answer to a pool so thin that thirty tUSD moves it by
+ * half. Rather than me quietly topping it up, anyone can, and anyone who does
+ * gets the fees that trade through it.
+ *
+ * Two things the maths forces, both worth saying in the UI rather than
+ * discovering through a revert:
+ *
+ *   Deposits go in at the pool's current ratio. Put in more of one side than
+ *   the ratio wants and the excess is simply kept by the pool, which is a
+ *   donation with extra steps. So the second amount is computed, not typed.
+ *
+ *   The first deposit into an empty pool sets the price, and the program burns
+ *   the first 1000 LP tokens so the pool can never be fully drained and
+ *   re-priced from nothing.
+ */
+
+function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
+  const wallet = useWallet()
+  const gate = useUnlockGate()
+
+  const [poolId, setPoolId] = useState(null)
+  const [side, setSide] = useState('add')
+  const [amountA, setAmountA] = useState('')
+  const [lpAmount, setLpAmount] = useState('')
+  const [step, setStep] = useState(null)
+  const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
+  useEffect(() => { if (poolId == null && pools.length) setPoolId(pools[0].id) }, [pools, poolId])
+
+  const pool = pools.find((p) => p.id === poolId) ?? null
+  const tick = (m) => tickers?.[m] || short(m)
+  const dp = (m) => decimalsOf(m)
+
+  const reserveA = pool ? (balances[pool.vaultA] ?? 0n) : 0n
+  const reserveB = pool ? (balances[pool.vaultB] ?? 0n) : 0n
+  const heldA = pool ? (wallet.balances?.[pool.mintA]?.amount ?? 0n) : 0n
+  const heldB = pool ? (wallet.balances?.[pool.mintB]?.amount ?? 0n) : 0n
+  const heldLp = pool ? (wallet.balances?.[pool.lpMint]?.amount ?? 0n) : 0n
+
+  const inA = pool ? toUnits(amountA, dp(pool.mintA)) : 0n
+
+  /* The matching amount of the other side, at the pool's ratio. Rounded up, so
+     a rounding error costs the depositor a unit rather than the pool. */
+  const inB = useMemo(() => {
+    if (!pool || inA <= 0n || reserveA === 0n) return 0n
+    return (inA * reserveB + reserveA - 1n) / reserveA
+  }, [pool, inA, reserveA, reserveB])
+
+  const burnLp = pool ? toUnits(lpAmount, DECIMALS) : 0n
+  const outA = pool && pool.lpSupply > 0n ? (burnLp * reserveA) / pool.lpSupply : 0n
+  const outB = pool && pool.lpSupply > 0n ? (burnLp * reserveB) / pool.lpSupply : 0n
+
+  const sharePct = pool && pool.lpSupply > 0n
+    ? Number((heldLp * 10000n) / pool.lpSupply) / 100
+    : 0
+
+  const blocker = (() => {
+    if (!pool) return 'No pools yet.'
+    if (side === 'add') {
+      if (reserveA === 0n || reserveB === 0n) {
+        return 'This pool is empty. Seeding an empty pool sets its price, and that is not wired up here yet.'
+      }
+      if (inA <= 0n) return null
+      if (inA > heldA) {
+        return heldA === 0n
+          ? `You have no ${tick(pool.mintA)}.`
+          : `You only have ${fmt(heldA, dp(pool.mintA))} ${tick(pool.mintA)}.`
+      }
+      if (inB > heldB) {
+        return heldB === 0n
+          ? `That needs ${fmt(inB, dp(pool.mintB))} ${tick(pool.mintB)} to match, and you have none.`
+          : `That needs ${fmt(inB, dp(pool.mintB))} ${tick(pool.mintB)} to match, and you have ${fmt(heldB, dp(pool.mintB))}.`
+      }
+      return null
+    }
+    if (burnLp <= 0n) return null
+    if (burnLp > heldLp) {
+      return heldLp === 0n
+        ? 'You have no LP tokens in this pool.'
+        : `You only have ${fmt(heldLp)} LP.`
+    }
+    return null
+  })()
+
+  const go = async () => {
+    setError(null); setDone(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+
+    try {
+      setStep('opening')
+      const need = [pool.mintA, pool.mintB, pool.lpMint]
+      const accounts = {}
+      for (const mint of need) {
+        const known = wallet.balances[mint]
+        if (known?.exists) { accounts[mint] = known.account; continue }
+        const made = await openTokenAccount(mint)
+        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+        accounts[mint] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
+      }
+
+      setStep('signing')
+      const args = {
+        registry: SWAP_REGISTRY, poolId: pool.id,
+        vaultA: pool.vaultA, vaultB: pool.vaultB,
+        userA: accounts[pool.mintA], userB: accounts[pool.mintB],
+        lpMint: pool.lpMint, userLp: accounts[pool.lpMint],
+      }
+      const built = side === 'add'
+        ? buildAddLiquidityInstruction({ ...args, amountA: inA, amountB: inB })
+        : buildRemoveLiquidityInstruction({ ...args, lpAmount: burnLp })
+
+      const result = await sendBuilt(SWAP_PROGRAM, built)
+      if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
+
+      setDone(result.signature)
+      setAmountA(''); setLpAmount('')
+      await wallet.refresh(need)
+      reload()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setStep(null)
+    }
+  }
+
+  if (!pools.length) return null
+
+  return (
+    <section className="card">
+      {gate.modal}
+
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Liquidity</h2>
+          <p className="sub">Deposit both sides, earn a share of every trade</p>
+        </div>
+        <div className="inline">
+          <button className="btn ghost" onClick={() => setSide('add')} aria-current={side === 'add'}>Add</button>
+          <button className="btn ghost" onClick={() => setSide('remove')} aria-current={side === 'remove'}>Remove</button>
+        </div>
+      </div>
+
+      <div className="form-row" style={{ marginTop: 14 }}>
+        <label className="label">Pool</label>
+        <div className="inline">
+          {pools.map((p) => (
+            <button
+              key={p.id}
+              className="btn ghost"
+              onClick={() => { setPoolId(p.id); setAmountA(''); setLpAmount('') }}
+              aria-current={p.id === poolId}
+            >
+              {tick(p.mintA)} / {tick(p.mintB)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {pool && (
+        <>
+          <div className="rows" style={{ marginTop: 14 }}>
+            <div className="row">
+              <span>Pool holds</span>
+              <span className="mono">
+                {fmt(reserveA, dp(pool.mintA))} {tick(pool.mintA)} · {fmt(reserveB, dp(pool.mintB))} {tick(pool.mintB)}
+              </span>
+            </div>
+            <div className="row">
+              <span>Your share</span>
+              <span className="mono">
+                {heldLp > 0n ? `${sharePct.toFixed(2)}% · ${fmt(heldLp)} LP` : 'none'}
+              </span>
+            </div>
+            <div className="row"><span>Fee to providers</span><span className="mono">{pool.feeBps / 100}% of every trade</span></div>
+          </div>
+
+          {side === 'add' ? (
+            <div className="stack" style={{ marginTop: 16 }}>
+              <div className="swap-side">
+                <div className="swap-side-head">
+                  <span className="fine">{tick(pool.mintA)}</span>
+                  <span className="fine">
+                    Balance {fmt(heldA, dp(pool.mintA))}
+                    {heldA > 0n && (
+                      <button
+                        className="linkish"
+                        onClick={() => setAmountA(String(Number(heldA) / 10 ** dp(pool.mintA)))}
+                      >MAX</button>
+                    )}
+                  </span>
+                </div>
+                <input
+                  className="swap-amount mono"
+                  value={amountA}
+                  onChange={(e) => setAmountA(e.target.value)}
+                  placeholder="0"
+                  inputMode="decimal"
+                />
+              </div>
+
+              <div className="swap-side">
+                <div className="swap-side-head">
+                  <span className="fine">{tick(pool.mintB)}, at the pool's ratio</span>
+                  <span className="fine">Balance {fmt(heldB, dp(pool.mintB))}</span>
+                </div>
+                <span className="swap-amount mono" style={{ opacity: inB > 0n ? 1 : 0.4 }}>
+                  {inB > 0n ? fmt(inB, dp(pool.mintB)) : '0'}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="stack" style={{ marginTop: 16 }}>
+              <div className="swap-side">
+                <div className="swap-side-head">
+                  <span className="fine">LP tokens to burn</span>
+                  <span className="fine">
+                    Holding {fmt(heldLp)}
+                    {heldLp > 0n && (
+                      <button className="linkish" onClick={() => setLpAmount(String(Number(heldLp) / 1e6))}>MAX</button>
+                    )}
+                  </span>
+                </div>
+                <input
+                  className="swap-amount mono"
+                  value={lpAmount}
+                  onChange={(e) => setLpAmount(e.target.value)}
+                  placeholder="0"
+                  inputMode="decimal"
+                />
+              </div>
+              {burnLp > 0n && (
+                <div className="rows">
+                  <div className="row">
+                    <span>You get back</span>
+                    <b className="mono">
+                      {fmt(outA, dp(pool.mintA))} {tick(pool.mintA)} · {fmt(outB, dp(pool.mintB))} {tick(pool.mintB)}
+                    </b>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {blocker && <p className="notice bad" style={{ marginTop: 14 }}>{blocker}</p>}
+
+          <button
+            className="btn"
+            style={{ width: '100%', marginTop: 14 }}
+            onClick={go}
+            disabled={!!blocker || step !== null || (side === 'add' ? inA <= 0n : burnLp <= 0n)}
+          >
+            {step === 'opening' ? 'Opening your token accounts…'
+              : step === 'signing' ? 'Signing…'
+              : !hasWallet() ? 'Create a wallet first'
+              : side === 'add' ? 'Add liquidity' : 'Remove liquidity'}
+          </button>
+
+          {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+          {done && (
+            <p className="notice" style={{ marginTop: 12 }}>
+              Done. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
+            </p>
+          )}
+
+          <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
+            Deposits go in at the pool's current ratio, so the second amount is worked out rather
+            than typed: putting in more of one side than the ratio wants means the pool simply keeps
+            the excess. What you get back later is your share of whatever the pool holds then, which
+            is not the same as what you put in. That difference is the risk, and the trading fees are
+            the compensation.
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
+
 export function SwapPage() {
   const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
     SWAP_REGISTRY,
@@ -976,6 +1262,16 @@ export function SwapPage() {
 
       {data?.pools?.length > 0 && (
         <SwapPanel
+          pools={data.pools}
+          balances={balances}
+          tickers={tickers}
+          decimalsOf={decimalsOf}
+          reload={reload}
+        />
+      )}
+
+      {data?.pools?.length > 0 && (
+        <LiquidityPanel
           pools={data.pools}
           balances={balances}
           tickers={tickers}

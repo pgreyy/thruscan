@@ -49,6 +49,7 @@
 import {
   Pubkey, TransactionBuilder, deriveProgramAddress, keys, eoa, signWithDomain,
 } from '@thru/sdk'
+import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
 
 const STORE_KEY = 'thruscan.wallet.v1'
 const ENDPOINT = '/api/wallet'
@@ -171,18 +172,34 @@ export function isUnlocked() { return session !== null }
 export function currentAddress() { return session?.address ?? storedWallet()?.address ?? null }
 export function locked() { if (session?.privateKey) session.privateKey.fill(0); session = null }
 
-async function persist(address, publicKey, privateKey, password) {
+async function persist(address, publicKey, privateKey, password, phrase = null) {
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const key = await keyFromPassword(password, salt)
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, privateKey))
+
+  /* The phrase is stored under the same password as the key, with its own
+     nonce. It is not derivable from the key, so a wallet that loses it can
+     never get it back, which is why it is kept at all rather than shown once
+     and discarded. A wallet imported from raw hex has none, and says so. */
+  let phraseIv = null
+  let phraseCt = null
+  if (phrase) {
+    const piv = crypto.getRandomValues(new Uint8Array(12))
+    const bytes = new TextEncoder().encode(phrase)
+    phraseCt = b64.encode(new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: piv }, key, bytes)))
+    phraseIv = b64.encode(piv)
+  }
+
   localStorage.setItem(STORE_KEY, JSON.stringify({
-    v: 1,
+    v: 2,
     address,
     publicKey: b64.encode(publicKey),
     salt: b64.encode(salt),
     iv: b64.encode(iv),
     ct: b64.encode(ct),
+    phraseIv,
+    phraseCt,
     createdAt: new Date().toISOString(),
   }))
 }
@@ -191,9 +208,27 @@ async function persist(address, publicKey, privateKey, password) {
  *  and the caller decides whether to also register it on chain. */
 export async function createWallet(password) {
   if (!password || password.length < 8) throw new Error('Use a password of at least 8 characters.')
-  const pair = await keys.generateKeyPair()
-  await persist(pair.address, pair.publicKey, pair.privateKey, password)
-  session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey }
+
+  /* Born from a phrase rather than from raw randomness, so it can be written
+     down and carried. Same scheme Thru's own HD wallet uses, so the phrase is
+     not ThruScan-specific. */
+  const phrase = newPhrase()
+  const pair = accountFromPhrase(phrase)
+  await persist(pair.address, pair.publicKey, pair.privateKey, password, phrase)
+  session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey, phrase }
+  return { address: pair.address, phrase }
+}
+
+/** Restore from twelve words, on any device. */
+export async function importPhrase(phrase, password) {
+  if (!password || password.length < 8) throw new Error('Use a password of at least 8 characters.')
+  const problem = phraseProblem(phrase)
+  if (problem) throw new Error(problem)
+
+  const pair = accountFromPhrase(phrase)
+  const clean = String(phrase).trim().toLowerCase().split(/\s+/).join(' ')
+  await persist(pair.address, pair.publicKey, pair.privateKey, password, clean)
+  session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey, phrase: clean }
   return { address: pair.address }
 }
 
@@ -224,7 +259,17 @@ export async function unlock(password) {
   } catch {
     throw new Error('Wrong password.')
   }
-  session = { address: stored.address, publicKey: b64.decode(stored.publicKey), privateKey }
+  let phrase = null
+  if (stored.phraseCt && stored.phraseIv) {
+    try {
+      const bytes = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: b64.decode(stored.phraseIv) }, key, b64.decode(stored.phraseCt),
+      )
+      phrase = new TextDecoder().decode(bytes)
+    } catch { /* the key decrypted, so a phrase that will not is not fatal */ }
+  }
+
+  session = { address: stored.address, publicKey: b64.decode(stored.publicKey), privateKey, phrase }
   return { address: stored.address }
 }
 
@@ -232,6 +277,23 @@ export async function unlock(password) {
 export function exportPrivateKey() {
   if (!session) throw new Error('Unlock the wallet first.')
   return bytesToHex(session.privateKey)
+}
+
+/**
+ * The twelve words, if this wallet has them.
+ *
+ * Wallets made before phrases existed, and any imported from raw hex, do not.
+ * They are still perfectly usable; they just cannot be moved by writing
+ * something down, which is worth telling their owner rather than hiding.
+ */
+export function exportPhrase() {
+  if (!session) throw new Error('Unlock the wallet first.')
+  return session.phrase ?? null
+}
+
+export function hasPhrase() {
+  const stored = storedWallet()
+  return Boolean(stored?.phraseCt)
 }
 
 function requireSession() {
