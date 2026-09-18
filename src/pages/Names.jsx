@@ -42,6 +42,23 @@ function decodeBase64(b64) {
 
 /* ---------- claiming ---------- */
 
+/**
+ * Claiming, and re-finding.
+ *
+ * Names are not indexed by owner on chain: a domain account records who owns
+ * it, but nothing maps an owner back to their domains, and there is no way to
+ * ask the node for one without scanning every account of the right size, which
+ * is far too slow for a page load. I tried; it does not finish.
+ *
+ * So this browser keeps a list of the names claimed through it, and that list
+ * is a cache, not the truth. The truth is on chain. The catch was that a second
+ * device has an empty cache, so your own names looked like they did not exist,
+ * which is exactly what happened on the phone.
+ *
+ * The fix is to let you rebuild the cache by naming what you already own. Type
+ * it, and if it is taken by YOUR wallet, the card says so and offers to add it
+ * back here. The chain decides; the browser just remembers.
+ */
 function Claim({ wallet, onClaimed }) {
   const gate = useUnlockGate()
   const [name, setName] = useState('')
@@ -62,6 +79,15 @@ function Claim({ wallet, onClaimed }) {
     const t = setTimeout(async () => {
       try {
         const r = await checkName(name)
+        // A taken name is not necessarily someone else's. Decode the domain and
+        // see whose it is, so "taken" can become "yours" where that is true.
+        if (r?.taken && r?.data) {
+          try {
+            const domain = decodeDomain(decodeBase64(r.data))
+            const holder = domain && (addressOf(domain) || domain.owner)
+            r.mine = Boolean(holder) && holder === wallet.address
+          } catch { /* if it will not decode, leave it as simply taken */ }
+        }
         if (!cancelled) setState(r)
       } catch { /* leave it unknown rather than claiming it is free */ }
       finally { if (!cancelled) setChecking(false) }
@@ -111,6 +137,7 @@ function Claim({ wallet, onClaimed }) {
           problem ? 'invalid'
             : !name ? 'empty'
             : checking ? 'checking'
+            : state?.mine ? 'yours'
             : state?.taken ? 'taken'
             : state ? 'free'
             : 'empty'
@@ -129,6 +156,7 @@ function Claim({ wallet, onClaimed }) {
             {problem ? 'not allowed'
               : !name ? ''
               : checking ? 'checking'
+              : state?.mine ? 'yours'
               : state?.taken ? 'taken'
               : state ? 'available'
               : ''}
@@ -137,11 +165,24 @@ function Claim({ wallet, onClaimed }) {
 
         {problem && <p className="fine">{problem}</p>}
 
-        {!problem && name && state?.taken && (
+        {!problem && name && state?.taken && !state?.mine && (
           <p className="fine">
             {withSuffix(name)} already belongs to someone. Names are first come, first served, so
             try another.
           </p>
+        )}
+
+        {!problem && name && state?.mine && (
+          <>
+            <p className="fine" style={{ lineHeight: 1.65 }}>
+              {withSuffix(name)} is already yours. It is registered on chain to this wallet; this
+              browser just had not been told about it, which is what happens on a second device.
+              Adding it here is a note to this browser and costs nothing.
+            </p>
+            <button className="btn" onClick={() => { onClaimed?.(name); setName('') }}>
+              Add {withSuffix(name)} to this browser
+            </button>
+          </>
         )}
 
         {!hasWallet() && (
@@ -158,7 +199,7 @@ function Claim({ wallet, onClaimed }) {
           </p>
         )}
 
-        {hasWallet() && (wallet.unlocked ? wallet.registered : true) && (
+        {hasWallet() && !state?.mine && (wallet.unlocked ? wallet.registered : true) && (
           <button
             className="btn"
             onClick={claim}

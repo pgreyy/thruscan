@@ -1081,3 +1081,7 @@ button[aria-current="true"] {
   border-top: 1px solid var(--line, rgba(128, 128, 128, 0.2));
   text-align: center;
 }
+
+/* A name that is taken, but taken by you. Not an error and not an invitation. */
+.name-field[data-state="yours"] { border-color: var(--signal, #2f55e0); background: var(--signal-soft, #edf0fd); }
+.name-field[data-state="yours"] .name-verdict { background: rgba(47, 85, 224, 0.16); color: var(--signal, #2f55e0); }
