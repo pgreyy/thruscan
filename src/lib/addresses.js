@@ -66,5 +66,5 @@ export const NATIVE_FAUCET_ACCOUNT =
  * file that every change has to be surgically cut into, and an address is
  * configuration.
  */
-export const WALL_PROGRAM = env.VITE_THRU_WALL2_PROGRAM || ''
-export const WALL_ACCOUNT = env.VITE_THRU_WALL2_ACCOUNT || ''
+export const WALL_PROGRAM = env.VITE_THRU_WALL2_PROGRAM || 'taX-QuhkQ4-7zGh4emeIn3JMAy05aZnQwC7WWyuyUoDRCI'
+export const WALL_ACCOUNT = env.VITE_THRU_WALL2_ACCOUNT || 'taHp1p8yxw_2089Zcm8TyqAUWDQIiAs9mLt2nc2PI2vjwC'
