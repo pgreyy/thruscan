@@ -809,3 +809,45 @@ button[aria-current="true"] {
   margin-top: 8px;
   flex-wrap: wrap;
 }
+
+/* ===========================================================================
+   Games: board beside the game, not under it.
+
+   A leaderboard is something you glance at while playing. Below the grid it is
+   only ever seen after you have finished and scrolled, which is the one moment
+   it stops being interesting.
+   =========================================================================== */
+
+.game-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.game-main { min-width: 0; }
+
+.game-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* The board's own stat row has to give up its three-across layout in a 360px
+   column or the numbers wrap mid-word. */
+.game-side .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.game-side .stat b { font-size: 18px; }
+.game-side .board-row { padding: 8px 0; }
+
+@media (max-width: 980px) {
+  .game-grid { grid-template-columns: 1fr; }
+}
+
+/* The leaderboard's Points and Streaks toggle uses .tab-btn rather than the
+   strip's markup, and like aria-current it had no selected style of its own. */
+.tab-btn[aria-selected="true"] {
+  color: var(--signal, #2f55e0);
+  font-weight: 600;
+  border-bottom: 2px solid currentColor;
+}

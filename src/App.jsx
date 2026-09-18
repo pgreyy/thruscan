@@ -6,6 +6,7 @@ import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
 import { Tabs } from './components/Tabs.jsx'
+import { GameIdentity } from './components/GameIdentity.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
@@ -2576,6 +2577,11 @@ function GamesPage() {
   // announced "Thru Wordle" and then offered you a button to stop reading about
   // Thru Wordle. The choice comes first now.
   //
+  // The board sits beside the game rather than under it. A leaderboard is
+  // something you glance at while playing, and putting it below the grid means
+  // it is only ever seen after you have finished and scrolled, which is the one
+  // moment it stops being interesting.
+  //
   // Both panels are built here and only the selected one is mounted, so the
   // game you are not playing is not running.
 
@@ -2583,16 +2589,22 @@ function GamesPage() {
     <div className="wrap wrap-top">
       <p className="lede" style={{ marginTop: 0 }}>
         Guess a five letter word in six tries. Every finished game is written to Thru by a program
-        running on chain, and the scoreboard below is read straight back out of it. No wallet
+        running on chain, and the scoreboard beside it is read straight back out of it. No wallet
         needed, ThruScan pays.
       </p>
 
-      <WordleGame onFinished={load} registry={registry} />
-      {error && <p className="notice bad">{error}</p>}
-      {loading && !board && <p className="fine">Reading the scoreboard</p>}
-      {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
+      <div className="game-grid">
+        <div className="game-main">
+          <WordleGame onFinished={load} registry={registry} />
+          {error && <p className="notice bad">{error}</p>}
+          {loading && !board && <p className="fine">Reading the scoreboard</p>}
+        </div>
 
-      <Identity registry={registry} onChanged={() => { loadRegistry(); load() }} />
+        <aside className="game-side">
+          {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
+          <GameIdentity registry={registry} onChanged={() => { loadRegistry(); load() }} />
+        </aside>
+      </div>
 
       <footer className="foot">
         <p className="fine">
@@ -2613,9 +2625,15 @@ function GamesPage() {
         score.
       </p>
 
-      <Game2048 registry={registry} />
+      <div className="game-grid">
+        <div className="game-main">
+          <Game2048 registry={registry} />
+        </div>
 
-      <Identity registry={registry} onChanged={() => { loadRegistry(); load() }} />
+        <aside className="game-side">
+          <GameIdentity registry={registry} onChanged={() => { loadRegistry(); load() }} />
+        </aside>
+      </div>
 
       <footer className="foot">
         <p className="fine">
