@@ -1073,3 +1073,11 @@ button[aria-current="true"] {
   .btn { display: inline-flex; align-items: center; justify-content: center; }
   .linkish { padding: 4px 0; }
 }
+
+/* The leaderboard's totals, as a footnote rather than as furniture. */
+.board-foot {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line, rgba(128, 128, 128, 0.2));
+  text-align: center;
+}

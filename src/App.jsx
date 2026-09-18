@@ -1944,54 +1944,50 @@ function WordleBoard({ board, registry, refresh, loading }) {
   const me = getPlayerId()
 
   const ranked = tab === 'points' ? rankByPoints(board.entries) : rankByStreak(board.entries)
+  const solved = board.entries.reduce((n, p) => n + p.won, 0)
 
   return (
-    <>
-      <div className="stats">
-        <div className="stat">
-          <b>{board.games.toLocaleString()}</b>
-          <span>games played</span>
+    <section className="card">
+      <div className="card-head">
+        <div className="tabs" role="tablist" style={{ marginBottom: 0, borderBottom: 0 }}>
+          <button className="tab-btn" role="tab" aria-selected={tab === 'points'} onClick={() => setTab('points')}>Points</button>
+          <button className="tab-btn" role="tab" aria-selected={tab === 'streak'} onClick={() => setTab('streak')}>Streaks</button>
         </div>
-        <div className="stat">
-          <b>{board.entries.length}</b>
-          <span>players</span>
-        </div>
-        <div className="stat">
-          <b>{board.entries.reduce((n, p) => n + p.won, 0).toLocaleString()}</b>
-          <span>words solved</span>
-        </div>
+        <button className="btn ghost" onClick={refresh} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
       </div>
 
-      <section className="card">
-        <div className="card-head">
-          <div className="tabs" role="tablist" style={{ marginBottom: 0, borderBottom: 0 }}>
-            <button className="tab-btn" role="tab" aria-selected={tab === 'points'} onClick={() => setTab('points')}>Points</button>
-            <button className="tab-btn" role="tab" aria-selected={tab === 'streak'} onClick={() => setTab('streak')}>Streaks</button>
-          </div>
-          <button className="btn ghost" onClick={refresh} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
+      {ranked.length === 0 ? (
+        <p className="fine" style={{ marginBottom: 0 }}>Nobody has played yet. Solve one and the board is yours.</p>
+      ) : (
+        <div className="board">
+          {ranked.slice(0, 50).map((p, i) => (
+            <div className={`board-row${p.id === me ? ' you' : ''}`} key={p.id}>
+              <span className="board-rank">{i + 1}</span>
+              <span className="board-who">
+                <strong>{displayName(registry, p.id, p.name)}{p.id === me && ' (you)'}</strong>
+                <span>{p.won} of {p.played} solved</span>
+              </span>
+              <span className="board-count">
+                {tab === 'points' ? p.points.toLocaleString() : p.bestStreak}
+                <span>{tab === 'points' ? 'points' : `best streak, ${p.streak} now`}</span>
+              </span>
+            </div>
+          ))}
         </div>
+      )}
 
-        {ranked.length === 0 ? (
-          <p className="fine" style={{ marginBottom: 0 }}>Nobody has played yet. Solve one and the board is yours.</p>
-        ) : (
-          <div className="board">
-            {ranked.slice(0, 50).map((p, i) => (
-              <div className={`board-row${p.id === me ? ' you' : ''}`} key={p.id}>
-                <span className="board-rank">{i + 1}</span>
-                <span className="board-who">
-                  <strong>{displayName(registry, p.id, p.name)}{p.id === me && ' (you)'}</strong>
-                  <span>{p.won} of {p.played} solved</span>
-                </span>
-                <span className="board-count">
-                  {tab === 'points' ? p.points.toLocaleString() : p.bestStreak}
-                  <span>{tab === 'points' ? 'points' : `best streak, ${p.streak} now`}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </>
+      {/* The totals were three cards above the board, which spent the best part
+          of the panel on numbers nobody came for, and two of them track each
+          other anyway: nearly every game that gets played gets solved. One line
+          under the names, where a footnote belongs. */}
+      <p className="board-foot fine">
+        {board.games.toLocaleString()} {board.games === 1 ? 'game' : 'games'}
+        {' · '}
+        {board.entries.length} {board.entries.length === 1 ? 'player' : 'players'}
+        {' · '}
+        {solved.toLocaleString()} solved
+      </p>
+    </section>
   )
 }
 
