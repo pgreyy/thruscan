@@ -164,12 +164,34 @@ async function keyFromPassword(password, salt) {
 
 /* ---------- stored wallet ---------- */
 
+/**
+ * The wallet in this browser, with its address checked against its own key.
+ *
+ * A wallet imported from raw hex before this was fixed has "[object Object]"
+ * stored where its address should be. The encrypted key is fine and the public
+ * key is stored beside it, so the real address can be recomputed from what is
+ * already there, with no password and nothing to re-import. Anyone who hit this
+ * gets repaired the next time the page loads.
+ *
+ * It rewrites storage only when the two actually disagree, so the normal case
+ * is one comparison and no write.
+ */
 export function storedWallet() {
   try {
     const raw = localStorage.getItem(STORE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    return parsed?.address ? parsed : null
+    if (!parsed?.address) return null
+
+    if (parsed.publicKey) {
+      let real = null
+      try { real = Pubkey.from(b64.decode(parsed.publicKey)).toThruFmt() } catch { /* leave it */ }
+      if (real && real !== parsed.address) {
+        parsed.address = real
+        try { localStorage.setItem(STORE_KEY, JSON.stringify(parsed)) } catch { /* private mode */ }
+      }
+    }
+    return parsed
   } catch { return null }
 }
 
@@ -257,7 +279,12 @@ export async function importWallet(privateKeyHex, password) {
   const privateKey = hexToBytes(privateKeyHex)
   if (privateKey.length !== 32) throw new Error('A Thru private key is 32 bytes, so 64 hex characters.')
   const publicKey = await keys.fromPrivateKey(privateKey)
-  const address = Pubkey.from(publicKey).toString()
+  // toThruFmt, not toString. Pubkey does not override toString, so it falls
+  // back to Object.prototype and yields the literal text "[object Object]",
+  // which then got stored and used as an address. Importing a raw key has been
+  // broken since it was written; the phrase paths were never affected because
+  // seed.js always used toThruFmt.
+  const address = Pubkey.from(publicKey).toThruFmt()
   await persist(address, publicKey, privateKey, password)
   session = { address, publicKey, privateKey }
   return { address }
