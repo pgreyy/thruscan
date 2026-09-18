@@ -23,10 +23,10 @@ export const THRUSWAP_REGISTRY =
   env.VITE_THRUSWAP_REGISTRY || 'taPDf6IsnMvBCa3II-F6OjF-mbZEnMmZXxrdIres0QzGrt'
 
 export const THRUPAD_PROGRAM =
-  env.VITE_THRUPAD_PROGRAM || 'taPrhpGvUsQJQ5RKWNxwm_zMMIxE1qefsTD1SwEWOac8We'
+  env.VITE_THRUPAD_PROGRAM || 'taX1wTP2Zmfddk6T3VAbncDzeDRXtc9HUCwUamm6d8rmPu'
 
 export const THRUPAD_REGISTRY =
-  env.VITE_THRUPAD_REGISTRY || 'talx8PESmxMqxxG0gfRgyLPMcxIecfxNI224zQabWGzYCt'
+  env.VITE_THRUPAD_REGISTRY || 'taeDl4PfjrwhTYAxUEu4Jzn0RABo3CojWVTLohkIYE_unP'
 
 /** The quote currency every pool and every launch is priced against. */
 export const TUSD_MINT =

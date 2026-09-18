@@ -424,6 +424,12 @@ export function WallPage() {
 
   return (
     <Tabs
+      /* The Explorer renders this page inside a tab strip of its own, and both
+         strips would otherwise read and write ?tab=. Clicking "To you" set
+         tab=inbox, the outer strip did not recognise that as one of its keys,
+         fell back to its first tab, and threw you out to the Explorer. Nested
+         strips need separate parameters. */
+      param="view"
       tabs={[
         { key: 'all', label: 'Everything', el: panel(all, 'Nothing has been posted yet.'), badge: all.length || null },
         {

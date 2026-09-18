@@ -102,7 +102,19 @@ function Claim({ wallet, onClaimed }) {
       </div>
 
       <div className="stack" style={{ marginTop: 16 }}>
-        <div className="inline">
+        {/* The verdict sits in the field rather than under it. It was already
+            being checked on every keystroke, but a grey line of small text
+            below the box reads as a hint rather than as an answer, so people
+            typed a name, saw nothing they recognised as a result, and went
+            looking for a separate lookup box to do the same job. */}
+        <div className="name-field" data-state={
+          problem ? 'invalid'
+            : !name ? 'empty'
+            : checking ? 'checking'
+            : state?.taken ? 'taken'
+            : state ? 'free'
+            : 'empty'
+        }>
           <input
             className="field mono"
             value={name}
@@ -110,17 +122,26 @@ function Claim({ wallet, onClaimed }) {
             placeholder="yourname"
             autoComplete="off"
             spellCheck={false}
+            aria-describedby="name-verdict"
           />
-          <span className="fine mono" style={{ whiteSpace: 'nowrap' }}>.{ROOT_SUFFIX}</span>
+          <span className="name-suffix mono">.{ROOT_SUFFIX}</span>
+          <span className="name-verdict" id="name-verdict" role="status">
+            {problem ? 'not allowed'
+              : !name ? ''
+              : checking ? 'checking'
+              : state?.taken ? 'taken'
+              : state ? 'available'
+              : ''}
+          </span>
         </div>
 
         {problem && <p className="fine">{problem}</p>}
 
-        {!problem && name && (
-          checking ? <p className="fine">Checking…</p>
-            : state?.taken ? <p className="notice bad">{withSuffix(name)} is taken.</p>
-            : state ? <p className="notice">{withSuffix(name)} is free.</p>
-            : null
+        {!problem && name && state?.taken && (
+          <p className="fine">
+            {withSuffix(name)} already belongs to someone. Names are first come, first served, so
+            try another.
+          </p>
         )}
 
         {!hasWallet() && (
@@ -264,7 +285,6 @@ function OwnedName({ domain, account, wallet, onChanged }) {
     <section className="card">
       <div className="card-head">
         <div>
-          <p className="eyebrow">Yours</p>
           <h2 className="h2 mono">{withSuffix(domain.name)}</h2>
         </div>
         <span className="hero-tag">{domain.records.length} record{domain.records.length === 1 ? '' : 's'}</span>
@@ -359,7 +379,6 @@ export function NamesPage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">ThruNames</p>
       <h1 className="h1">Names</h1>
       <p className="lede">
         A <span className="mono">.{ROOT_SUFFIX}</span> name for your account, so people can send you
@@ -373,7 +392,9 @@ export function NamesPage() {
         <OwnedName key={account} account={account} domain={domain} wallet={wallet} onChanged={load} />
       ))}
 
-      <Lookup />
+      {/* The lookup card is gone. It asked for a name and told you whether it
+          was taken, which is exactly what the claim field above does while you
+          type, so it was a second answer to a question already answered. */}
 
       <section className="card">
         <h2 className="h2">How this works</h2>

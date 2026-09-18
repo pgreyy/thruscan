@@ -493,7 +493,7 @@ function ToastHost({ children }) {
     const id = Math.random().toString(36).slice(2)
     setItems((list) => [...list.slice(-2), { ...toast, id }])
     // Long enough to read a signature and decide, short enough not to linger.
-    setTimeout(() => dismiss(id), toast.signature ? 9000 : 4500)
+    setTimeout(() => dismiss(id), 6500)
   }, [dismiss])
 
   return (
@@ -2600,9 +2600,11 @@ function GamesPage() {
           {loading && !board && <p className="fine">Reading the scoreboard</p>}
         </div>
 
+        {/* Identity first, then the share card slots in between by CSS, then
+            the leaderboard. Order here is the order on a narrow screen too. */}
         <aside className="game-side">
-          {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
           <GameIdentity registry={registry} onChanged={() => { loadRegistry(); load() }} />
+          {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
         </aside>
       </div>
 
