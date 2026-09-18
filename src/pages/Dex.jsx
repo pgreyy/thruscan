@@ -1848,6 +1848,12 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
   const [side, setSide] = useState('buy')
   const [amount, setAmount] = useState('')
 
+  /* Emptied the moment a trade lands. Leaving the number sitting there after a
+     successful buy is how someone buys twice: the button is still live, the
+     figure is still in the box, and nothing on screen distinguishes "about to
+     spend 50" from "just spent 50". */
+  const traded = () => { setAmount(''); onTraded?.() }
+
   const tax = slot != null ? snipeBps(launch.startSlot, slot) : 0n
   const amountIn = toUnits(amount)
 
@@ -1962,7 +1968,7 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
                 label={side === 'buy'
                   ? `Buy ${launch.symbol} with ${amount} ${quote}`
                   : `Sell ${amount} ${launch.symbol}`}
-                onDone={onTraded}
+                onDone={traded}
               />
             </div>
           )}

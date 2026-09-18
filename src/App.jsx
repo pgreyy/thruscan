@@ -2597,14 +2597,34 @@ function GamesPage() {
         <div className="game-main">
           <WordleGame onFinished={load} registry={registry} />
           {error && <p className="notice bad">{error}</p>}
-          {loading && !board && <p className="fine">Reading the scoreboard</p>}
         </div>
 
-        {/* Identity first, then the share card slots in between by CSS, then
-            the leaderboard. Order here is the order on a narrow screen too. */}
         <aside className="game-side">
           <GameIdentity registry={registry} onChanged={() => { loadRegistry(); load() }} />
-          {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
+
+          {/* Always something here. Rendering nothing while the board loads
+              left a column-shaped hole beside the game, which reads as a
+              broken page rather than as a page that is still reading. */}
+          {board
+            ? <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />
+            : (
+              <section className="card">
+                <div className="card-head">
+                  <div>
+                    <h2 className="h2">Leaderboard</h2>
+                    <p className="sub">{loading ? 'Reading the chain' : 'Could not read it just now'}</p>
+                  </div>
+                  <button className="btn ghost" onClick={load} disabled={loading}>
+                    {loading ? 'Reading' : 'Retry'}
+                  </button>
+                </div>
+                <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+                  {loading
+                    ? 'Scores live in one account on Thru and are read straight out of it.'
+                    : 'The scoreboard account did not answer. Your game still records normally; this is only the reading of it.'}
+                </p>
+              </section>
+            )}
         </aside>
       </div>
 

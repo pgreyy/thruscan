@@ -238,6 +238,13 @@
 }
 
 .swap-amount {
+  /* width, not just flex-grow. This is used in two places: inside a flex row
+     on the swap panel, where flex sizes it, and on its own inside the launch
+     panel's box, where nothing did. With no flex parent an <input> falls back
+     to its intrinsic width of about twenty characters, which at 28px is wider
+     than the card, so the box and its focus ring ran out across the page. */
+  width: 100%;
+  box-sizing: border-box;
   flex: 1 1 auto;
   min-width: 0;
   border: 0;
@@ -250,6 +257,22 @@
 }
 
 .swap-amount::placeholder { opacity: 0.3; }
+
+/* Drawn inside the box rather than around it, so a focus ring can never be the
+   thing that overflows a container. */
+.swap-amount:focus-visible,
+.field:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--signal, #2f55e0);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+/* The same class of mistake, ruled out everywhere at once. A control that does
+   not know its own width is the single most common way a page starts scrolling
+   sideways on a phone. */
+input, textarea, select { max-width: 100%; box-sizing: border-box; }
 
 /* The flip sits between the two sides and overlaps both, so the pair reads as
    one control rather than two stacked cards. */
@@ -818,40 +841,41 @@ button[aria-current="true"] {
    it stops being interesting.
    =========================================================================== */
 
-/* Both wrappers become display:contents so their children are laid out by the
-   grid directly. That is what lets the share card, which WordleGame renders
-   alongside the board itself, sit in the right-hand column under the identity
-   card without WordleGame having to know anything about the page.
-   It is selected by what it contains rather than by position, because the
-   number of siblings before it changes with whether there is an error or a
-   loading line. */
+/* Two columns that do not share rows.
+ *
+ * The previous attempt made both wrappers display:contents so the share card
+ * could be placed in the right-hand column by CSS. It worked, and it was still
+ * wrong: in a grid, a row is as tall as its tallest item, so the tall game card
+ * in row one of column one pushed everything in row two of column two down by
+ * its whole height. That is the empty gap where the leaderboard should have
+ * been.
+ *
+ * Two independent flex columns instead. The share card stays under the game,
+ * which is where it belongs anyway: you finish a game and it appears directly
+ * beneath the grid you just filled in.
+ */
 
-.game-grid { display: grid; gap: 14px; align-items: start; }
-.game-main, .game-side { display: contents; }
+.game-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 16px;
+  align-items: start;
+}
+
+.game-main,
+.game-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
 
 .game-side .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .game-side .stat b { font-size: 18px; }
 .board-row { padding: 9px 0; }
 
-@media (min-width: 900px) {
-  .game-grid { grid-template-columns: minmax(0, 1fr) 330px; }
-
-  .game-main > * { grid-column: 1; }
-  .game-side > * { grid-column: 2; }
-
-  .game-side > :nth-child(1) { grid-row: 1; }                     /* identity  */
-  .game-main > .card:has(.share-actions) { grid-column: 2; grid-row: 2; }
-  .game-side > :nth-child(2) { grid-row: 3; }                     /* board     */
-}
-
-/* One column below that, in the order you would read them: play, share what
-   you did, see who you are, then the board. */
 @media (max-width: 899px) {
-  .game-grid { display: flex; flex-direction: column; }
-  .game-main > * { order: 1; }
-  .game-main > .card:has(.share-actions) { order: 2; }
-  .game-side > :nth-child(1) { order: 3; }
-  .game-side > :nth-child(2) { order: 4; }
+  .game-grid { grid-template-columns: 1fr; }
 }
 
 /* The card is drawn at 1200x630 for link previews, so show it at that shape
