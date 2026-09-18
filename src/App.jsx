@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import { SwapPage, LaunchpadPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
+import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -47,7 +48,6 @@ const NAV = [
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
-  { to: '/wallet', label: 'Wallet', icon: 'wallet' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/games', label: 'Games', icon: 'game' },
   { to: '/builders', label: 'Builders', icon: 'book' },
@@ -3088,6 +3088,7 @@ export default function App() {
     <BrowserRouter>
       <ToastHost>
         <Shell>
+        <WalletPill />
         <Routes>
           <Route path="/" element={<ExplorerPage />} />
           <Route path="/wall" element={<WallPage />} />

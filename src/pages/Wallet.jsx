@@ -29,7 +29,9 @@ import {
   deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
   claimNativeThru, claimTusd, nativeBalance,
 } from '../lib/wallet.js'
-import { TUSD_MINT } from '../lib/addresses.js'
+import { TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
+import { getAccount } from '../lib/rpcClient.js'
+import { decodeMintAccount } from '../lib/token.js'
 
 const DECIMALS = 6
 
@@ -45,6 +47,8 @@ let state = {
   registered: false,
   native: 0n,          // native THRU, which is what pays fees
   balances: {},        // mint -> { account, exists, amount (BigInt) }
+  tickers: {},         // mint -> 'TCAT'. A balance without a name is not a balance.
+  decimals: {},        // mint -> 6. WTHRU is 8, so this cannot be assumed.
 }
 
 function setState(patch) {
@@ -73,7 +77,29 @@ export function useWallet() {
       for (const r of rows) {
         balances[r.mint] = { account: r.account, exists: r.exists, amount: BigInt(r.amount) }
       }
-      setState({ registered, native, balances, address: currentAddress(), unlocked: true })
+
+      /* A mint record carries its own ticker and decimals, so a balance can be
+         shown as "42.7397 TCAT" rather than as a forty-six character address
+         and a number whose scale is a guess. Read once per mint and kept, since
+         neither ever changes. */
+      const tickers = { ...state.tickers }
+      const decimals = { ...state.decimals }
+      const unknown = wanted.filter((m) => tickers[m] === undefined)
+      if (unknown.length) {
+        const mints = await Promise.all(unknown.map((m) => getAccount(m).catch(() => null)))
+        unknown.forEach((m, i) => {
+          try {
+            const decoded = decodeMintAccount(mints[i]?.data?.base64)
+            tickers[m] = decoded?.ticker || null
+            decimals[m] = decoded?.decimals ?? 6
+          } catch {
+            tickers[m] = null
+            decimals[m] = 6
+          }
+        })
+      }
+
+      setState({ registered, native, balances, tickers, decimals, address: currentAddress(), unlocked: true })
     } catch { /* leave what we had; a failed refresh is not a failed wallet */ }
   }, [])
 
@@ -92,6 +118,34 @@ function fmt(units, decimals = DECIMALS, maxFrac = 4) {
 }
 
 const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
+
+/**
+ * An address you can take with you.
+ *
+ * A forty-six character address is not something anyone retypes, so every one
+ * on this page is a button. The whole chip is the target rather than a small
+ * icon beside it, because on a phone a 16px icon is a miss more often than a
+ * hit, and the title carries the full address for anyone hovering on a desktop.
+ */
+function AddressChip({ address, label }) {
+  const [done, setDone] = useState(false)
+  if (!address) return null
+  return (
+    <button
+      className="addr-chip mono"
+      title={address}
+      aria-label={`Copy ${label ?? 'address'}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        navigator.clipboard?.writeText(address)
+        setDone(true)
+        setTimeout(() => setDone(false), 1400)
+      }}
+    >
+      {done ? 'Copied' : short(address)}
+    </button>
+  )
+}
 
 function Copyable({ text, label }) {
   const [done, setDone] = useState(false)
@@ -299,16 +353,24 @@ function Balances({ wallet, mints }) {
       </div>
 
       <div className="rows" style={{ marginTop: 12 }}>
-        {mints.map(({ mint, ticker }) => {
+        {mints.map(({ mint }) => {
           const row = wallet.balances[mint]
+          // The ticker comes off the mint record. Until that read lands there is
+          // nothing honest to show but the address, so show that rather than an
+          // invented name.
+          const ticker = wallet.tickers?.[mint]
+          const dp = wallet.decimals?.[mint] ?? DECIMALS
           return (
-            <div className="row" key={mint}>
-              <span>
-                <b>{ticker}</b>{' '}
-                <span className="fine mono">{short(row?.account ?? '')}</span>
+            <div className="row balance-row" key={mint}>
+              <span className="balance-name">
+                <b>{ticker || short(mint)}</b>
+                <span className="addr-group">
+                  <AddressChip address={mint} label={`${ticker || 'token'} mint`} />
+                  {row?.account && <AddressChip address={row.account} label="your token account" />}
+                </span>
               </span>
               {row?.exists
-                ? <b className="mono">{fmt(row.amount)}</b>
+                ? <b className="mono">{fmt(row.amount, dp)}</b>
                 : (
                   <button className="btn ghost" onClick={() => open(mint)} disabled={busy === mint}>
                     {busy === mint ? 'Opening' : 'Open account'}
@@ -541,9 +603,11 @@ export function WalletPage() {
   const wallet = useWallet()
   const [, bump] = useState(0)
   const mints = useMemo(() => {
-    const known = [{ mint: TUSD_MINT, ticker: 'tUSD' }]
+    // tUSD and WTHRU always, since those are the two quote assets, then
+    // whatever else this wallet has touched.
+    const known = [{ mint: TUSD_MINT }, { mint: WTHRU_MINT }]
     for (const mint of Object.keys(wallet.balances)) {
-      if (!known.some((k) => k.mint === mint)) known.push({ mint, ticker: short(mint) })
+      if (!known.some((k) => k.mint === mint)) known.push({ mint })
     }
     return known
   }, [wallet.balances])
