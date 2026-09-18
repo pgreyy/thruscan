@@ -101,12 +101,14 @@ function explainRevert(result) {
 
 /** The command to run, built from the same bytes the chain will receive. */
 function cliCommand(program, built) {
+  // No line continuations. A backslash is bash and a backtick is PowerShell,
+  // and whichever one is chosen is wrong for half the people who paste it.
   const parts = [`thru txn execute ${program} ${toHex(built.data)}`]
-  for (const a of built.readWrite) parts.push(`  --readwrite-accounts ${a}`)
-  for (const a of built.readOnly) parts.push(`  --readonly-accounts ${a}`)
-  parts.push('  --fee-payer YOUR_KEY_NAME')
-  parts.push('  --state-units 60000 --memory-units 60000')
-  return parts.join(' `\n')
+  for (const a of built.readWrite) parts.push(`--readwrite-accounts ${a}`)
+  for (const a of built.readOnly) parts.push(`--readonly-accounts ${a}`)
+  parts.push('--fee-payer YOUR_KEY_NAME')
+  parts.push('--state-units 60000 --memory-units 60000')
+  return parts.join(' ')
 }
 
 function CopyBlock({ text, label = 'Copy command' }) {
@@ -155,7 +157,10 @@ function Execute({ program, needs, buildWith, cli, label, spend }) {
     if (!spend || !wallet.unlocked) return null
     const held = wallet.balances?.[spend.mint]?.amount ?? 0n
     if (spend.amount <= held) return null
-    const ticker = wallet.tickers?.[spend.mint] || short(spend.mint)
+    // The caller knows the ticker because it read the mint to draw the card.
+    // The wallet store only knows mints it has fetched, which is why this said
+    // "you have no tacdgT..._SNg" for a token the page was calling WTHRU.
+    const ticker = spend.ticker || wallet.tickers?.[spend.mint] || short(spend.mint)
     return held === 0n
       ? `You have no ${ticker}. Get some first, then come back.`
       : `You only have ${fmtRaw(held, wallet.decimals?.[spend.mint])} ${ticker}.`
@@ -369,7 +374,7 @@ function FaucetCard() {
           placeholder="Paste the token account address it printed"
         />
         <button className="btn" onClick={claim} disabled={busy || !account.trim()}>
-          {busy ? 'Sending' : 'Send me 1,000 tUSD'}
+          {busy ? 'Sending' : 'Send me 500 tUSD'}
         </button>
       </div>
 
@@ -382,8 +387,8 @@ function FaucetCard() {
       )}
 
       <p className="fine" style={{ marginTop: 14 }}>
-        One claim per account every six hours. This is alphanet: tUSD is a test token with no value,
-        and everything here disappears when the network resets from genesis.
+        500 tUSD a day per account, capped at 10,000 held at once. This is alphanet: tUSD is a test
+        token with no value, and everything here disappears when the network resets from genesis.
       </p>
     </section>
   )
@@ -420,18 +425,20 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
   const symbol = form.symbol.trim().toUpperCase().slice(0, 8)
   const feeBps = Math.round(Math.min(10, Math.max(0, Number(form.feePct) || 0)) * 100)
 
+  /* One line per command, with no continuations at all.
+     These used to wrap with a trailing backslash, which is bash. PowerShell
+     reads that backslash as an argument and the indented remainder as a new
+     command, so all three failed with "unexpected argument" followed by a
+     parser error. A long line pastes correctly into every shell there is. */
   const phaseOne = [
     `# 1. the token, with thrupad as its mint authority so the supply is fixed`,
-    `thru token initialize-mint YOUR_ADDRESS ${symbol || 'TICKER'} ${seeds.mint} \\`,
-    `  --decimals 6 --mint-authority ${PAD_PROGRAM} --fee-payer YOUR_KEY_NAME`,
+    `thru token initialize-mint YOUR_ADDRESS ${symbol || 'TICKER'} ${seeds.mint} --decimals 6 --mint-authority ${PAD_PROGRAM} --fee-payer YOUR_KEY_NAME`,
     ``,
     `# 2. the curve's own token vault, owned by thrupad`,
-    `thru token initialize-account THE_MINT_FROM_STEP_1 ${PAD_PROGRAM} ${seeds.tokenVault} \\`,
-    `  --fee-payer YOUR_KEY_NAME`,
+    `thru token initialize-account THE_MINT_FROM_STEP_1 ${PAD_PROGRAM} ${seeds.tokenVault} --fee-payer YOUR_KEY_NAME`,
     ``,
     `# 3. the curve's ${quoteTicker} vault, owned by thrupad`,
-    `thru token initialize-account ${quoteMint} ${PAD_PROGRAM} ${seeds.quoteVault} \\`,
-    `  --fee-payer YOUR_KEY_NAME`,
+    `thru token initialize-account ${quoteMint} ${PAD_PROGRAM} ${seeds.quoteVault} --fee-payer YOUR_KEY_NAME`,
   ].join('\n')
 
   const ready = made.mint && made.tokenVault && made.quoteVault && symbol && form.name.trim()
@@ -1067,7 +1074,9 @@ function LaunchCard({ launch, balances, tickers, threshold, program, registry, s
         <Execute
           program={program}
           needs={{ userToken: launch.mint, userQuote: quoteMint }}
-          spend={{ mint: side === 'buy' ? quoteMint : launch.mint, amount: amountIn }}
+          spend={side === 'buy'
+            ? { mint: quoteMint, amount: amountIn, ticker: quote }
+            : { mint: launch.mint, amount: amountIn, ticker: launch.symbol }}
           buildWith={(a) => {
             const args = {
               registry, launchId: launch.id,

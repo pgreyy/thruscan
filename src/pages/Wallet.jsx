@@ -449,7 +449,7 @@ export function TopUpCard() {
             <span className="fine">what pools and launches are priced in</span>
           </span>
           <button className="btn" onClick={claimTokens} disabled={busy !== null}>
-            {busy === 'tusd' ? 'Sending' : 'Claim 1,000'}
+            {busy === 'tusd' ? 'Sending' : 'Claim 500'}
           </button>
         </div>
         <div className="row">
@@ -469,8 +469,8 @@ export function TopUpCard() {
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
       <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-        tUSD is capped at one claim per account every six hours, and opens your token account for
-        you if you do not have one. THRU comes from Thru's own faucet rather than from ThruScan, so
+        tUSD is 500 a day per account, capped at 10,000 held at once, and it opens your token
+        account for you if you do not have one. Spend some and you can claim again. THRU comes from Thru's own faucet rather than from ThruScan, so
         it is capped at 10,000 a time by the network and you can come back for more.
       </p>
     </section>

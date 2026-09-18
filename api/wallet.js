@@ -48,9 +48,15 @@ const ADDRESS_RE = /^ta[A-Za-z0-9_-]{44}$/
 
 const TUSD_MINT = process.env.THRU_TUSD_MINT || 'tabAx2SejGxnH7qDY02xofs0rrhBV2Cdoxg0yeG0hv7Z0R'
 
-/* 1,000 tUSD at six decimals. Enough to trade with and seed a small pool, not
-   so much that one person can move every price on the network. */
-const FAUCET_AMOUNT = BigInt(process.env.THRU_FAUCET_AMOUNT || '1000000000')
+/* 500 tUSD a day, and never more than 10,000 held at once.
+   The daily figure is enough to trade with and to seed a small pool; the cap is
+   what stops one account accumulating enough to move every price on the
+   network. Both are checked, and the cap is checked against the account's
+   actual balance rather than a running total, so it self-heals: spend some and
+   you can claim again, which is the behaviour people expect and the one a
+   serverless function can honour without a database. */
+const FAUCET_AMOUNT = BigInt(process.env.THRU_FAUCET_AMOUNT || '500000000')
+const FAUCET_CAP = BigInt(process.env.THRU_FAUCET_CAP || '10000000000')
 
 /* State proof types: UNSPECIFIED 0, CREATING 1, UPDATING 2, EXISTING 3. */
 const PROOF_CREATING = 1
@@ -93,8 +99,8 @@ function refund(key) {
 /* tUSD claims are capped per account for much longer than per IP, because the
    point is to stop one person draining the supply rather than to stop a
    double-click. Only recorded once the mint actually lands, so a failure does
-   not lock someone out for six hours. */
-const CLAIM_WINDOW = 6 * 60 * 60 * 1000
+   not lock someone out for a day. */
+const CLAIM_WINDOW = 24 * 60 * 60 * 1000
 const claims = new Map()
 
 function claimedTooRecently(who) {
@@ -350,6 +356,16 @@ async function faucet(c, { owner, account }) {
     return { ok: false, error: 'That token account is for a different token. It has to be a tUSD account.' }
   }
 
+  // The cap is on what the account holds, not on what it has ever been given.
+  const balance = raw.length >= 72 ? raw.readBigUInt64LE(64) : 0n
+  if (balance >= FAUCET_CAP) {
+    return {
+      ok: false,
+      error: `That account already holds ${Number(balance) / 1e6} tUSD, and the faucet caps you at `
+        + `${Number(FAUCET_CAP) / 1e6}. Spend some and come back.`,
+    }
+  }
+
   const readWrite = sortAccounts([TUSD_MINT, dest])
   const at = (a) => 2 + readWrite.indexOf(a)
   const data = Buffer.alloc(15)
@@ -357,7 +373,8 @@ async function faucet(c, { owner, account }) {
   data.writeUInt16LE(at(TUSD_MINT), 1)
   data.writeUInt16LE(at(dest), 3)
   data.writeUInt16LE(0, 5)
-  data.writeBigUInt64LE(FAUCET_AMOUNT, 7)
+  const amount = balance + FAUCET_AMOUNT > FAUCET_CAP ? FAUCET_CAP - balance : FAUCET_AMOUNT
+  data.writeBigUInt64LE(amount, 7)
 
   const signature = await sponsorSend(c, {
     program: TOKEN_PROGRAM,
@@ -365,7 +382,7 @@ async function faucet(c, { owner, account }) {
     data: new Uint8Array(data),
     stateUnits: 20_000,
   })
-  return { ok: true, signature, amount: FAUCET_AMOUNT.toString(), account: dest }
+  return { ok: true, signature, amount: amount.toString(), account: dest, held: balance.toString() }
 }
 
 /* ---------- names ----------
