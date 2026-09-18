@@ -130,7 +130,7 @@ const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
  * icon beside it, because on a phone a 16px icon is a miss more often than a
  * hit, and the title carries the full address for anyone hovering on a desktop.
  */
-function AddressChip({ address, label }) {
+export function AddressChip({ address, label }) {
   const [done, setDone] = useState(false)
   if (!address) return null
   return (

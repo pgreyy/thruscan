@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { SwapPage, LaunchpadPage, FaucetPage } from './pages/Dex.jsx'
+import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
@@ -50,8 +50,8 @@ const NAV = [
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/names', label: 'Names', icon: 'tag' },
-  { to: '/games', label: 'Games', icon: 'game' },
   { to: '/builders', label: 'Builders', icon: 'book' },
+  { to: '/games', label: 'Games', icon: 'game' },
   { to: '/updates', label: 'Updates', icon: 'bell' },
 ]
 

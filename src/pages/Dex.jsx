@@ -18,7 +18,7 @@
 // number shown here is the number that lands, by either route.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
   decodeSwapRegistry, quoteSwap, buildSwapInstruction, toHex,
@@ -30,7 +30,7 @@ import {
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
-import { useWallet, sendBuilt, TopUpCard } from './Wallet.jsx'
+import { useWallet, sendBuilt, TopUpCard, AddressChip } from './Wallet.jsx'
 import {
   deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
   burnToken, returnNativeThru,
@@ -149,7 +149,7 @@ function CopyBlock({ text, label = 'Copy command' }) {
  * before you can be paid in TCAT" is a true but useless thing to tell someone
  * mid-trade.
  */
-function Execute({ program, needs, buildWith, cli, label, spend }) {
+function Execute({ program, needs, buildWith, cli, label, spend, onDone }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
   const [step, setStep] = useState(null)
@@ -202,6 +202,9 @@ function Execute({ program, needs, buildWith, cli, label, spend }) {
       if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
       setDone(result.signature)
       await wallet.refresh(Object.values(needs))
+      // The page that owns the numbers re-reads them. A trade that visibly
+      // changes nothing looks like a trade that did not happen.
+      onDone?.()
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
@@ -324,7 +327,20 @@ function useChainData(registry, decode, vaultsOf, mintsOf) {
  * below is the user's to run. Doing less server-side means the part that
  * matters cannot fail for a reason nobody can debug from here.
  */
-function FaucetCard() {
+/**
+ * The terminal route, for people who have their own CLI key.
+ *
+ * This used to be the main event and it is now a footnote, correctly. It asked
+ * you to run a command with YOUR_ADDRESS and YOUR_KEY_NAME in it, which meant
+ * knowing your own public key, having a CLI wallet, and understanding what a
+ * token account is, before you could receive a single test token. Several
+ * people, reasonably, pasted the placeholders verbatim.
+ *
+ * The wallet above does all of that in one click. So this is collapsed by
+ * default and exists only for someone who is deliberately working from a
+ * terminal and already knows what those two values are.
+ */
+function TerminalFaucet() {
   const [account, setAccount] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -333,9 +349,6 @@ function FaucetCard() {
   const claim = async () => {
     setBusy(true); setError(null); setResult(null)
     try {
-      // The faucet lives inside /api/wallet rather than having a function of
-      // its own: Vercel's Hobby plan allows twelve, and a faucet is three lines
-      // of difference from what that endpoint already does.
       const r = await fetch('/api/wallet', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -352,53 +365,47 @@ function FaucetCard() {
   }
 
   // One line, no backslashes. PowerShell does not understand a bash line
-  // continuation and silently swallows the rest of the command, which is how
-  // this went wrong the first time.
+  // continuation and silently swallows the rest of the command.
   const setupCommand =
-    `thru token initialize-account ${TUSD_MINT} YOUR_ADDRESS `
+    `thru token initialize-account ${TUSD_MINT} <your public key> `
     + `0000000000000000000000000000000000000000000000000000000000000000 `
-    + `--fee-payer YOUR_KEY_NAME`
+    + `--fee-payer <your key name>`
 
   return (
     <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Get tUSD</h2>
-          <p className="sub">The test currency every pool and launch is priced in</p>
+      <details>
+        <summary className="h2" style={{ cursor: 'pointer', listStyle: 'revert' }}>
+          Using your own CLI key instead
+        </summary>
+
+        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+          Only needed if you are working from a terminal with a key you generated yourself. Your
+          public key is what <code className="mono">thru keys list</code> prints, and your key name
+          is whatever you called it when you ran <code className="mono">thru keys generate</code>.
+          Open this once to create a tUSD account; it prints an address.
+        </p>
+        <CopyBlock text={setupCommand} label="Copy setup command" />
+
+        <div className="stack" style={{ marginTop: 16 }}>
+          <input
+            className="field mono"
+            value={account}
+            onChange={(e) => { setAccount(e.target.value); setError(null); setResult(null) }}
+            placeholder="Paste the token account address it printed"
+          />
+          <button className="btn" onClick={claim} disabled={busy || !account.trim()}>
+            {busy ? 'Sending' : 'Send me 500 tUSD'}
+          </button>
         </div>
-      </div>
 
-      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        You need a tUSD token account first. Run this once with your own CLI key, replacing
-        <code className="mono"> YOUR_ADDRESS</code> with your public key and
-        <code className="mono"> YOUR_KEY_NAME</code> with your key's name. It prints an address.
-      </p>
-      <CopyBlock text={setupCommand} label="Copy setup command" />
-
-      <div className="stack" style={{ marginTop: 18 }}>
-        <input
-          className="field mono"
-          value={account}
-          onChange={(e) => { setAccount(e.target.value); setError(null); setResult(null) }}
-          placeholder="Paste the token account address it printed"
-        />
-        <button className="btn" onClick={claim} disabled={busy || !account.trim()}>
-          {busy ? 'Sending' : 'Send me 500 tUSD'}
-        </button>
-      </div>
-
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      {result && (
-        <div className="rows" style={{ marginTop: 14 }}>
-          <div className="row"><span>Sent</span><b className="mono">{fmt(result.amount)} tUSD</b></div>
-          <div className="row"><span>To</span><span className="mono">{short(result.account)}</span></div>
-        </div>
-      )}
-
-      <p className="fine" style={{ marginTop: 14 }}>
-        500 tUSD a day per account, capped at 10,000 held at once. This is alphanet: tUSD is a test
-        token with no value, and everything here disappears when the network resets from genesis.
-      </p>
+        {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+        {result && (
+          <div className="rows" style={{ marginTop: 14 }}>
+            <div className="row"><span>Sent</span><b className="mono">{fmt(result.amount)} tUSD</b></div>
+            <div className="row"><span>To</span><span className="mono">{short(result.account)}</span></div>
+          </div>
+        )}
+      </details>
     </section>
   )
 }
@@ -971,6 +978,93 @@ function PoolRow({ pool, balances, tickers, decimalsOf }) {
  *   re-priced from nothing.
  */
 
+/**
+ * What you own, across every pool.
+ *
+ * An LP token is a claim on a share of whatever the pool holds right now, not a
+ * receipt for what you put in, and those are different numbers the moment
+ * anyone trades. So this shows the claim: your percentage, and what that
+ * percentage is worth in both tokens at this instant.
+ *
+ * It deliberately does not show a profit figure. Working one out honestly means
+ * knowing what you deposited and when, which is history this page does not
+ * have, and a made up number would be worse than none.
+ */
+function Positions({ pools, balances, tickers, decimalsOf }) {
+  const wallet = useWallet()
+  const tick = (m) => tickers?.[m] || short(m)
+
+  const mine = pools
+    .map((p) => {
+      const lp = wallet.balances?.[p.lpMint]?.amount ?? 0n
+      if (lp <= 0n || p.lpSupply <= 0n) return null
+      const reserveA = balances[p.vaultA] ?? 0n
+      const reserveB = balances[p.vaultB] ?? 0n
+      return {
+        pool: p,
+        lp,
+        shareA: (lp * reserveA) / p.lpSupply,
+        shareB: (lp * reserveB) / p.lpSupply,
+        pct: Number((lp * 1000000n) / p.lpSupply) / 10000,
+      }
+    })
+    .filter(Boolean)
+
+  if (!wallet.address) return null
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Your positions</h2>
+          <p className="sub">
+            {mine.length ? `${mine.length} pool${mine.length === 1 ? '' : 's'}` : 'Nothing deposited yet'}
+          </p>
+        </div>
+        <button className="btn ghost" onClick={() => wallet.refresh(pools.flatMap((p) => [p.lpMint, p.mintA, p.mintB]))}>
+          Refresh
+        </button>
+      </div>
+
+      {mine.length === 0 ? (
+        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+          Deposit into a pool below and it appears here, with your share of it and what that share
+          is currently worth. If you have just deposited and this is still empty, the transaction
+          may not have settled yet: give it a few seconds and press Refresh.
+        </p>
+      ) : (
+        mine.map(({ pool, lp, shareA, shareB, pct }) => (
+          <div className="position" key={pool.id}>
+            <div className="position-head">
+              <span className="position-pair">{tick(pool.mintA)} / {tick(pool.mintB)}</span>
+              <span className="position-share">{pct.toFixed(4)}% of the pool</span>
+            </div>
+            <div className="rows">
+              <div className="row">
+                <span>Your share is worth</span>
+                <b className="mono">
+                  {fmt(shareA, decimalsOf(pool.mintA))} {tick(pool.mintA)}
+                  {' · '}
+                  {fmt(shareB, decimalsOf(pool.mintB))} {tick(pool.mintB)}
+                </b>
+              </div>
+              <div className="row"><span>LP tokens held</span><span className="mono">{fmt(lp)}</span></div>
+              <div className="row"><span>Earning</span><span className="mono">{pool.feeBps / 100}% of every trade</span></div>
+            </div>
+          </div>
+        ))
+      )}
+
+      <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
+        Your share is a claim on whatever the pool holds now, not a receipt for what you put in.
+        Those stop being the same number the moment anyone trades, which is the risk. The fees are
+        the compensation.
+      </p>
+    </section>
+  )
+}
+
+
 function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
@@ -984,6 +1078,21 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const [done, setDone] = useState(null)
 
   useEffect(() => { if (poolId == null && pools.length) setPoolId(pools[0].id) }, [pools, poolId])
+
+  /* Why "Your share" always said none.
+   *
+   * The wallet store only holds balances for mints something has asked it to
+   * fetch, and nothing ever asked for the LP mints. So the number was not
+   * wrong, it was never looked up: you could deposit, watch both tokens leave
+   * your wallet, and be told you owned nothing. Ask for them once, and again
+   * whenever the set of pools changes. */
+  const lpKey = pools.map((p) => p.lpMint).join(',')
+  useEffect(() => {
+    if (!pools.length || !wallet.address) return
+    const mints = pools.flatMap((p) => [p.lpMint, p.mintA, p.mintB])
+    wallet.refresh([...new Set(mints)])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lpKey, wallet.address])
 
   const pool = pools.find((p) => p.id === poolId) ?? null
   const tick = (m) => tickers?.[m] || short(m)
@@ -1270,9 +1379,12 @@ export function SwapPage() {
 
   const liquidityTab = (
     <div className="wrap wrap-top">
-      {pools.length > 0
-        ? <LiquidityPanel {...shared} />
-        : <EmptyPools loading={loading} />}
+      {pools.length > 0 ? (
+        <>
+          <Positions pools={pools} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
+          <LiquidityPanel {...shared} />
+        </>
+      ) : <EmptyPools loading={loading} />}
     </div>
   )
 
@@ -1463,19 +1575,282 @@ function EmptyPools({ loading }) {
 }
 
 
-function LaunchCard({ launch, balances, tickers, threshold, program, registry, slot }) {
-  // What this curve is priced in, according to the curve rather than to us.
-  const quoteMint = launch.quoteMint
-  const quote = tickers?.[quoteMint] || short(quoteMint)
-  const [side, setSide] = useState('buy')
-  const [amount, setAmount] = useState('')
+/**
+ * The bonding curve, drawn.
+ *
+ * Not a price history. Reconstructing one would mean replaying every trade this
+ * launch has ever taken, and it would tell you less than this does, because a
+ * constant product curve's whole future is already determined: price is
+ * vq/vt, and every token sold moves both terms in a way the maths fixes in
+ * advance. So the line is price against supply sold, and the dot is where this
+ * launch is on it.
+ *
+ * What that buys you: the steepness ahead of the dot is exactly what your buy
+ * will cost you in slippage, and it is visible rather than discovered.
+ */
+function CurveChart({ vq, vt, tokensSold, symbol, quote }) {
+  const W = 560, H = 180, PAD = 4
 
+  const { path, area, dot, priceNow, priceAtGrad } = useMemo(() => {
+    const vq0 = Number(vq), vt0 = Number(vt)
+    if (!(vq0 > 0) || !(vt0 > 0)) return {}
+
+    // k is fixed, so price at any point is k / t^2 where t is the token
+    // reserve. Walk t down from here and the curve draws itself.
+    const k = vq0 * vt0
+    const sold = Number(tokensSold)
+    const total = vt0 + sold                     // the supply this curve started with
+    const pts = []
+    const N = 64
+    for (let i = 0; i <= N; i++) {
+      const soldAt = (total * 0.98) * (i / N)    // never quite to zero reserve
+      const t = total - soldAt
+      pts.push([soldAt / total, k / (t * t)])
+    }
+
+    const maxP = pts[pts.length - 1][1]
+    const x = (u) => PAD + u * (W - PAD * 2)
+    const y = (pr) => {
+      // log scale: a constant product curve spans orders of magnitude and a
+      // linear axis renders it as a flat line then a wall.
+      const lo = Math.log(pts[0][1]), hi = Math.log(maxP)
+      const f = hi > lo ? (Math.log(pr) - lo) / (hi - lo) : 0
+      return H - PAD - f * (H - PAD * 2)
+    }
+
+    const path = pts.map(([u, pr], i) => `${i ? 'L' : 'M'}${x(u).toFixed(1)},${y(pr).toFixed(1)}`).join(' ')
+    const area = `${path} L${x(1).toFixed(1)},${H} L${x(0).toFixed(1)},${H} Z`
+
+    const u = total > 0 ? sold / total : 0
+    const pNow = k / (vt0 * vt0)
+    return {
+      path, area,
+      dot: [x(u), y(pNow)],
+      priceNow: pNow,
+      priceAtGrad: maxP,
+    }
+  }, [vq, vt, tokensSold])
+
+  if (!path) return null
+
+  return (
+    <div className="curve-box">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
+           aria-label={`Price of ${symbol} against supply sold`}>
+        <defs>
+          <linearGradient id="curvefill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--signal, #2f55e0)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--signal, #2f55e0)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#curvefill)" />
+        <path d={path} fill="none" stroke="var(--signal, #2f55e0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <circle cx={dot[0]} cy={dot[1]} r="4.5" fill="var(--signal, #2f55e0)" />
+        <circle cx={dot[0]} cy={dot[1]} r="9" fill="var(--signal, #2f55e0)" opacity="0.18" />
+      </svg>
+      <div className="curve-legend">
+        <span>none sold</span>
+        <span>now: {priceNow.toExponential(2)} {quote} per {symbol}</span>
+        <span>whole supply</span>
+      </div>
+    </div>
+  )
+}
+
+
+/** One launch in the list. A row that goes somewhere, not a page of its own
+ *  stacked ten deep under nine others. */
+function LaunchRow({ launch, balances, tickers, threshold }) {
+  const quote = tickers?.[launch.quoteMint] || short(launch.quoteMint)
   const quoteHeld = balances[launch.quoteVault] ?? 0n
   const raised = quoteHeld > launch.creatorFees ? quoteHeld - launch.creatorFees : 0n
   const progress = graduationProgress(raised, threshold)
-  const tax = slot != null ? snipeBps(launch.startSlot, slot) : 0n
+  const price = Number(launch.vq) / Number(launch.vt || 1n)
 
+  return (
+    <Link className="launch-row" to={`/launch/${launch.id}`}>
+      <div>
+        <div>
+          <span className="nm">{launch.name}</span>
+          <span className="sy">${launch.symbol} · paired {quote}</span>
+        </div>
+        <div className="progress-track bar">
+          <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
+        </div>
+        <div className="fine" style={{ marginTop: 6 }}>
+          {fmt(raised)} of {fmt(threshold)} {quote} raised · {(progress * 100).toFixed(1)}% to graduation
+        </div>
+      </div>
+      <div className="rt">
+        <div className="mono">{price.toExponential(2)}</div>
+        <div className="fine">{launch.graduated ? 'Graduated' : `${Number(launch.tradeCount)} trades`}</div>
+      </div>
+    </Link>
+  )
+}
+
+
+/**
+ * One launch, on its own page.
+ *
+ * The black banner is gone. It was a solid slab of ink with three numbers on
+ * it, which made the least important part of the card the loudest, and it
+ * repeated on every launch in the list so the page read as a stack of dark
+ * bars. The numbers are the same; they are now in a strip that does not shout.
+ */
+export function LaunchDetail({ id }) {
+  const launchId = Number(id)
+  const [slot, setSlot] = useState(null)
+  const { loading, error, data, balances, tickers, reload } = useChainData(
+    PAD_REGISTRY,
+    decodePadRegistry,
+    (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
+    (d) => d.launches.map((l) => l.quoteMint),
+  )
+
+  useEffect(() => {
+    let alive = true
+    const tick = () => {
+      fetch('/api/rpc?action=height')
+        .then((r) => r.json())
+        .then((j) => { if (alive && j?.ok) setSlot(BigInt(j.height ?? j.blockHeight ?? 0)) })
+        .catch(() => {})
+    }
+    tick()
+    const id2 = setInterval(tick, 15000)
+    return () => { alive = false; clearInterval(id2) }
+  }, [])
+
+  const launch = data?.launches?.find((l) => l.id === launchId) ?? null
+
+  if (loading && !data) {
+    return <div className="wrap wrap-top"><p className="fine">Reading the chain.</p></div>
+  }
+  if (error || !launch) {
+    return (
+      <div className="wrap wrap-top">
+        <section className="card">
+          <h2 className="h2">Not found</h2>
+          <p className="fine" style={{ marginTop: 10 }}>
+            No launch with that id is in the registry. It may have been on the previous pad, which
+            is still on chain but no longer the one this page reads.
+          </p>
+          <p style={{ marginTop: 12 }}><Link to="/launchpad">Back to the launchpad</Link></p>
+        </section>
+      </div>
+    )
+  }
+
+  const quoteMint = launch.quoteMint
+  const quote = tickers?.[quoteMint] || short(quoteMint)
+  const quoteHeld = balances[launch.quoteVault] ?? 0n
+  const raised = quoteHeld > launch.creatorFees ? quoteHeld - launch.creatorFees : 0n
+  const threshold = data.gradThreshold
+  const progress = graduationProgress(raised, threshold)
+  const price = Number(launch.vq) / Number(launch.vt || 1n)
+  const supply = launch.vt + launch.tokensSold
+
+  return (
+    <div className="wrap wrap-top">
+      <p style={{ marginBottom: 12 }}><Link className="linkish" to="/launchpad">← All launches</Link></p>
+
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h1 className="h1" style={{ fontSize: 26, margin: 0 }}>{launch.name}</h1>
+            <p className="sub">${launch.symbol} · paired {quote} · {launch.feeBps / 100}% creator fee</p>
+          </div>
+          <span className="hero-tag">{launch.graduated ? 'Graduated' : 'Live'}</span>
+        </div>
+
+        <div className="rows" style={{ marginTop: 14 }}>
+          <div className="row"><span>Mint</span><AddressChip address={launch.mint} /></div>
+          <div className="row"><span>Creator</span><AddressChip address={launch.creator} /></div>
+          <div className="row"><span>Supply</span><b className="mono">{fmt(supply)} {launch.symbol}</b></div>
+          <div className="row"><span>Unclaimed creator fees</span><span className="mono">{fmt(launch.creatorFees)} {quote}</span></div>
+        </div>
+
+        <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
+          The whole supply went onto the curve at launch and there is no second instruction that
+          mints, so this number cannot go up. Not as a promise: as a property of the program.
+        </p>
+      </section>
+
+      <div className="stat-strip" style={{ marginTop: 16 }}>
+        <div className="stat-cell">
+          <span className="k">Price</span>
+          <span className="v mono">{price.toExponential(3)}</span>
+        </div>
+        <div className="stat-cell">
+          <span className="k">Raised</span>
+          <span className="v mono">{fmt(raised)} {quote}</span>
+        </div>
+        <div className="stat-cell">
+          <span className="k">To graduation</span>
+          <span className="v">{(progress * 100).toFixed(1)}%</span>
+        </div>
+        <div className="stat-cell">
+          <span className="k">Trades</span>
+          <span className="v">{Number(launch.tradeCount)}</span>
+        </div>
+      </div>
+
+      <div className="launch-grid" style={{ marginTop: 16 }}>
+        <TradePanel
+          launch={launch}
+          quote={quote}
+          quoteMint={quoteMint}
+          slot={slot}
+          threshold={threshold}
+          raised={raised}
+          progress={progress}
+          onTraded={reload}
+        />
+
+        <div className="stack">
+          <CurveChart
+            vq={launch.vq}
+            vt={launch.vt}
+            tokensSold={launch.tokensSold}
+            symbol={launch.symbol}
+            quote={quote}
+          />
+
+          <section className="card">
+            <h2 className="h2">How this prices itself</h2>
+            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+              Every buy takes {launch.symbol} out of the curve and puts {quote} in, which raises the
+              price for the next buyer, and every sell does the reverse. Nobody sets the price and
+              nobody can move it except by trading against it.
+            </p>
+            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+              At {fmt(threshold)} {quote} raised the curve closes for good and its reserves seed a
+              pool on the swap page. That is graduation: the same tokens, priced by a pool anyone
+              can add to instead of by a curve that only sells.
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+/** What App.jsx mounts at /launch/:id. */
+export function LaunchDetailPage() {
+  const { id } = useParams()
+  return <LaunchDetail id={id} />
+}
+
+
+/** Buy and sell, for one launch. */
+function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progress, onTraded }) {
+  const [side, setSide] = useState('buy')
+  const [amount, setAmount] = useState('')
+
+  const tax = slot != null ? snipeBps(launch.startSlot, slot) : 0n
   const amountIn = toUnits(amount)
+
   const q = useMemo(() => {
     if (side === 'buy') {
       return quoteBuy({
@@ -1490,72 +1865,61 @@ function LaunchCard({ launch, balances, tickers, threshold, program, registry, s
 
   const built = useMemo(() => {
     if (amountIn <= 0n || out <= 0n || launch.graduated) return null
-    const args = {
-      registry, launchId: launch.id,
-      tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
-      userToken: 'YOUR_TOKEN_ACCOUNT', userQuote: 'YOUR_TUSD_ACCOUNT',
-      amountIn, minOut: 1n,
-    }
-    try { return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args) }
-    catch { return null }
-  }, [side, registry, launch, amountIn, out])
-
-  const price = Number(launch.vq) / Number(launch.vt || 1n)
+    try {
+      const args = {
+        registry: PAD_REGISTRY, launchId: launch.id,
+        tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
+        userToken: 'YOUR_TOKEN_ACCOUNT', userQuote: 'YOUR_QUOTE_ACCOUNT',
+        amountIn, minOut: 1n,
+      }
+      return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
+    } catch { return null }
+  }, [side, launch, amountIn, out])
 
   return (
     <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">{launch.name}</h2>
-          <p className="sub">${launch.symbol} · {launch.feeBps / 100}% creator fee</p>
+      <div style={{ marginBottom: 14 }}>
+        <div className="row" style={{ borderBottom: 0, padding: 0, marginBottom: 8 }}>
+          <span className="fine">Bonding curve</span>
+          <span className="fine">{(progress * 100).toFixed(0)}% to graduation</span>
         </div>
-        <span className="hero-tag">{launch.graduated ? 'Graduated' : 'Live'}</span>
-      </div>
-
-      <div className="hero" style={{ marginTop: 14 }}>
-        <p className="hero-eyebrow">Raised</p>
-        <h2 className="hero-title" style={{ fontSize: 24 }}>{fmt(raised)} <span style={{ fontSize: 15, opacity: 0.55 }}>{quote}</span></h2>
-        <div className="hero-stats">
-          <span className="hero-stat"><b>{(progress * 100).toFixed(1)}%</b><span>to graduation</span></span>
-          <span className="hero-stat"><b>{price.toExponential(2)}</b><span>price</span></span>
-          <span className="hero-stat"><b>{Number(launch.tradeCount)}</b><span>trades</span></span>
+        <div className="progress-track">
+          <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
         </div>
-      </div>
-
-      {/* A plain bar rather than a chart: what matters is how close this is to
-          the threshold, and one number in one shape says it. */}
-      <div style={{ height: 6, borderRadius: 3, background: 'rgba(128,128,128,0.2)', marginTop: 14, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${Math.max(2, progress * 100)}%`, background: 'currentColor', opacity: 0.55 }} />
-      </div>
-
-      {tax > 0n && !launch.graduated && (
-        <p className="notice" style={{ marginTop: 14 }}>
-          Anti-snipe tax is {(Number(tax) / 100).toFixed(1)}% right now and falling to zero.
-          It is paid to nobody and stays in the curve. Waiting a few seconds gets you more.
+        <p className="fine" style={{ marginTop: 8, lineHeight: 1.6 }}>
+          {fmt(raised)} of {fmt(threshold)} {quote} raised. At the threshold the curve closes and
+          its reserves move to a pool on the swap page.
         </p>
-      )}
+      </div>
 
       {launch.graduated ? (
-        <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
+        <p className="notice">
           This curve is frozen. It raised enough to graduate, and its reserves are ready to seed a
-          pool on the swap page.
+          pool. Trade it on the swap page instead.
         </p>
       ) : (
-        <div className="stack" style={{ marginTop: 16 }}>
-          <div className="inline">
+        <>
+          <div className="inline" style={{ marginBottom: 12 }}>
             <button className="btn ghost" onClick={() => setSide('buy')} aria-current={side === 'buy'}>Buy</button>
             <button className="btn ghost" onClick={() => setSide('sell')} aria-current={side === 'sell'}>Sell</button>
           </div>
-          <input
-            className="field mono"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={side === 'buy' ? `${quote} to spend` : `${launch.symbol} to sell`}
-            inputMode="decimal"
-          />
+
+          <div className="swap-side">
+            <div className="swap-side-head">
+              <span className="fine">{side === 'buy' ? `Spend ${quote}` : `Sell ${launch.symbol}`}</span>
+            </div>
+            <input
+              className="swap-amount mono"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0"
+              inputMode="decimal"
+            />
+          </div>
+
           {amountIn > 0n && (
             out > 0n ? (
-              <div className="rows">
+              <div className="rows" style={{ marginTop: 12 }}>
                 <div className="row">
                   <span>You receive</span>
                   <b className="mono">{fmt(out)} {side === 'buy' ? launch.symbol : quote}</b>
@@ -1566,43 +1930,48 @@ function LaunchCard({ launch, balances, tickers, threshold, program, registry, s
                 )}
               </div>
             ) : (
-              <p className="notice bad">Cannot quote: {q.reason}.</p>
+              <p className="notice bad" style={{ marginTop: 12 }}>Cannot quote: {q.reason}.</p>
             )
           )}
-        </div>
-      )}
 
-      <div className="rows" style={{ marginTop: 16 }}>
-        <div className="row"><span>Mint</span><span className="mono">{short(launch.mint)}</span></div>
-        <div className="row"><span>Creator</span><span className="mono">{short(launch.creator)}</span></div>
-        <div className="row"><span>Unclaimed fees</span><span className="mono">{fmt(launch.creatorFees)} {quote}</span></div>
-      </div>
+          {tax > 0n && (
+            <p className="notice" style={{ marginTop: 12 }}>
+              Anti-snipe tax is {(Number(tax) / 100).toFixed(1)}% right now and falling to zero. It
+              is paid to nobody and stays in the curve, so waiting a few seconds gets you more.
+            </p>
+          )}
 
-      {built && (
-        <Execute
-          program={program}
-          needs={{ userToken: launch.mint, userQuote: quoteMint }}
-          spend={side === 'buy'
-            ? { mint: quoteMint, amount: amountIn, ticker: quote }
-            : { mint: launch.mint, amount: amountIn, ticker: launch.symbol }}
-          buildWith={(a) => {
-            const args = {
-              registry, launchId: launch.id,
-              tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
-              userToken: a.userToken, userQuote: a.userQuote,
-              amountIn, minOut: 1n,
-            }
-            return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
-          }}
-          cli={cliCommand(program, built)}
-          label={side === 'buy'
-            ? `Buy ${launch.symbol} with ${amount} ${quote}`
-            : `Sell ${amount} ${launch.symbol}`}
-        />
+          {built && (
+            <div style={{ marginTop: 12 }}>
+              <Execute
+                program={PAD_PROGRAM}
+                needs={{ userToken: launch.mint, userQuote: quoteMint }}
+                spend={side === 'buy'
+                  ? { mint: quoteMint, amount: amountIn, ticker: quote }
+                  : { mint: launch.mint, amount: amountIn, ticker: launch.symbol }}
+                buildWith={(a) => {
+                  const args = {
+                    registry: PAD_REGISTRY, launchId: launch.id,
+                    tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
+                    userToken: a.userToken, userQuote: a.userQuote,
+                    amountIn, minOut: 1n,
+                  }
+                  return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
+                }}
+                cli={cliCommand(PAD_PROGRAM, built)}
+                label={side === 'buy'
+                  ? `Buy ${launch.symbol} with ${amount} ${quote}`
+                  : `Sell ${amount} ${launch.symbol}`}
+                onDone={onTraded}
+              />
+            </div>
+          )}
+        </>
       )}
     </section>
   )
 }
+
 
 export function LaunchpadPage() {
   const [slot, setSlot] = useState(null)
@@ -1688,14 +2057,12 @@ export function LaunchpadPage() {
       </section>
 
       {data?.launches.map((l) => (
-        <LaunchCard tickers={tickers}
+        <LaunchRow
           key={l.id}
           launch={l}
           balances={balances}
+          tickers={tickers}
           threshold={data.gradThreshold}
-          program={PAD_PROGRAM}
-          registry={PAD_REGISTRY}
-          slot={slot}
         />
       ))}
     </div>
@@ -1715,17 +2082,17 @@ export function FaucetPage() {
         ? <TopUpCard />
         : (
           <section className="card">
-            <h2 className="h2">The short way</h2>
+            <h2 className="h2">Open a wallet first</h2>
             <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-              With a wallet this is two buttons and no addresses. <Link to="/wallet">Open one</Link>,
-              which takes about fifteen seconds, and it claims both currencies for you and opens the
-              token accounts they need. The longer way below still works if you would rather use
-              your own key from the terminal.
+              With a wallet this is two buttons and no addresses at all.{' '}
+              <Link to="/wallet">Open one</Link>, which takes about fifteen seconds. It claims both
+              currencies for you and opens the token accounts they need, so you never have to know
+              what a token account is.
             </p>
           </section>
         )}
 
-      <FaucetCard />
+      <TerminalFaucet />
 
       <section className="card">
         <h2 className="h2">What to do with it</h2>

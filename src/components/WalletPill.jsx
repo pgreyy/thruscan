@@ -15,7 +15,7 @@
 // Three states:
 //   no wallet    a quiet "Connect wallet" that goes to the Wallet page
 //   locked       the address, and a tap to unlock
-//   unlocked     balance, address, and a panel with the rest
+//   unlocked     balance, a wallet button, address, and a panel with the rest
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './wallet-pill.css'
@@ -72,6 +72,18 @@ function Avatar({ address, size = 20 }) {
     >
       {cells.map((c, i) => <span key={i} style={{ background: c }} />)}
     </span>
+  )
+}
+
+/** A wallet, drawn small. Inherits colour, so it works on either theme. */
+function WalletGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+         stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M3 7.5V17" />
+      <path d="M16 12.5h1.5" />
+    </svg>
   )
 }
 
@@ -234,6 +246,18 @@ export function WalletPill() {
             {wallet.unlocked && tusd?.exists && (
               <span className="pill-balance mono">{fmt(tusd.amount)} tUSD</span>
             )}
+            {/* Straight to the wallet page. Opening a menu to find a link to
+                the thing the menu is about is one click too many for the page
+                people go to most. */}
+            <Link
+              to="/wallet"
+              className="pill-jump"
+              title="Open your wallet"
+              aria-label="Open your wallet"
+              onClick={(e) => { e.stopPropagation(); setOpen(false) }}
+            >
+              <WalletGlyph />
+            </Link>
             <Avatar address={address} />
             <span className={label.endsWith('.id') ? 'pill-strong' : 'pill-strong mono'}>{label}</span>
             <span className="pill-caret" aria-hidden="true">▾</span>

@@ -568,3 +568,188 @@
    three times. Hidden here as well as removed from the markup, because these
    pages are edited from several places and one of them will grow a new one. */
 .eyebrow { display: none !important; }
+
+/* ===========================================================================
+   The selected one, visibly selected.
+
+   Eight toggles across the app set aria-current and nothing styled it, so the
+   pool you had picked looked exactly like the pools you had not. One rule
+   covers every one of them, now and later, which is the point of having marked
+   them up properly in the first place.
+
+   The colours are the app's own signal blue rather than anything new.
+   =========================================================================== */
+
+.btn[aria-current="true"],
+.btn.ghost[aria-current="true"],
+button[aria-current="true"] {
+  background: var(--signal-soft, #edf0fd);
+  border-color: var(--signal-line, #c9d4f8);
+  color: var(--signal, #2f55e0);
+  font-weight: 600;
+}
+
+.btn[aria-current="true"]:hover:not(:disabled),
+.btn.ghost[aria-current="true"]:hover:not(:disabled) {
+  background: var(--signal-soft, #edf0fd);
+  border-color: var(--signal, #2f55e0);
+}
+
+/* ===========================================================================
+   A launch, on its own page.
+   =========================================================================== */
+
+.launch-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .launch-grid { grid-template-columns: 1fr; }
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0;
+  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border-radius: var(--r-md, 12px);
+  background: var(--surface, #fff);
+  overflow: hidden;
+}
+
+.stat-cell {
+  padding: 14px 16px;
+  border-right: 1px solid var(--line, rgba(128,128,128,0.2));
+}
+
+.stat-cell:last-child { border-right: 0; }
+
+.stat-cell .k {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted, #6f7178);
+  margin-bottom: 4px;
+}
+
+.stat-cell .v {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+/* The bonding curve drawn as what it is: price against how much of the supply
+   has been sold, with a dot for where this launch currently sits. A time axis
+   would need every past trade replayed, and would say less. */
+
+.curve-box {
+  position: relative;
+  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border-radius: var(--r-md, 12px);
+  background: var(--surface, #fff);
+  padding: 16px;
+}
+
+.curve-box svg { display: block; width: 100%; height: auto; }
+
+.curve-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--muted, #6f7178);
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.18);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--signal, #2f55e0);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+/* A launch in the list: a row you click, not a page you scroll past. */
+
+.launch-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border-radius: var(--r-md, 12px);
+  background: var(--surface, #fff);
+  margin-bottom: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+
+.launch-row:hover {
+  border-color: var(--signal-line, #c9d4f8);
+  transform: translateY(-1px);
+}
+
+.launch-row .nm { font-weight: 600; }
+.launch-row .sy { font-size: 12px; color: var(--muted, #6f7178); margin-left: 6px; }
+.launch-row .bar { margin-top: 8px; max-width: 320px; }
+.launch-row .rt { text-align: right; font-size: 13px; }
+
+/* ===========================================================================
+   Liquidity positions.
+
+   Adding liquidity and then seeing nothing is the worst possible outcome: the
+   tokens have left the wallet and nothing says where they went. A position is
+   a thing you own and it gets shown like one.
+   =========================================================================== */
+
+.position {
+  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border-radius: var(--r-md, 12px);
+  padding: 14px 16px;
+  margin-top: 10px;
+  background: var(--surface, #fff);
+}
+
+.position-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.position-pair { font-weight: 600; }
+.position-share { font-size: 13px; color: var(--signal, #2f55e0); font-weight: 600; }
+
+/* The wallet button inside the pill. A destination of its own, so it gets its
+   own hit area rather than being an item inside the menu that the pill opens. */
+
+.pill-jump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: inherit;
+  opacity: 0.6;
+  text-decoration: none;
+  flex: 0 0 26px;
+  transition: opacity 0.14s ease, background 0.14s ease;
+}
+
+.pill-jump:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.14);
+}
