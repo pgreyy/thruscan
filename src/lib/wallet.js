@@ -394,6 +394,57 @@ export async function claimTusd() {
   return api('faucet', { owner: address })
 }
 
+/* ---------- names ----------
+   Claiming is sponsored, because registering under a root needs that root's
+   authority and ThruScan holds it. Records are not: the name service checks the
+   DOMAIN's owner, which is the visitor, so only they can write to their own
+   name. That split is a feature. It means ThruScan can hand out names it cannot
+   afterwards edit. */
+
+const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+const KEY_FIELD = 32
+const VALUE_FIELD = 256
+
+export async function checkName(name) {
+  return api('name-check', { name })
+}
+
+export async function claimName(name) {
+  const { address } = requireSession()
+  return api('name-register', { name, owner: address })
+}
+
+/**
+ * APPEND_RECORD, signed by the name's owner.
+ *
+ *   [u32 2][u16 domain][u16 authority][u32 key_len][32 key][u32 value_len][256 value]
+ *
+ * The domain is the only read-write account, so it is at index 2, and the
+ * authority is the fee payer at 0.
+ */
+export async function setNameRecord(domainAccount, key, value) {
+  const keyBytes = new TextEncoder().encode(key)
+  const valueBytes = new TextEncoder().encode(value)
+  if (!keyBytes.length || keyBytes.length > KEY_FIELD) throw new Error('Record keys are 1 to 32 bytes.')
+  if (valueBytes.length > VALUE_FIELD) throw new Error('Record values are at most 256 bytes.')
+
+  const data = new Uint8Array(4 + 4 + 4 + KEY_FIELD + 4 + VALUE_FIELD)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 2, true)
+  dv.setUint16(4, 2, true)
+  dv.setUint16(6, 0, true)
+  dv.setUint32(8, keyBytes.length, true)
+  data.set(keyBytes, 12)
+  dv.setUint32(12 + KEY_FIELD, valueBytes.length, true)
+  data.set(valueBytes, 12 + KEY_FIELD + 4)
+
+  return signAndSend({
+    program: NAME_SERVICE_PROGRAM,
+    readWrite: [domainAccount],
+    data,
+  })
+}
+
 /** The wallet's own native balance, in base units. */
 export async function nativeBalance() {
   const { address } = requireSession()

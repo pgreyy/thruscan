@@ -368,6 +368,85 @@ async function faucet(c, { owner, account }) {
   return { ok: true, signature, amount: FAUCET_AMOUNT.toString(), account: dest }
 }
 
+/* ---------- names ----------
+   ThruNames runs on Thru's own name service, under a root we own. Registering
+   under a root needs that root's authority, and a transaction carries one
+   signature, so ThruScan has to sign. What stops that making ThruScan the owner
+   of everybody's name is that the instruction takes the owner as an account
+   index rather than implying the fee payer, so the visitor's wallet goes in the
+   owner field while ThruScan merely pays.
+
+   The ABI was recovered from live transactions; src/lib/names.js has it written
+   out. The trap worth repeating here: the name field is 64 bytes, and a 32-byte
+   guess reverts with no user error code at all. */
+
+const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+const ROOT_REGISTRAR = process.env.THRU_NAME_ROOT || 'taGEX4QNK_WjsknEK4kl0_ppCJUimoanrmFuU27t1gS3pw'
+const NAME_FIELD = 64
+const KEY_FIELD = 32
+const VALUE_FIELD = 256
+const NAME_RE = /^(?!-)(?!.*--)[a-z0-9-]{3,32}(?<!-)$/
+
+function domainAccount(name, parent = ROOT_REGISTRAR) {
+  const seed = sha256(concat(toBytes(parent), Buffer.from(name, 'utf8')))
+  return deriveProgramAddress({ programAddress: NAME_SERVICE_PROGRAM, seed }).address
+}
+
+/** Is this name free, and where would it live? */
+async function nameCheck(c, { name }) {
+  if (!NAME_RE.test(String(name ?? ''))) {
+    return { ok: false, error: 'Lowercase letters, numbers and hyphens, 3 to 32 characters.' }
+  }
+  const account = domainAccount(name)
+  const held = await getAccount(c, account)
+  return {
+    ok: true,
+    name,
+    account,
+    taken: held !== null,
+    data: held ? Buffer.from(held?.data?.data ?? []).toString('base64') : null,
+  }
+}
+
+/** Register `name`, owned by `owner`, paid for and authorised by the sponsor. */
+async function nameRegister(c, { name, owner }) {
+  if (!NAME_RE.test(String(name ?? ''))) {
+    return { ok: false, error: 'Lowercase letters, numbers and hyphens, 3 to 32 characters.' }
+  }
+  if (!(await getAccount(c, owner))) {
+    return { ok: false, error: 'Register your wallet on chain before claiming a name.' }
+  }
+
+  const account = domainAccount(name)
+  if (await getAccount(c, account)) return { ok: false, error: 'That name is taken.' }
+
+  const proof = await proofs.generateStateProof(c.ctx, { address: account, proofType: PROOF_CREATING })
+
+  const readWrite = sortAccounts([account, ROOT_REGISTRAR])
+  const readOnly = [owner]
+  const at = (a) => {
+    const i = readWrite.indexOf(a)
+    return i >= 0 ? 2 + i : 2 + readWrite.length + readOnly.indexOf(a)
+  }
+
+  const head = Buffer.alloc(84)
+  head.writeUInt32LE(1, 0)                 // REGISTER_SUBDOMAIN
+  head.writeUInt16LE(at(account), 4)
+  head.writeUInt16LE(at(ROOT_REGISTRAR), 6)
+  head.writeUInt16LE(at(owner), 8)         // the visitor owns it
+  head.writeUInt16LE(0, 10)                // authority: the sponsor, which holds the root
+  head.write(name, 12, NAME_FIELD, 'utf8')
+  head.writeBigUInt64LE(BigInt(Buffer.byteLength(name)), 76)
+
+  const signature = await sponsorSend(c, {
+    program: NAME_SERVICE_PROGRAM,
+    readWrite,
+    readOnly,
+    data: concat(new Uint8Array(head), proof.proof),
+  })
+  return { ok: true, name, account, owner, signature }
+}
+
 /** Forwards bytes the browser already signed. Nothing here can change them:
  *  the signature covers the whole body, so a tampered transaction is simply
  *  rejected by the node. */
@@ -419,6 +498,7 @@ export default async function handler(req, res) {
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown'
   const metered = action === 'create' || action === 'open' || action === 'faucet'
+    || action === 'name-register'
 
   if (metered) {
     const wait = overBudget(ip)
@@ -455,6 +535,8 @@ export default async function handler(req, res) {
         return json(res, 200, out)
       }
       case 'balances': return json(res, 200, await balances(c, body))
+      case 'name-check':    return json(res, 200, await nameCheck(c, body))
+      case 'name-register': return json(res, 200, await nameRegister(c, body))
       case 'submit':   return json(res, 200, await submit(c, body))
       case 'status':   return json(res, 200, await status(c, body))
       default:         return json(res, 400, { ok: false, error: `Unknown action "${action}".` })

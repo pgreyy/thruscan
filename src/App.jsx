@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, createContext, useContext, useCallback } f
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
+import { NamesPage } from './pages/Names.jsx'
+import { BuildersPage } from './pages/Builders.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
@@ -46,8 +48,9 @@ const NAV = [
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/wallet', label: 'Wallet', icon: 'wallet' },
+  { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/games', label: 'Games', icon: 'game' },
-  { to: '/guides', label: 'Guides', icon: 'book' },
+  { to: '/builders', label: 'Builders', icon: 'book' },
   { to: '/projects', label: 'Projects', icon: 'box' },
   { to: '/community', label: 'Community', icon: 'users' },
   { to: '/updates', label: 'Updates', icon: 'bell' },
@@ -68,6 +71,7 @@ const ICON_PATHS = {
   swap: 'M7 4v13M4 14l3 3 3-3M17 20V7M20 10l-3-3-3 3',
   drop: 'M12 3.2c3.1 3.4 5.4 6.4 5.4 9.1a5.4 5.4 0 0 1-10.8 0c0-2.7 2.3-5.7 5.4-9.1zM9.4 13.3a2.6 2.6 0 0 0 2.6 2.6',
   wallet: 'M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7.5V17M16 12.5h1.5',
+  tag: 'M20.5 12.3 12.3 20.5a1.6 1.6 0 0 1-2.3 0l-6.5-6.5a1.6 1.6 0 0 1-.5-1.2V4.6c0-.9.7-1.6 1.6-1.6h8.2c.4 0 .9.2 1.2.5l6.5 6.5a1.6 1.6 0 0 1 0 2.3zM7.8 7.8h.01',
   rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
 }
 
@@ -3091,6 +3095,8 @@ export default function App() {
           <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/names" element={<NamesPage />} />
+          <Route path="/builders" element={<BuildersPage />} />
           <Route path="/moderate" element={<ModeratePage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/guides" element={<GuidesPage />} />

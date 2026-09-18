@@ -14,7 +14,8 @@
 //   0x25   32  quote_mint — what every launch is priced in
 //   0x45    8  grad_threshold (u64) — quote raised before the curve freezes
 //
-// Then launch records of 221 bytes each:
+// Then launch records of 253 bytes each (v2; v1 records were 221, before the
+// quote mint moved out of the header and onto each launch):
 //
 //   off  size  field
 //   0x00    1  state (0 empty, 1 live, 2 graduated)
@@ -43,7 +44,7 @@ import { Pubkey } from '@thru/sdk'
 
 export const PAD_VERSION = 1
 export const HEADER_SIZE = 77
-export const LAUNCH_SIZE = 221
+export const LAUNCH_SIZE = 253
 
 export const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
 
@@ -148,6 +149,10 @@ export function decodePadRegistry(input) {
       tokensSold: dv.getBigUint64(base + 0xc5, true),
       tradeCount: dv.getBigUint64(base + 0xcd, true),
       startSlot: dv.getBigUint64(base + 0xd5, true),
+      // v2: each launch names its own quote asset, so one pad can price some
+      // curves in tUSD and others in WTHRU. Sits after start_slot, at the end
+      // of the record, which is why every offset above is unchanged from v1.
+      quoteMint: readPubkey(bytes, base + 0xdd),
     })
   }
 
@@ -309,7 +314,8 @@ export function buildSellInstruction(args) { return tradeInstruction(OP_SELL, ar
  * the supply fixed: there is no second instruction that mints.
  */
 export function buildLaunchInstruction({
-  registry, launchId, mint, tokenVault, quoteVault, feeBps, supply, virtQuote, name, symbol,
+  registry, launchId, mint, tokenVault, quoteVault, quoteMint,
+  feeBps, supply, virtQuote, name, symbol,
 }) {
   const enc = new TextEncoder()
   const nameBytes = enc.encode(name.trim())
@@ -322,11 +328,16 @@ export function buildLaunchInstruction({
   // The mint's supply changes and the token vault receives, so both are written.
   // The quote vault is only validated, so it stays read-only.
   const readWrite = sortAccounts([registry, mint, tokenVault])
-  const readOnly = sortAccounts([quoteVault, TOKEN_PROGRAM])
+  // The quote mint is read so the program can check the quote vault really
+  // holds it. Passing no quote mint means "use the registry default", which the
+  // program reads as index 0.
+  const readOnly = sortAccounts(
+    quoteMint ? [quoteVault, quoteMint, TOKEN_PROGRAM] : [quoteVault, TOKEN_PROGRAM],
+  )
   const at = (a) => 2 + readWrite.indexOf(a)
   const atRo = (a) => 2 + readWrite.length + readOnly.indexOf(a)
 
-  const w = writer(32 + nameBytes.length + symBytes.length)
+  const w = writer(34 + nameBytes.length + symBytes.length)
   w.u8(OP_LAUNCH)
   w.u16(atRo(TOKEN_PROGRAM))
   w.u16(at(registry))
@@ -334,6 +345,7 @@ export function buildLaunchInstruction({
   w.u16(at(mint))
   w.u16(at(tokenVault))
   w.u16(atRo(quoteVault))
+  w.u16(quoteMint ? atRo(quoteMint) : 0)
   w.u16(feeBps)
   w.u64(supply)
   w.u64(virtQuote)

@@ -36,6 +36,7 @@ import {
   THRUPAD_PROGRAM as PAD_PROGRAM,
   THRUPAD_REGISTRY as PAD_REGISTRY,
   TUSD_MINT,
+  WTHRU_MINT,
 } from '../lib/addresses.js'
 
 const DECIMALS = 6
@@ -357,6 +358,12 @@ function randomSeed() {
  */
 function CreateLaunchCard({ nextId, registry, onClose }) {
   const [form, setForm] = useState({ name: '', symbol: '', supply: '1000000000', feePct: '1', virtQuote: '30' })
+  // v2 of thrupad reads the quote asset off each launch rather than off the
+  // registry, so a creator chooses what their curve is priced in. tUSD is the
+  // deep side today; WTHRU is the one that will mean something at mainnet.
+  const [quote, setQuote] = useState('tusd')
+  const quoteMint = quote === 'wthru' ? WTHRU_MINT : TUSD_MINT
+  const quoteTicker = quote === 'wthru' ? 'WTHRU' : 'tUSD'
   const [seeds] = useState(() => ({ mint: randomSeed(), tokenVault: randomSeed(), quoteVault: randomSeed() }))
   const [made, setMade] = useState({ mint: '', tokenVault: '', quoteVault: '' })
   const [launchId, setLaunchId] = useState(String(nextId))
@@ -376,8 +383,8 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
     `thru token initialize-account THE_MINT_FROM_STEP_1 ${PAD_PROGRAM} ${seeds.tokenVault} \\`,
     `  --fee-payer YOUR_KEY_NAME`,
     ``,
-    `# 3. the curve's tUSD vault, owned by thrupad`,
-    `thru token initialize-account ${TUSD_MINT} ${PAD_PROGRAM} ${seeds.quoteVault} \\`,
+    `# 3. the curve's ${quoteTicker} vault, owned by thrupad`,
+    `thru token initialize-account ${quoteMint} ${PAD_PROGRAM} ${seeds.quoteVault} \\`,
     `  --fee-payer YOUR_KEY_NAME`,
   ].join('\n')
 
@@ -392,6 +399,7 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
         mint: made.mint,
         tokenVault: made.tokenVault,
         quoteVault: made.quoteVault,
+        quoteMint,
         feeBps,
         supply: toUnits(form.supply),
         virtQuote: toUnits(form.virtQuote),
@@ -402,7 +410,7 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
     } catch (err) {
       return `# ${String(err?.message ?? err)}`
     }
-  }, [ready, registry, launchId, made, feeBps, form.supply, form.virtQuote, form.name, symbol])
+  }, [ready, registry, launchId, made, feeBps, form.supply, form.virtQuote, form.name, symbol, quoteMint])
 
   return (
     <section className="card">
@@ -433,7 +441,22 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
               <input className="field mono" value={form.feePct} onChange={set('feePct')} inputMode="decimal" placeholder="1" />
             </div>
             <div className="form-row">
-              <label className="label">Opening liquidity, tUSD</label>
+              <label className="label">Priced in</label>
+              <div className="inline">
+                <button
+                  className="btn ghost"
+                  onClick={() => setQuote('tusd')}
+                  aria-current={quote === 'tusd'}
+                >tUSD</button>
+                <button
+                  className="btn ghost"
+                  onClick={() => setQuote('wthru')}
+                  aria-current={quote === 'wthru'}
+                >WTHRU</button>
+              </div>
+            </div>
+            <div className="form-row">
+              <label className="label">Opening liquidity, {quoteTicker}</label>
               <input className="field mono" value={form.virtQuote} onChange={set('virtQuote')} inputMode="decimal" />
             </div>
             <div className="form-row">
@@ -446,6 +469,13 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
             Your fee is capped at 10% and is charged on every buy and sell, claimable at any time.
             Opening liquidity is virtual: it sets the starting price without you putting anything in,
             and a smaller number means a steeper curve.
+          </p>
+
+          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+            tUSD is where the liquidity is today, so a curve priced in it will find buyers.
+            WTHRU is wrapped native THRU, which is what will actually be worth something once
+            the network distributes it, and there is a WTHRU pool on the swap page already. Pick
+            tUSD if you want people to trade this now.
           </p>
 
           <p className="eyebrow" style={{ marginTop: 20 }}>Step one, run these three</p>

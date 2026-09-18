@@ -32,5 +32,24 @@ export const THRUPAD_REGISTRY =
 export const TUSD_MINT =
   env.VITE_TUSD_MINT || 'tabAx2SejGxnH7qDY02xofs0rrhBV2Cdoxg0yeG0hv7Z0R'
 
+/**
+ * Wrapped native THRU, a plain token mint the runtime ships, at 8 decimals.
+ * It is what a launch should be priced in once THRU is actually distributed;
+ * today tUSD is where the liquidity is. There is a WTHRU/tUSD pool so it has a
+ * price either way.
+ */
+export const WTHRU_MINT =
+  env.VITE_WTHRU_MINT || 'tacdgTUGud8OgzN5HnVVv4u3x82UBe8ciZAtjOLJZE_SNg'
+
 /** The token program, fixed by the runtime rather than by us. */
 export const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
+
+/** Thru's own name service, and the root ThruScan runs under it. */
+export const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+export const NAME_ROOT =
+  env.VITE_NAME_ROOT || 'taGEX4QNK_WjsknEK4kl0_ppCJUimoanrmFuU27t1gS3pw'
+
+/** Thru's own faucet, which pays native THRU to whoever pays the fee. */
+export const NATIVE_FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
+export const NATIVE_FAUCET_ACCOUNT =
+  env.VITE_NATIVE_FAUCET || 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
