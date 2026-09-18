@@ -146,9 +146,9 @@ const sortAccounts = (list) =>
 
 /** Fixed by owner and mint, so a wallet can find its balances unaided. Matches
  *  the CLI's derive-token-account with its default all-zero seed. */
-function deriveTokenAccount(mint, owner) {
-  const seed = sha256(concat(toBytes(owner), toBytes(mint), new Uint8Array(32)))
-  return deriveProgramAddress({ programAddress: TOKEN_PROGRAM, seed }).address
+function deriveTokenAccount(mint, owner, seed = new Uint8Array(32)) {
+  const digest = sha256(concat(toBytes(owner), toBytes(mint), seed))
+  return deriveProgramAddress({ programAddress: TOKEN_PROGRAM, seed: digest }).address
 }
 
 /* ---------- plumbing ---------- */
@@ -385,6 +385,131 @@ async function faucet(c, { owner, account }) {
   return { ok: true, signature, amount: amount.toString(), account: dest, held: balance.toString() }
 }
 
+/* ---------- launching ----------
+   A launch needs three accounts before the curve can exist: a mint whose
+   authority is thrupad, a vault for the token and a vault for the quote asset,
+   both owned by thrupad. All three need creation state proofs, which a browser
+   cannot produce, so the sponsor makes them.
+
+   It does not make the launch itself. That one is signed by the creator, whose
+   address the program records and pays fees to, and only they can sign it.
+
+   INITIALIZE_MINT, recovered from a live transaction:
+     [0x00][mint u16][decimals u8][creator 32][mint_auth 32][freeze_auth 32]
+     [has_freeze u8][ticker_len u8][ticker 8][seed 32][proof]
+
+   The mint's address is deriveProgramAddress(TOKEN_PROGRAM,
+   sha256(creator || seed)), confirmed against the CLI. */
+
+function deriveMint(creator, seed) {
+  return deriveProgramAddress({
+    programAddress: TOKEN_PROGRAM,
+    seed: sha256(concat(toBytes(creator), seed)),
+  }).address
+}
+
+function randomSeed() {
+  return new Uint8Array(createHash('sha256').update(
+    Buffer.from(`${Date.now()}:${Math.random()}:${Math.random()}`),
+  ).digest())
+}
+
+async function openTokenAccountFor({ c, mint, owner, seed }) {
+  const account = deriveTokenAccount(mint, owner, seed)
+  if (await getAccount(c, account)) return { account, already: true }
+
+  const proof = await proofs.generateStateProof(c.ctx, { address: account, proofType: PROOF_CREATING })
+  const readWrite = [account]
+  const readOnly = sortAccounts([mint, owner])
+  const at = (a) => (a === account ? 2 : 3 + readOnly.indexOf(a))
+
+  const head = Buffer.alloc(1 + 2 + 2 + 2 + 32)
+  head.writeUInt8(0x01, 0)
+  head.writeUInt16LE(at(account), 1)
+  head.writeUInt16LE(at(mint), 3)
+  head.writeUInt16LE(at(owner), 5)
+  Buffer.from(seed).copy(head, 7)
+
+  const signature = await sponsorSend(c, {
+    program: TOKEN_PROGRAM,
+    readWrite,
+    readOnly,
+    data: concat(new Uint8Array(head), proof.proof),
+  })
+  return { account, already: false, signature }
+}
+
+/**
+ * Everything a launch needs, made in one call so the Create form is a button.
+ *
+ * The mint's creator field is the sponsor, because the token program refuses a
+ * mint whose creator is not the fee payer. That field is metadata and nothing
+ * reads it. The one that matters is the LAUNCH record's creator, which thrupad
+ * takes from the launch transaction's fee payer, so it is the visitor who signs
+ * that and the visitor the fees accrue to. The sponsor cannot sign it for them
+ * and would not want to.
+ *
+ * The mint authority is thrupad, and there is no second instruction anywhere
+ * that mints, which is what makes the supply fixed by construction rather than
+ * by promise.
+ */
+async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
+  const ticker = String(symbol ?? '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{2,8}$/.test(ticker)) {
+    return { ok: false, error: 'A ticker is 2 to 8 letters or digits.' }
+  }
+  if (!(await getAccount(c, owner))) {
+    return { ok: false, error: 'Register your wallet on chain first.' }
+  }
+  const pad = padProgram || process.env.THRU_PAD_PROGRAM
+  if (!ADDRESS_RE.test(pad ?? '')) return { ok: false, error: 'No launchpad program configured.' }
+
+  const sponsor = process.env.THRU_SPONSOR_PUBKEY
+  const mintSeed = randomSeed()
+  const mint = deriveMint(sponsor, mintSeed)
+  if (await getAccount(c, mint)) return { ok: false, error: 'Seed collision. Try again.' }
+
+  const proof = await proofs.generateStateProof(c.ctx, { address: mint, proofType: PROOF_CREATING })
+
+  const head = Buffer.alloc(1 + 2 + 1 + 32 + 32 + 32 + 1 + 1 + 8 + 32)
+  let o = 0
+  head.writeUInt8(0x00, o); o += 1
+  head.writeUInt16LE(2, o); o += 2          // the mint, the only read-write account
+  head.writeUInt8(6, o); o += 1             // decimals
+  Buffer.from(toBytes(sponsor)).copy(head, o); o += 32    // creator: has to be the payer
+  Buffer.from(toBytes(pad)).copy(head, o); o += 32        // mint authority: thrupad
+  o += 32                                   // freeze authority: none
+  head.writeUInt8(0, o); o += 1             // has_freeze
+  head.writeUInt8(ticker.length, o); o += 1
+  head.write(ticker, o, 8, 'ascii'); o += 8
+  Buffer.from(mintSeed).copy(head, o)
+
+  const mintSig = await sponsorSend(c, {
+    program: TOKEN_PROGRAM,
+    readWrite: [mint],
+    data: concat(new Uint8Array(head), proof.proof),
+  })
+
+  // The vaults refer to the mint, so it has to exist before they are made.
+  for (let i = 0; i < 10 && !(await getAccount(c, mint)); i++) {
+    await new Promise((r) => setTimeout(r, 1500))
+  }
+  if (!(await getAccount(c, mint))) {
+    return { ok: false, error: 'The mint did not land. Try again in a moment.', mint, signature: mintSig }
+  }
+
+  const tokenVault = await openTokenAccountFor({ c, mint, owner: pad, seed: randomSeed() })
+  const quoteVault = await openTokenAccountFor({ c, mint: quoteMint || TUSD_MINT, owner: pad, seed: randomSeed() })
+
+  return {
+    ok: true,
+    mint,
+    tokenVault: tokenVault.account,
+    quoteVault: quoteVault.account,
+    signature: mintSig,
+  }
+}
+
 /* ---------- names ----------
    ThruNames runs on Thru's own name service, under a root we own. Registering
    under a root needs that root's authority, and a transaction carries one
@@ -504,6 +629,8 @@ export default async function handler(req, res) {
   if (body.address !== undefined && !ADDRESS_RE.test(body.address)) return bad('address')
   if (body.owner !== undefined && !ADDRESS_RE.test(body.owner)) return bad('owner')
   if (body.mint !== undefined && !ADDRESS_RE.test(body.mint)) return bad('mint')
+  if (body.quoteMint !== undefined && !ADDRESS_RE.test(body.quoteMint)) return bad('quoteMint')
+  if (body.padProgram !== undefined && !ADDRESS_RE.test(body.padProgram)) return bad('padProgram')
   if (body.account !== undefined && !ADDRESS_RE.test(body.account)) return bad('account')
   if (body.mints !== undefined) {
     if (!Array.isArray(body.mints) || body.mints.length > 40) {
@@ -515,7 +642,7 @@ export default async function handler(req, res) {
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown'
   const metered = action === 'create' || action === 'open' || action === 'faucet'
-    || action === 'name-register'
+    || action === 'name-register' || action === 'pad-accounts'
 
   if (metered) {
     const wait = overBudget(ip)
@@ -552,6 +679,7 @@ export default async function handler(req, res) {
         return json(res, 200, out)
       }
       case 'balances': return json(res, 200, await balances(c, body))
+      case 'pad-accounts':  return json(res, 200, await padAccounts(c, body))
       case 'name-check':    return json(res, 200, await nameCheck(c, body))
       case 'name-register': return json(res, 200, await nameRegister(c, body))
       case 'submit':   return json(res, 200, await submit(c, body))

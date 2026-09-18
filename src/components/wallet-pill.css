@@ -368,3 +368,19 @@
   .swap-amount { font-size: 24px; }
   .picker-menu { right: auto; left: 0; }
 }
+
+/* The profile header: picture beside identity, stacking on a phone. */
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .profile-head { gap: 14px; }
+  .profile-head .h1 { font-size: 24px; }
+}
+
+/* A page embedded under another one does not need its own top gap. */
+.embed-page > .wrap { padding-top: 0; }

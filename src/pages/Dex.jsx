@@ -30,7 +30,7 @@ import {
 
 import { decodeMintAccount } from '../lib/token.js'
 import { useWallet, sendBuilt, TopUpCard } from './Wallet.jsx'
-import { deriveTokenAccount, openTokenAccount, hasWallet } from '../lib/wallet.js'
+import { deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import {
   THRUSWAP_PROGRAM as SWAP_PROGRAM,
@@ -407,48 +407,76 @@ function randomSeed() {
  * the first three have run, because it refers to accounts they create. So this
  * is deliberately two phases rather than a single button that lies about it.
  */
-function CreateLaunchCard({ nextId, registry, onClose }) {
+/**
+ * Launching a token, as one button.
+ *
+ * This used to print four commands with YOUR_ADDRESS and THE_MINT_FROM_STEP_1
+ * in them, which is a fine thing to hand a developer and a terrible thing to
+ * put in front of anyone else. Nobody should have to learn what a token vault
+ * is to launch a token, and pasting a placeholder verbatim is not a user error,
+ * it is a design error.
+ *
+ * What happens when the button is pressed:
+ *
+ *   ThruScan makes three accounts, because all three need creation state proofs
+ *   and a browser cannot produce one. A mint whose authority is thrupad, a
+ *   vault for the token and a vault for the quote asset.
+ *
+ *   You sign the launch. That is the transaction thrupad reads the creator from,
+ *   so the fees accrue to you. ThruScan cannot sign it and would not want to.
+ *
+ * The commands are still there, under a fold, for anyone who prefers them.
+ */
+function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
+  const wallet = useWallet()
+  const gate = useUnlockGate()
+
   const [form, setForm] = useState({ name: '', symbol: '', supply: '1000000000', feePct: '1', virtQuote: '30' })
-  // v2 of thrupad reads the quote asset off each launch rather than off the
-  // registry, so a creator chooses what their curve is priced in. tUSD is the
-  // deep side today; WTHRU is the one that will mean something at mainnet.
   const [quote, setQuote] = useState('tusd')
+  const [step, setStep] = useState(null)
+  const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
   const quoteMint = quote === 'wthru' ? WTHRU_MINT : TUSD_MINT
   const quoteTicker = quote === 'wthru' ? 'WTHRU' : 'tUSD'
-  const [seeds] = useState(() => ({ mint: randomSeed(), tokenVault: randomSeed(), quoteVault: randomSeed() }))
-  const [made, setMade] = useState({ mint: '', tokenVault: '', quoteVault: '' })
-  const [launchId, setLaunchId] = useState(String(nextId))
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-  const setMk = (k) => (e) => setMade((m) => ({ ...m, [k]: e.target.value.trim() }))
-
   const symbol = form.symbol.trim().toUpperCase().slice(0, 8)
   const feeBps = Math.round(Math.min(10, Math.max(0, Number(form.feePct) || 0)) * 100)
 
-  /* One line per command, with no continuations at all.
-     These used to wrap with a trailing backslash, which is bash. PowerShell
-     reads that backslash as an argument and the indented remainder as a new
-     command, so all three failed with "unexpected argument" followed by a
-     parser error. A long line pastes correctly into every shell there is. */
-  const phaseOne = [
-    `# 1. the token, with thrupad as its mint authority so the supply is fixed`,
-    `thru token initialize-mint YOUR_ADDRESS ${symbol || 'TICKER'} ${seeds.mint} --decimals 6 --mint-authority ${PAD_PROGRAM} --fee-payer YOUR_KEY_NAME`,
-    ``,
-    `# 2. the curve's own token vault, owned by thrupad`,
-    `thru token initialize-account THE_MINT_FROM_STEP_1 ${PAD_PROGRAM} ${seeds.tokenVault} --fee-payer YOUR_KEY_NAME`,
-    ``,
-    `# 3. the curve's ${quoteTicker} vault, owned by thrupad`,
-    `thru token initialize-account ${quoteMint} ${PAD_PROGRAM} ${seeds.quoteVault} --fee-payer YOUR_KEY_NAME`,
-  ].join('\n')
+  const problem = (() => {
+    if (!form.name.trim()) return 'Give it a name.'
+    if (!/^[A-Z0-9]{2,8}$/.test(symbol)) return 'A ticker is 2 to 8 letters or digits.'
+    if (toUnits(form.supply) <= 0n) return 'Supply has to be more than zero.'
+    if (toUnits(form.virtQuote) <= 0n) return 'Opening liquidity has to be more than zero.'
+    return null
+  })()
 
-  const ready = made.mint && made.tokenVault && made.quoteVault && symbol && form.name.trim()
+  const launch = async () => {
+    setError(null); setDone(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    if (!wallet.registered) {
+      setError('Your wallet needs an account on chain first. Open the Wallet page and register it.')
+      return
+    }
 
-  const phaseTwo = useMemo(() => {
-    if (!ready) return null
     try {
+      setStep('accounts')
+      const made = await createLaunchAccounts({ symbol, quoteMint, padProgram: PAD_PROGRAM })
+      if (!made.ok) throw new Error(made.error)
+
+      // The vaults land a slot or two after they are submitted, and launching
+      // against a vault that is not there yet fails for a reason nobody could
+      // guess from this form.
+      await new Promise((r) => setTimeout(r, 3000))
+
+      setStep('signing')
       const built = buildLaunchInstruction({
         registry,
-        launchId: Number(launchId) || 0,
+        launchId: Number(nextId) || 0,
         mint: made.mint,
         tokenVault: made.tokenVault,
         quoteVault: made.quoteVault,
@@ -459,286 +487,11 @@ function CreateLaunchCard({ nextId, registry, onClose }) {
         name: form.name,
         symbol,
       })
-      return cliCommand(PAD_PROGRAM, built)
-    } catch (err) {
-      return `# ${String(err?.message ?? err)}`
-    }
-  }, [ready, registry, launchId, made, feeBps, form.supply, form.virtQuote, form.name, symbol, quoteMint])
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Launch a token</h2>
-          <p className="sub">Four commands. The chain does the rest.</p>
-        </div>
-        <button className="btn ghost" onClick={onClose}>Close</button>
-      </div>
-
-      <>
-          <div className="stack" style={{ marginTop: 16 }}>
-            <div className="form-row">
-              <label className="label">Name</label>
-              <input className="field" value={form.name} onChange={set('name')} placeholder="Thru Cat" maxLength={32} />
-            </div>
-            <div className="form-row">
-              <label className="label">Ticker</label>
-              <input className="field mono" value={form.symbol} onChange={set('symbol')} placeholder="TCAT" maxLength={8} />
-            </div>
-            <div className="form-row">
-              <label className="label">Supply</label>
-              <input className="field mono" value={form.supply} onChange={set('supply')} inputMode="decimal" />
-            </div>
-            <div className="form-row">
-              <label className="label">Your fee, percent</label>
-              <input className="field mono" value={form.feePct} onChange={set('feePct')} inputMode="decimal" placeholder="1" />
-            </div>
-            <div className="form-row">
-              <label className="label">Priced in</label>
-              <div className="inline">
-                <button
-                  className="btn ghost"
-                  onClick={() => setQuote('tusd')}
-                  aria-current={quote === 'tusd'}
-                >tUSD</button>
-                <button
-                  className="btn ghost"
-                  onClick={() => setQuote('wthru')}
-                  aria-current={quote === 'wthru'}
-                >WTHRU</button>
-              </div>
-            </div>
-            <div className="form-row">
-              <label className="label">Opening liquidity, {quoteTicker}</label>
-              <input className="field mono" value={form.virtQuote} onChange={set('virtQuote')} inputMode="decimal" />
-            </div>
-            <div className="form-row">
-              <label className="label">Slot</label>
-              <input className="field mono" value={launchId} onChange={(e) => setLaunchId(e.target.value)} inputMode="numeric" />
-            </div>
-          </div>
-
-          <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
-            Your fee is capped at 10% and is charged on every buy and sell, claimable at any time.
-            Opening liquidity is virtual: it sets the starting price without you putting anything in,
-            and a smaller number means a steeper curve.
-          </p>
-
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            tUSD is where the liquidity is today, so a curve priced in it will find buyers.
-            WTHRU is wrapped native THRU, which is what will actually be worth something once
-            the network distributes it, and there is a WTHRU pool on the swap page already. Pick
-            tUSD if you want people to trade this now.
-          </p>
-
-          <p className="eyebrow" style={{ marginTop: 20 }}>Step one, run these three</p>
-          <CopyBlock text={phaseOne} label="Copy commands" />
-
-          <p className="eyebrow" style={{ marginTop: 20 }}>Step two, paste what they printed</p>
-          <div className="stack">
-            <input className="field mono" value={made.mint} onChange={setMk('mint')} placeholder="mint address from step 1" />
-            <input className="field mono" value={made.tokenVault} onChange={setMk('tokenVault')} placeholder="token account from step 2" />
-            <input className="field mono" value={made.quoteVault} onChange={setMk('quoteVault')} placeholder="token account from step 3" />
-          </div>
-
-          {phaseTwo
-            ? <CopyBlock text={phaseTwo} label="Copy the launch command" />
-            : <p className="fine" style={{ marginTop: 12 }}>Fill in the three addresses and the launch command appears here.</p>}
-      </>
-    </section>
-  )
-}
-
-/* ==========================================================================
-   SWAP
-   ========================================================================== */
-
-/* ---------- the swap panel ----------
- *
- * A pair of token pickers rather than a card per pool, because nobody thinks in
- * pools. They think "I have this, I want that", and the pool is an
- * implementation detail the page should find for them.
- *
- * Three things this does that the old card did not:
- *
- *   It knows what you hold. The amount field carries your balance and a MAX,
- *   and the button refuses before it sends if you do not have the tokens. Every
- *   rejected trade in testing was this: buying with an asset the wallet held
- *   none of, which the chain reports as a bare revert with no useful code.
- *
- *   It says when a pool is too thin. These pools are small, and a trade that
- *   moves the price 96% is not a trade, it is a donation. That gets said before
- *   the button rather than after the failure.
- *
- *   It picks the pool. Either orientation, whichever holds both mints.
- */
-
-function TokenPicker({ tokens, value, onChange, exclude, label }) {
-  const [open, setOpen] = useState(false)
-  const boxRef = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
-  }, [open])
-
-  const chosen = tokens.find((t) => t.mint === value)
-
-  return (
-    <div className="picker" ref={boxRef}>
-      <button className="picker-trigger" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        {chosen
-          ? <><b>{chosen.ticker}</b><span className="picker-caret">›</span></>
-          : <><span>{label}</span><span className="picker-caret">›</span></>}
-      </button>
-
-      {open && (
-        <div className="picker-menu">
-          {tokens.filter((t) => t.mint !== exclude).map((t) => (
-            <button
-              key={t.mint}
-              className="picker-item"
-              onClick={() => { onChange(t.mint); setOpen(false) }}
-            >
-              <span className="picker-item-name">
-                <b>{t.ticker}</b>
-                <span className="fine mono">{short(t.mint)}</span>
-              </span>
-              <span className="mono fine">{fmt(t.balance, t.decimals)}</span>
-            </button>
-          ))}
-          {tokens.filter((t) => t.mint !== exclude).length === 0 && (
-            <p className="fine" style={{ padding: 10 }}>Nothing to pick yet.</p>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
-  const wallet = useWallet()
-  const gate = useUnlockGate()
-
-  // Every mint that any pool touches, with whatever this wallet holds of it.
-  const tokens = useMemo(() => {
-    const seen = new Map()
-    for (const p of pools) {
-      for (const mint of [p.mintA, p.mintB]) {
-        if (seen.has(mint)) continue
-        seen.set(mint, {
-          mint,
-          ticker: tickers?.[mint] || short(mint),
-          decimals: decimalsOf(mint),
-          balance: wallet.balances?.[mint]?.amount ?? 0n,
-        })
-      }
-    }
-    return [...seen.values()]
-  }, [pools, tickers, wallet.balances])
-
-  const [fromMint, setFromMint] = useState(null)
-  const [toMint, setToMint] = useState(null)
-  const [amount, setAmount] = useState('')
-  const [step, setStep] = useState(null)
-  const [error, setError] = useState(null)
-  const [done, setDone] = useState(null)
-
-  // Open on the pair the wallet can actually trade, so the first thing you see
-  // is something you could do rather than something you cannot.
-  useEffect(() => {
-    if (fromMint || tokens.length < 2) return
-    const held = tokens.find((t) => t.balance > 0n) ?? tokens[0]
-    const other = tokens.find((t) => t.mint !== held.mint)
-    setFromMint(held.mint)
-    setToMint(other?.mint ?? null)
-  }, [tokens, fromMint])
-
-  const from = tokens.find((t) => t.mint === fromMint)
-  const to = tokens.find((t) => t.mint === toMint)
-
-  const pool = useMemo(() => {
-    if (!fromMint || !toMint) return null
-    return pools.find(
-      (p) => (p.mintA === fromMint && p.mintB === toMint) || (p.mintB === fromMint && p.mintA === toMint),
-    ) ?? null
-  }, [pools, fromMint, toMint])
-
-  const flipped = pool ? pool.mintA !== fromMint : false
-  const vaultIn = pool ? (flipped ? pool.vaultB : pool.vaultA) : null
-  const vaultOut = pool ? (flipped ? pool.vaultA : pool.vaultB) : null
-  const reserveIn = pool ? (balances[vaultIn] ?? 0n) : 0n
-  const reserveOut = pool ? (balances[vaultOut] ?? 0n) : 0n
-
-  const amountIn = toUnits(amount, from?.decimals ?? DECIMALS)
-  const quote = useMemo(
-    () => (pool ? quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps }) : null),
-    [pool, reserveIn, reserveOut, amountIn],
-  )
-
-  const impactBps = quote?.priceImpactBps ?? 0n
-  const shortOfFunds = from && amountIn > from.balance
-
-  /* Everything that should stop a trade before it is sent, in the order a
-     person would notice them. The chain reports every one of these as the same
-     bare revert, so saying which it is has to happen here. */
-  const blocker = (() => {
-    if (!from || !to) return 'Pick two tokens.'
-    if (!pool) return `There is no ${from.ticker} / ${to.ticker} pool yet.`
-    if (reserveIn === 0n || reserveOut === 0n) return 'This pool has no liquidity yet.'
-    if (amountIn <= 0n) return null
-    if (shortOfFunds) {
-      return from.balance === 0n
-        ? `You have no ${from.ticker}. Get some first, then come back.`
-        : `You only have ${fmt(from.balance, from.decimals)} ${from.ticker}.`
-    }
-    if (!quote || quote.amountOut <= 0n) {
-      return quote?.reason ? `Cannot quote: ${quote.reason}.` : 'Cannot quote that.'
-    }
-    if (amountIn >= reserveIn) {
-      return `That is more ${from.ticker} than the pool holds. Try a fraction of ${fmt(reserveIn, from.decimals)}.`
-    }
-    return null
-  })()
-
-  const thin = impactBps >= 1000n && !blocker      // 10% and up
-  const veryThin = impactBps >= 5000n && !blocker  // half the pool
-
-  const swap = async () => {
-    setError(null); setDone(null)
-    try {
-      await gate.ensure()
-    } catch (e) {
-      if (!isDismissal(e)) setError(String(e?.message ?? e))
-      return
-    }
-
-    try {
-      setStep('opening')
-      const accounts = {}
-      for (const [key, mint] of [['userIn', fromMint], ['userOut', toMint]]) {
-        const known = wallet.balances[mint]
-        if (known?.exists) { accounts[key] = known.account; continue }
-        const made = await openTokenAccount(mint)
-        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
-        accounts[key] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
-      }
-
-      setStep('signing')
-      const built = buildSwapInstruction({
-        registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
-        userIn: accounts.userIn, userOut: accounts.userOut,
-        amountIn, minOut: 1n,
-      })
-      const result = await sendBuilt(SWAP_PROGRAM, built)
-
+      const result = await sendBuilt(PAD_PROGRAM, built)
       if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
-      setDone(result.signature)
-      setAmount('')
-      await wallet.refresh(tokens.map((t) => t.mint))
-      reload()
+
+      setDone({ signature: result.signature, mint: made.mint })
+      onLaunched?.()
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
@@ -746,212 +499,107 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
     }
   }
 
-  const flip = () => { setFromMint(toMint); setToMint(fromMint); setAmount('') }
+  const manual = [
+    `# Only if you would rather do it yourself. Replace YOUR_KEY_NAME with the`,
+    `# name of your key as "thru keys list" shows it, and YOUR_ADDRESS with its`,
+    `# public key. THE_MINT is what step 1 prints.`,
+    ``,
+    `thru token initialize-mint YOUR_ADDRESS ${symbol || 'TICKER'} <32-byte hex seed> --decimals 6 --mint-authority ${PAD_PROGRAM} --fee-payer YOUR_KEY_NAME`,
+    `thru token initialize-account THE_MINT ${PAD_PROGRAM} <another seed> --fee-payer YOUR_KEY_NAME`,
+    `thru token initialize-account ${quoteMint} ${PAD_PROGRAM} <another seed> --fee-payer YOUR_KEY_NAME`,
+  ].join('\n')
 
   return (
-    <section className="card swap-card">
+    <section className="card">
       {gate.modal}
 
-      <div className="swap-side">
-        <div className="swap-side-head">
-          <span className="fine">Sell</span>
-          {from && (
-            <span className="fine">
-              Balance {fmt(from.balance, from.decimals)}
-              {from.balance > 0n && (
-                <button
-                  className="linkish"
-                  onClick={() => setAmount(String(Number(from.balance) / 10 ** from.decimals))}
-                >MAX</button>
-              )}
-            </span>
-          )}
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Launch a token</h2>
+          <p className="sub">One button. The whole supply goes onto a curve you cannot mint past.</p>
         </div>
-        <div className="swap-side-body">
-          <input
-            className="swap-amount mono"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0"
-            inputMode="decimal"
-          />
-          <TokenPicker tokens={tokens} value={fromMint} onChange={setFromMint} exclude={toMint} label="Select" />
-        </div>
+        <button className="btn ghost" onClick={onClose}>Close</button>
       </div>
 
-      <div className="swap-flip">
-        <button className="flip-btn" onClick={flip} title="Swap direction" aria-label="Swap direction">↓</button>
-      </div>
-
-      <div className="swap-side">
-        <div className="swap-side-head">
-          <span className="fine">Buy</span>
-          {to && <span className="fine">Balance {fmt(to.balance, to.decimals)}</span>}
+      <div className="stack" style={{ marginTop: 16 }}>
+        <div className="form-row">
+          <label className="label">Name</label>
+          <input className="field" value={form.name} onChange={set('name')} placeholder="Thru Cat" maxLength={32} />
         </div>
-        <div className="swap-side-body">
-          <span className="swap-amount mono" style={{ opacity: quote?.amountOut ? 1 : 0.4 }}>
-            {quote?.amountOut ? fmt(quote.amountOut, to?.decimals ?? DECIMALS) : '0'}
-          </span>
-          <TokenPicker tokens={tokens} value={toMint} onChange={setToMint} exclude={fromMint} label="Select" />
+        <div className="form-row">
+          <label className="label">Ticker</label>
+          <input className="field mono" value={form.symbol} onChange={set('symbol')} placeholder="TCAT" maxLength={8} />
         </div>
-      </div>
-
-      {pool && amountIn > 0n && !blocker && (
-        <div className="rows" style={{ marginTop: 14 }}>
-          <div className="row"><span>Rate</span><span className="mono">
-            1 {from.ticker} = {fmt((quote.amountOut * 10n ** BigInt(from.decimals)) / (amountIn || 1n), to.decimals)} {to.ticker}
-          </span></div>
-          <div className="row"><span>Price impact</span>
-            <span className="mono" style={veryThin ? { fontWeight: 600 } : undefined}>
-              {(Number(impactBps) / 100).toFixed(2)}%
-            </span>
+        <div className="form-row">
+          <label className="label">Supply</label>
+          <input className="field mono" value={form.supply} onChange={set('supply')} inputMode="decimal" />
+        </div>
+        <div className="form-row">
+          <label className="label">Your fee, percent</label>
+          <input className="field mono" value={form.feePct} onChange={set('feePct')} inputMode="decimal" placeholder="1" />
+        </div>
+        <div className="form-row">
+          <label className="label">Priced in</label>
+          <div className="inline">
+            <button className="btn ghost" onClick={() => setQuote('tusd')} aria-current={quote === 'tusd'}>tUSD</button>
+            <button className="btn ghost" onClick={() => setQuote('wthru')} aria-current={quote === 'wthru'}>WTHRU</button>
           </div>
-          <div className="row"><span>Fee</span><span className="mono">
-            {fmt((amountIn * BigInt(pool.feeBps)) / 10000n, from.decimals)} {from.ticker}
-          </span></div>
-          <div className="row"><span>Pool holds</span><span className="mono fine">
-            {fmt(reserveIn, from.decimals)} {from.ticker} · {fmt(reserveOut, to.decimals)} {to.ticker}
-          </span></div>
         </div>
-      )}
+        <div className="form-row">
+          <label className="label">Opening liquidity, {quoteTicker}</label>
+          <input className="field mono" value={form.virtQuote} onChange={set('virtQuote')} inputMode="decimal" />
+        </div>
+      </div>
 
-      {veryThin && (
-        <p className="notice bad" style={{ marginTop: 14 }}>
-          This pool is very thin, and a trade this size would move the price by{' '}
-          {(Number(impactBps) / 100).toFixed(0)}%. You would get back a small fraction of what the
-          rate suggests. Try an amount closer to a hundredth of the pool.
+      <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
+        Your fee is capped at 10% and is charged on every buy and sell, claimable at any time.
+        Opening liquidity is virtual: it sets the starting price without you putting anything in,
+        and a smaller number means a steeper curve. tUSD is where the liquidity is today; WTHRU is
+        wrapped native THRU, which is what will be worth something once the network distributes it.
+      </p>
+
+      {problem && <p className="fine" style={{ marginTop: 12 }}>{problem}</p>}
+
+      {!hasWallet() && (
+        <p className="fine" style={{ marginTop: 12 }}>
+          <Link to="/wallet">Open a wallet</Link> first. The launch has to be signed by you, because
+          that is how the chain knows who the fees belong to.
         </p>
       )}
-      {thin && !veryThin && (
-        <p className="notice" style={{ marginTop: 14 }}>
-          Thin pool: this moves the price {(Number(impactBps) / 100).toFixed(1)}%. Smaller trades get
-          a better rate.
-        </p>
-      )}
-
-      {blocker && <p className="notice bad" style={{ marginTop: 14 }}>{blocker}</p>}
 
       <button
         className="btn"
         style={{ width: '100%', marginTop: 14 }}
-        onClick={swap}
-        disabled={!!blocker || amountIn <= 0n || step !== null}
+        onClick={launch}
+        disabled={!!problem || !hasWallet() || step !== null}
       >
-        {step === 'opening' ? 'Opening your token account…'
-          : step === 'signing' ? 'Signing…'
-          : !hasWallet() ? 'Create a wallet to swap'
-          : from && to ? `Swap ${from.ticker} for ${to.ticker}`
-          : 'Swap'}
+        {step === 'accounts' ? 'Making the mint and vaults…'
+          : step === 'signing' ? 'Sign the launch…'
+          : symbol ? `Launch $${symbol}` : 'Launch'}
       </button>
 
-      {!hasWallet() && (
-        <p className="fine" style={{ marginTop: 10 }}>
-          <Link to="/wallet">Open a wallet</Link> first. It takes about fifteen seconds and the key
-          never leaves your browser.
-        </p>
-      )}
-
       {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+
       {done && (
-        <p className="notice" style={{ marginTop: 12 }}>
-          Swapped. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
-        </p>
-      )}
-
-      {pool && amountIn > 0n && !blocker && (
-        <details style={{ marginTop: 14 }}>
-          <summary className="fine">Run it from the terminal instead</summary>
-          <CopyBlock text={cliCommand(SWAP_PROGRAM, buildSwapInstruction({
-            registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
-            userIn: 'YOUR_TOKEN_ACCOUNT_IN', userOut: 'YOUR_TOKEN_ACCOUNT_OUT',
-            amountIn, minOut: 1n,
-          }))} />
-        </details>
-      )}
-    </section>
-  )
-}
-
-/** A pool, read only. The trading happens in the panel above. */
-function PoolRow({ pool, balances, tickers, decimalsOf }) {
-  const symA = tickers?.[pool.mintA] || short(pool.mintA)
-  const symB = tickers?.[pool.mintB] || short(pool.mintB)
-  const dpA = decimalsOf(pool.mintA)
-  const dpB = decimalsOf(pool.mintB)
-  const a = balances[pool.vaultA] ?? 0n
-  const b = balances[pool.vaultB] ?? 0n
-
-  return (
-    <div className="row" style={{ alignItems: 'flex-start' }}>
-      <span>
-        <b>{symA} / {symB}</b>{' '}
-        <span className="fine">pool {pool.id} · {pool.feeBps / 100}% · {Number(pool.swapCount)} swaps</span>
-      </span>
-      <span className="mono fine">{fmt(a, dpA)} · {fmt(b, dpB)}</span>
-    </div>
-  )
-}
-
-
-export function SwapPage() {
-  const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
-    SWAP_REGISTRY,
-    decodeSwapRegistry,
-    (d) => d.pools.flatMap((p) => [p.vaultA, p.vaultB]),
-    (d) => d.pools.flatMap((p) => [p.mintA, p.mintB]),
-  )
-  const decimalsOf = useCallback((m) => decimals?.[m] ?? DECIMALS, [decimals])
-
-  if (!SWAP_PROGRAM || !SWAP_REGISTRY) {
-    return (
-      <div className="wrap">
-        <p className="eyebrow">Trade</p>
-        <h1 className="h1">Swap</h1>
-        <p className="lede">A constant product market maker, running on chain.</p>
-        <NotLive what="thruswap" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="wrap">
-      <p className="eyebrow">Trade</p>
-      <h1 className="h1">Swap</h1>
-      <p className="lede">
-        A constant product market maker on Thru. Reserves live in token accounts the program itself
-        owns, so no one signs for them and the price is whatever the ratio says it is.
-      </p>
-
-      {error && <p className="notice bad">Could not read the pool registry. It may be mid-reset.</p>}
-
-      {data?.pools?.length > 0 && (
-        <SwapPanel
-          pools={data.pools}
-          balances={balances}
-          tickers={tickers}
-          decimalsOf={decimalsOf}
-          reload={reload}
-        />
-      )}
-
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Pools</h2>
-            <p className="sub">{data ? `${data.pools.length} of ${data.capacity} slots in use` : 'reading the chain'}</p>
+        <div className="rows" style={{ marginTop: 14 }}>
+          <div className="row"><span>Launched</span><b>${symbol}</b></div>
+          <div className="row"><span>Mint</span><span className="mono">{short(done.mint)}</span></div>
+          <div className="row">
+            <span>Transaction</span>
+            <Link className="mono" to={`/tx/${done.signature}`}>{short(done.signature)}</Link>
           </div>
-          <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
         </div>
-        {!error && data && data.pools.length === 0 && (
-          <p className="fine" style={{ marginTop: 12 }}>No pools have been created yet.</p>
-        )}
-        <div className="rows" style={{ marginTop: 12 }}>
-          {data?.pools.map((p) => (
-            <PoolRow key={p.id} pool={p} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
-          ))}
-        </div>
-      </section>
-    </div>
+      )}
+
+      <details style={{ marginTop: 16 }}>
+        <summary className="fine">Do it from the terminal instead</summary>
+        <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>
+          Three accounts, then the launch. The placeholders below are placeholders: substitute your
+          own key name and the addresses each step prints.
+        </p>
+        <CopyBlock text={manual} label="Copy the setup commands" />
+      </details>
+    </section>
   )
 }
 
@@ -1159,6 +807,7 @@ export function LaunchpadPage() {
           nextId={data ? (data.launches.reduce((m, l) => Math.max(m, l.id), -1) + 1) : 0}
           registry={PAD_REGISTRY}
           onClose={() => setCreating(false)}
+          onLaunched={reload}
         />
       )}
 

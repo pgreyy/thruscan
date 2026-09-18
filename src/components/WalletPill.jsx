@@ -169,6 +169,7 @@ function Panel({ wallet, onClose }) {
 
       <div className="pill-divider" />
 
+      <Link className="pill-row" to="/profile" onClick={onClose}><span>Profile</span><span>→</span></Link>
       <Link className="pill-row" to="/wallet" onClick={onClose}><span>Wallet</span><span>→</span></Link>
       <Link className="pill-row" to="/names" onClick={onClose}><span>Names</span><span>→</span></Link>
       <Link className="pill-row" to="/faucet" onClick={onClose}><span>Top up</span><span>→</span></Link>

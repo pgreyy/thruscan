@@ -394,6 +394,19 @@ export async function claimTusd() {
   return api('faucet', { owner: address })
 }
 
+/**
+ * Make the three accounts a launch needs.
+ *
+ * All three need creation state proofs, which a browser cannot produce, so
+ * ThruScan makes them. It does not make the launch: that one is signed here,
+ * because thrupad records the launch transaction's fee payer as the creator and
+ * pays the fees to them.
+ */
+export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
+  const { address } = requireSession()
+  return api('pad-accounts', { owner: address, symbol, quoteMint, padProgram })
+}
+
 /* ---------- names ----------
    Claiming is sponsored, because registering under a root needs that root's
    authority and ThruScan holds it. Records are not: the name service checks the

@@ -5,6 +5,7 @@ import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
+import { ProfilePage } from './pages/Profile.jsx'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
@@ -51,7 +52,6 @@ const NAV = [
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/games', label: 'Games', icon: 'game' },
   { to: '/builders', label: 'Builders', icon: 'book' },
-  { to: '/projects', label: 'Projects', icon: 'box' },
   { to: '/community', label: 'Community', icon: 'users' },
   { to: '/updates', label: 'Updates', icon: 'bell' },
 ]
@@ -3096,8 +3096,9 @@ export default function App() {
           <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
-          <Route path="/builders" element={<BuildersPage />} />
+          <Route path="/builders" element={<><BuildersPage /><div className="embed-page"><ProjectsPage /></div></>} />
           <Route path="/moderate" element={<ModeratePage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/guides" element={<GuidesPage />} />
