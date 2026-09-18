@@ -6,6 +6,10 @@
  * directory, the project list and the community page: putting them on top of
  * each other means the second one is found by accident, if at all.
  *
+ * The strip sits above the title, not below it, so the first thing on the page
+ * is the choice of what you are looking at rather than a paragraph about the
+ * page you are already on.
+ *
  * The selected tab lives in the URL rather than in state, which costs nothing
  * and buys three things: the back button works, a refresh keeps you where you
  * were, and a link to a tab is a link to that tab.
@@ -17,7 +21,7 @@
 
 import { useSearchParams } from 'react-router-dom'
 
-export function Tabs({ tabs, param = 'tab', eyebrow, title, lede }) {
+export function Tabs({ tabs, param = 'tab', title, lede }) {
   const [params, setParams] = useSearchParams()
   const wanted = params.get(param)
   const active = tabs.find((t) => t.key === wanted) ?? tabs[0]
@@ -33,14 +37,6 @@ export function Tabs({ tabs, param = 'tab', eyebrow, title, lede }) {
 
   return (
     <>
-      {(eyebrow || title || lede) && (
-        <div className="wrap wrap-tight">
-          {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-          {title && <h1 className="h1">{title}</h1>}
-          {lede && <p className="lede">{lede}</p>}
-        </div>
-      )}
-
       <div className="tabstrip-wrap">
         <div className="tabstrip" role="tablist">
           {tabs.map((t) => (
@@ -57,6 +53,13 @@ export function Tabs({ tabs, param = 'tab', eyebrow, title, lede }) {
           ))}
         </div>
       </div>
+
+      {(title || lede) && (
+        <div className="wrap wrap-tight">
+          {title && <h1 className="h1">{title}</h1>}
+          {lede && <p className="lede">{lede}</p>}
+        </div>
+      )}
 
       <div className="tabstrip-panel" role="tabpanel">{active.el}</div>
     </>

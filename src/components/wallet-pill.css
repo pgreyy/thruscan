@@ -463,13 +463,16 @@
    two rows, which is what a phone expects.
    =========================================================================== */
 
-.wrap-tight { padding-bottom: 4px; }
-.wrap-top   { padding-top: 0; }
+/* Under a tab strip the floating wallet pill is already cleared, so .wrap's
+   56px of top padding would only show as a gap. These put back a normal amount
+   of breathing room instead. */
+.wrap-tight { padding-top: 22px; padding-bottom: 0; }
+.wrap-top   { padding-top: 22px; }
 
 .tabstrip-wrap {
   /* Not sticky. The wallet pill is fixed to the top right of every page, and a
      strip pinned to the top edge slides underneath it on a narrow screen. */
-  margin-bottom: 18px;
+  margin-bottom: 0;
   padding: 0 24px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.2);
   background: rgba(255, 255, 255, 0.86);
@@ -529,11 +532,9 @@
 
 .tabstrip-panel { min-height: 40vh; }
 
-/* Pages under a strip bring their own .wrap, which carries the 56px that keeps
-   content clear of the floating wallet pill. Under a tab strip that pill is
-   already cleared, so the padding would only show as a gap. */
+/* Pages under a strip bring their own .wrap and the same 56px with it. */
 .tabstrip-panel > .wrap,
-.tabstrip-panel > * > .wrap { padding-top: 0; }
+.tabstrip-panel > * > .wrap { padding-top: 22px; }
 
 @media (max-width: 720px) {
   .tabstrip-wrap { padding: 0 14px; }
@@ -560,3 +561,10 @@
     background: rgba(255, 138, 128, 0.1);
   }
 }
+
+/* The little uppercase word above every page title ("TRADE", "BUILDERS",
+   "GAMES", "COMMUNITY EXPLORER"). It repeated the nav item you had just
+   clicked and the heading directly under it, so it was saying the same thing
+   three times. Hidden here as well as removed from the markup, because these
+   pages are edited from several places and one of them will grow a new one. */
+.eyebrow { display: none !important; }

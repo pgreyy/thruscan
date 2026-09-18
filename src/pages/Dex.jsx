@@ -1249,7 +1249,6 @@ export function SwapPage() {
   if (!SWAP_PROGRAM || !SWAP_REGISTRY) {
     return (
       <div className="wrap">
-        <p className="eyebrow">Trade</p>
         <h1 className="h1">Swap</h1>
         <p className="lede">A constant product market maker, running on chain.</p>
         <NotLive what="thruswap" />
@@ -1301,7 +1300,6 @@ export function SwapPage() {
 
   return (
     <Tabs
-      eyebrow="Trade"
       title="Swap"
       lede="A constant product market maker on Thru. Reserves live in token accounts the program itself owns, so no one signs for them and the price is whatever the ratio says it is."
       tabs={[
@@ -1637,7 +1635,6 @@ export function LaunchpadPage() {
   if (!PAD_PROGRAM || !PAD_REGISTRY) {
     return (
       <div className="wrap">
-        <p className="eyebrow">Launch</p>
         <h1 className="h1">Launchpad</h1>
         <p className="lede">Put a token on a bonding curve and let the chain price it.</p>
         <NotLive what="thrupad" />
@@ -1652,7 +1649,6 @@ export function LaunchpadPage() {
           they can. */}
       <div className="page-head">
         <div>
-          <p className="eyebrow">Launch</p>
           <h1 className="h1">Launchpad</h1>
         </div>
         <button className="btn" onClick={() => setCreating((c) => !c)}>
@@ -1761,7 +1757,6 @@ export function FaucetPage() {
 
   return (
     <Tabs
-      eyebrow="Get started"
       title="Faucet"
       lede="tUSD is the test currency every pool and every launch is priced in, and THRU is what pays transaction fees. Neither has any value, and both disappear whenever alphanet resets from genesis, which is the point: you can experiment without risking anything."
       tabs={[

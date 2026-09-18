@@ -817,7 +817,6 @@ function NameServiceCard({ account }) {
 
           {decoded.records.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <p className="eyebrow">Records</p>
               <div className="rec-grid">
               {decoded.records.map((r) => (
                 <div className="rec" key={r.key}>
@@ -947,7 +946,6 @@ function AccountChips({ label, list }) {
   if (!list || list.length === 0) return null
   return (
     <div style={{ marginTop: 14 }}>
-      <p className="eyebrow">{label} ({list.length})</p>
       <div className="chips">
         {list.map((a) => <Address key={a} value={a} />)}
       </div>
@@ -1041,7 +1039,6 @@ function TransactionResult({ tx, fallbackSignature }) {
 
       {exec && (
         <div style={{ marginTop: 16 }}>
-          <p className="eyebrow">Resources used</p>
           <div className="rows">
             <Row k="Compute units" v={`${Number(exec.consumedCompute ?? 0).toLocaleString()} of ${Number(tx.requested?.compute ?? 0).toLocaleString()}`} mono />
             <Row k="State units" v={`${Number(exec.consumedState ?? 0).toLocaleString()} of ${Number(tx.requested?.state ?? 0).toLocaleString()}`} mono />
@@ -1163,7 +1160,6 @@ function ExplorerPage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Community explorer</p>
       <h1 className="h1">Read anything on Thru alphanet</h1>
       <p className="lede">Accounts, tokens, names and transactions, decoded straight from the chain.</p>
 
@@ -1256,7 +1252,6 @@ function ModeratePage() {
   if (!authed) {
     return (
       <div className="wrap">
-        <p className="eyebrow">Private</p>
         <h1 className="h1">Moderation</h1>
         <p className="lede">Approve or reject what the discovery agent found.</p>
 
@@ -1282,7 +1277,6 @@ function ModeratePage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Private</p>
       <h1 className="h1">Moderation</h1>
       <p className="lede">
         {items.length === 0
@@ -1594,7 +1588,6 @@ function WallPage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">On chain</p>
       <h1 className="h1">The Thru Wall</h1>
       <p className="lede">
         Leave a message and it gets written into an account on Thru by a program written in C. Not a database, not a
@@ -2571,62 +2564,76 @@ function GamesPage() {
   if (!WORDLE_BOARD) {
     return (
       <div className="wrap">
-        <p className="eyebrow">Games</p>
         <h1 className="h1">Not live yet</h1>
         <p className="lede">The game is built and the program is deployed, but the scoreboard is still being wired up.</p>
       </div>
     )
   }
 
-  return (
-    <div className="wrap">
-      <p className="eyebrow">Games</p>
-      <h1 className="h1">{game === 'wordle' ? 'Thru Wordle' : 'Thru 2048'}</h1>
-      <p className="lede">
-        {game === 'wordle'
-          ? 'Guess a five letter word in six tries. Every finished game is written to Thru by a program running on chain, and the scoreboard below is read straight back out of it. No wallet needed, ThruScan pays.'
-          : 'Slide tiles together to reach 2048. Every single swipe is its own transaction, and the board itself lives on chain between moves, so the chain is playing along rather than just keeping score.'}
+  // Two games, one strip, the same strip Swap and Builders use. The title used
+  // to sit above the picker and change underneath it, which meant the page
+  // announced "Thru Wordle" and then offered you a button to stop reading about
+  // Thru Wordle. The choice comes first now.
+  //
+  // Both panels are built here and only the selected one is mounted, so the
+  // game you are not playing is not running.
+
+  const wordlePanel = (
+    <div className="wrap wrap-top">
+      <p className="lede" style={{ marginTop: 0 }}>
+        Guess a five letter word in six tries. Every finished game is written to Thru by a program
+        running on chain, and the scoreboard below is read straight back out of it. No wallet
+        needed, ThruScan pays.
       </p>
 
-      <div className="game-picker">
-        <button aria-pressed={game === 'wordle'} onClick={() => pick('wordle')}>
-          <strong>Wordle</strong>
-          <span>Guess the word</span>
-        </button>
-        <button aria-pressed={game === '2048'} onClick={() => pick('2048')}>
-          <strong>2048</strong>
-          <span>Slide and merge</span>
-        </button>
-      </div>
-
-      {game === 'wordle' ? (
-        <>
-          <WordleGame onFinished={load} registry={registry} />
-          {error && <p className="notice bad">{error}</p>}
-          {loading && !board && <p className="fine">Reading the scoreboard</p>}
-          {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
-        </>
-      ) : (
-        <Game2048 registry={registry} />
-      )}
+      <WordleGame onFinished={load} registry={registry} />
+      {error && <p className="notice bad">{error}</p>}
+      {loading && !board && <p className="fine">Reading the scoreboard</p>}
+      {board && <WordleBoard board={board} registry={registry} refresh={load} loading={loading} />}
 
       <Identity registry={registry} onChanged={() => { loadRegistry(); load() }} />
 
       <footer className="foot">
-        {game === 'wordle' ? (
-          <p className="fine">
-            The program recomputes your score from the word and your guesses, so a claimed win has to come with the guess
-            that proves it. It cannot check which word you were given, since the game runs in your browser.
-          </p>
-        ) : (
-          <p className="fine">
-            The chain does the sliding, merging, scoring and tile spawning. Nothing here reports a score — the board is
-            read back out of the account after every move, so what you see is what the chain computed.
-          </p>
-        )}
+        <p className="fine">
+          The program recomputes your score from the word and your guesses, so a claimed win has to
+          come with the guess that proves it. It cannot check which word you were given, since the
+          game runs in your browser.
+        </p>
         <p className="fine">Scores reset whenever alphanet resets. Think of them as seasons.</p>
       </footer>
     </div>
+  )
+
+  const g2048Panel = (
+    <div className="wrap wrap-top">
+      <p className="lede" style={{ marginTop: 0 }}>
+        Slide tiles together to reach 2048. Every single swipe is its own transaction, and the board
+        itself lives on chain between moves, so the chain is playing along rather than just keeping
+        score.
+      </p>
+
+      <Game2048 registry={registry} />
+
+      <Identity registry={registry} onChanged={() => { loadRegistry(); load() }} />
+
+      <footer className="foot">
+        <p className="fine">
+          The chain does the sliding, merging, scoring and tile spawning. Nothing here reports a
+          score: the board is read back out of the account after every move, so what you see is what
+          the chain computed.
+        </p>
+        <p className="fine">Scores reset whenever alphanet resets. Think of them as seasons.</p>
+      </footer>
+    </div>
+  )
+
+  return (
+    <Tabs
+      tabs={[
+        { key: 'wordle', label: 'Wordle', el: wordlePanel },
+        { key: '2048', label: '2048', el: g2048Panel },
+      ]}
+    />
   )
 }
 
@@ -2639,7 +2646,6 @@ function GuideDetail({ guide, onBack }) {
     <div className="wrap">
       <button className="back" onClick={onBack}>← All guides</button>
 
-      <p className="eyebrow">{guide.minutes}</p>
       <h1 className="h1">{guide.title}</h1>
       <p className="lede">{guide.intro}</p>
 
@@ -2685,7 +2691,6 @@ function GuidesPage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Guides</p>
       <h1 className="h1">How to do things on Thru</h1>
       <p className="lede">Step by step, written for people who have not done this before. Every command can be copied, and every step tells you how to check it worked.</p>
 
@@ -2762,7 +2767,6 @@ function UpdatesPage() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Network</p>
       <h1 className="h1">Releases</h1>
       <p className="lede">Every version Unto Labs has shipped, newest first, each with a plain-language summary.</p>
 
@@ -2814,7 +2818,6 @@ function UpdatesPage() {
 
             {isOpen && (
               <div style={{ padding: '0 18px 18px' }}>
-                <p className="eyebrow">Summary</p>
                 {loadingSummary[release.id]
                   ? <p className="fine">Writing a summary</p>
                   : <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>{summaries[release.id] || 'Loading'}</p>}
@@ -2867,7 +2870,6 @@ function ProjectsPage() {
 
   return (
     <div className="wrap-wide">
-      <p className="eyebrow">Ecosystem</p>
       <h1 className="h1">Projects</h1>
       <p className="lede">Teams and tools building on Thru. The list is short because the network is young.</p>
 
@@ -3008,7 +3010,6 @@ function CommunityPage() {
 
   return (
     <div className="wrap-wide">
-      <p className="eyebrow">Community</p>
       <h1 className="h1">Worth reading</h1>
       <p className="lede">
         Articles, threads, videos and tools from people figuring out Thru in public. Pinned items sit at the top;

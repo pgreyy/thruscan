@@ -1,905 +1,641 @@
-// src/pages/Wallet.jsx
+// src/lib/wallet.js
 //
-// The wallet page, plus the small pieces the Swap and Launchpad pages use to
-// turn a quote into a button.
+// An in-app wallet that lives in the browser.
 //
-// The key is made in this browser, encrypted with a password only the visitor
-// knows, and kept in localStorage. Nothing here ever sends it anywhere. What
-// the server does see is a public key, a signature, and finished transaction
-// bytes it can forward but not alter.
+// The private key is generated here, encrypted here with a password only the
+// visitor knows, and stored in this browser's localStorage. It is never sent
+// anywhere. The server sees a public key and a signature, and nothing else.
 //
-// Two things about the shape of this that are worth knowing before reading it:
+// ---------------------------------------------------------------------------
+// HOW A BROWSER KEY GETS AN ACCOUNT
 //
-//   A wallet address holds no tokens. Balances live in token accounts, one per
-//   mint, at an address fixed by owner and mint. So the page can show every
-//   balance without asking the visitor to paste anything, and "open an account"
-//   is a real step with a real cost rather than a formality.
+// A brand new key cannot pay its own way into existence: creating an account
+// needs a state proof and a fee payer, and a key with no account has neither.
+// Thru's EOA program solves this. CREATE_ACCOUNT takes an Ed25519 signature by
+// the new key over a canonical message that names the chain and the fee payer:
 //
-//   Registering and opening are paid for by the sponsor; trading is not. A Thru
-//   transaction carries one signature, the fee payer's, so the only way to spend
-//   your tokens is to be the fee payer, and the only way to do that is to hold
-//   the key. That is the whole security model, and it is why this is worth
-//   building rather than faking with a shared account.
+//   "tn_eoa_create_v1" || chain_id(u16) || fee_payer[32] || eoa[32]
+//
+// So the sponsor pays and submits, while the new key alone authorises. Binding
+// the fee payer into the message means the signature cannot be lifted into a
+// different creation, and binding the chain means it cannot be replayed onto
+// another network.
+//
+// That message is signed RAW, with no further domain separation, because it
+// already carries its own 16-byte tag. This matters: signMessage() prepends the
+// generic wallet tag, which produces a signature the EOA program rejects with
+// user error 5. The equivalent that needs no extra dependency is
+//
+//   signWithDomain(message.slice(16), priv, pub, SignatureDomain.EOA_CREATE)
+//
+// since signWithDomain rebuilds M = DST || context and signs M with stock
+// Ed25519. Verified byte-identical against a raw signature.
+//
+// ---------------------------------------------------------------------------
+// AFTER THAT, THE WALLET IS ON ITS OWN
+//
+// A Thru transaction carries exactly one signature, the fee payer's. So the
+// sponsor can never move a visitor's tokens: for a swap or a buy, the visitor
+// must be the fee payer and sign it themselves. That is what makes this a real
+// wallet rather than a shared pot with names on it.
+//
+// The fee is set to 0. A freshly created account holds no native balance, and
+// any non-zero fee fails with INSUFFICIENT_FEE_PAYER_BALANCE (-509). Alphanet
+// accepts a zero fee; when that changes, the wallet will need funding first.
+//
+// Everything on-chain goes through /api/wallet, because the node sends no CORS
+// headers and a browser cannot call it directly.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  createWallet, importWallet, unlock, locked, forgetWallet,
-  hasWallet, storedWallet, isUnlocked, currentAddress,
-  registerAndFund, openTokenAccount, tokenBalances, accountExists,
-  deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
-  claimNativeThru, claimTusd, nativeBalance,
-  importPhrase, exportPhrase, hasPhrase,
-} from '../lib/wallet.js'
-import { phraseProblem, phraseWords } from '../lib/seed.js'
-import { QRImage, QRScanner, canScan } from '../components/QR.jsx'
-import { TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
-import { getAccount } from '../lib/rpcClient.js'
-import { decodeMintAccount } from '../lib/token.js'
+  Pubkey, TransactionBuilder, deriveProgramAddress, keys, eoa, signWithDomain,
+} from '@thru/sdk'
+import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
 
-const DECIMALS = 6
+const STORE_KEY = 'thruscan.wallet.v1'
+const ENDPOINT = '/api/wallet'
+const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
+const SIGNATURE_DOMAIN_EOA_CREATE = 5
 
-/* ---------- a tiny shared store ----------
-   The wallet is one thing, and several pages show it at once. Rather than pass
-   callbacks down or reach for a state library, this keeps one object and tells
-   subscribers when it changes. */
+/* Thru's own faucet, which hands out native THRU rather than a test token.
+   Permissionless: the recipient is whoever pays the fee, so a wallet claims for
+   itself and nobody can direct someone else's claim elsewhere. Capped at 10,000
+   per transaction and repeatable.
 
-const listeners = new Set()
-let state = {
-  address: currentAddress(),
-  unlocked: isUnlocked(),
-  registered: false,
-  native: 0n,          // native THRU, which is what pays fees
-  balances: {},        // mint -> { account, exists, amount (BigInt) }
-  tickers: {},         // mint -> 'TCAT'. A balance without a name is not a balance.
-  decimals: {},        // mint -> 6. WTHRU is 8, so this cannot be assumed.
-}
+   WITHDRAW: [u32 op = 1][u32 faucet_account_idx][u64 amount]
 
-function setState(patch) {
-  state = { ...state, ...patch }
-  listeners.forEach((fn) => fn(state))
-}
+   Recovered by decoding a transaction the CLI produced, then confirmed against
+   a second one with a different amount. */
+const NATIVE_FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
+const NATIVE_FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
+const NATIVE_FAUCET_MAX = 10_000n
 
-export function useWallet() {
-  const [snapshot, setSnapshot] = useState(state)
-  useEffect(() => {
-    listeners.add(setSnapshot)
-    setSnapshot(state)
-    return () => listeners.delete(setSnapshot)
-  }, [])
+/* The EOA program: account creation, deletion, and native THRU transfer. Its
+   address is thirty-two zero bytes. */
+const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 
-  const refresh = useCallback(async (mints = []) => {
-    if (!isUnlocked()) return
-    const wanted = Array.from(new Set([TUSD_MINT, ...mints, ...Object.keys(state.balances)]))
-    try {
-      const [registered, native, rows] = await Promise.all([
-        accountExists(currentAddress()),
-        nativeBalance().catch(() => 0n),
-        wanted.length ? tokenBalances(wanted) : Promise.resolve([]),
-      ])
-      const balances = { ...state.balances }
-      for (const r of rows) {
-        balances[r.mint] = { account: r.account, exists: r.exists, amount: BigInt(r.amount) }
-      }
+/* ---------- small helpers ---------- */
 
-      /* A mint record carries its own ticker and decimals, so a balance can be
-         shown as "42.7397 TCAT" rather than as a forty-six character address
-         and a number whose scale is a guess. Read once per mint and kept, since
-         neither ever changes. */
-      const tickers = { ...state.tickers }
-      const decimals = { ...state.decimals }
-      const unknown = wanted.filter((m) => tickers[m] === undefined)
-      if (unknown.length) {
-        const mints = await Promise.all(unknown.map((m) => getAccount(m).catch(() => null)))
-        unknown.forEach((m, i) => {
-          try {
-            const decoded = decodeMintAccount(mints[i]?.data?.base64)
-            tickers[m] = decoded?.ticker || null
-            decimals[m] = decoded?.decimals ?? 6
-          } catch {
-            tickers[m] = null
-            decimals[m] = 6
-          }
-        })
-      }
+const toBytes = (a) => Pubkey.from(a).toBytes()
 
-      setState({ registered, native, balances, tickers, decimals, address: currentAddress(), unlocked: true })
-    } catch { /* leave what we had; a failed refresh is not a failed wallet */ }
-  }, [])
-
-  return { ...snapshot, refresh, setState }
-}
-
-export function notifyWalletChanged(patch) { setState(patch) }
-
-/* ---------- formatting ---------- */
-
-function fmt(units, decimals = DECIMALS, maxFrac = 4) {
-  const n = Number(units ?? 0n) / 10 ** decimals
-  if (!isFinite(n)) return '0'
-  if (n !== 0 && Math.abs(n) < 10 ** -maxFrac) return `<${10 ** -maxFrac}`
-  return n.toLocaleString(undefined, { maximumFractionDigits: maxFrac })
-}
-
-const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
-
-/**
- * An address you can take with you.
- *
- * A forty-six character address is not something anyone retypes, so every one
- * on this page is a button. The whole chip is the target rather than a small
- * icon beside it, because on a phone a 16px icon is a miss more often than a
- * hit, and the title carries the full address for anyone hovering on a desktop.
- */
-function AddressChip({ address, label }) {
-  const [done, setDone] = useState(false)
-  if (!address) return null
-  return (
-    <button
-      className="addr-chip mono"
-      title={address}
-      aria-label={`Copy ${label ?? 'address'}`}
-      onClick={(e) => {
-        e.stopPropagation()
-        navigator.clipboard?.writeText(address)
-        setDone(true)
-        setTimeout(() => setDone(false), 1400)
-      }}
-    >
-      {done ? 'Copied' : short(address)}
-    </button>
-  )
-}
-
-function Copyable({ text, label }) {
-  const [done, setDone] = useState(false)
-  return (
-    <button
-      className="btn ghost"
-      onClick={() => {
-        navigator.clipboard?.writeText(text)
-        setDone(true)
-        setTimeout(() => setDone(false), 1400)
-      }}
-    >
-      {done ? 'Copied' : label}
-    </button>
-  )
-}
-
-/* ---------- setup ---------- */
-
-/**
- * Twelve words, once.
- *
- * Everything about this screen is arranged so the words end up somewhere other
- * than the screen. They are numbered, because order is the whole point and a
- * wrapped paragraph of twelve words is easy to transcribe out of order. The
- * confirmation is a real checkbox rather than a countdown, because a countdown
- * teaches people to wait rather than to write.
- */
-function PhraseReveal({ phrase, onDone }) {
-  const [saved, setSaved] = useState(false)
-  const [showQR, setShowQR] = useState(false)
-  const words = phraseWords(phrase)
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Write these down</h2>
-          <p className="sub">Twelve words. They restore this wallet on any device.</p>
-        </div>
-      </div>
-
-      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        This is the only time they are shown before you unlock again. Anyone holding them holds the
-        account, so paper beats a screenshot and both beat a message to yourself.
-      </p>
-
-      <ol className="phrase-grid">
-        {words.map((w, i) => (
-          <li key={i}><span className="fine">{i + 1}</span><b className="mono">{w}</b></li>
-        ))}
-      </ol>
-
-      <div className="inline" style={{ marginTop: 14 }}>
-        <Copyable text={phrase} label="Copy phrase" />
-        <button className="btn ghost" onClick={() => setShowQR((q) => !q)}>
-          {showQR ? 'Hide code' : 'Show as a code'}
-        </button>
-      </div>
-
-      {showQR && (
-        <div style={{ marginTop: 14 }}>
-          <QRImage
-            text={`thruscan:${phrase}`}
-            size={220}
-            label="Scan this from another device to restore the same wallet there."
-          />
-        </div>
-      )}
-
-      <label className="check-row">
-        <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
-        <span>I have written the phrase down somewhere safe.</span>
-      </label>
-
-      <button className="btn" style={{ width: '100%', marginTop: 12 }} onClick={onDone} disabled={!saved}>
-        Continue
-      </button>
-    </section>
-  )
-}
-
-/**
- * Backing up a wallet that already exists.
- *
- * Separate from the reveal because the answer differs: a wallet born from a
- * phrase can show it again, and one imported from raw hex never had one and
- * should be told so rather than left to assume it is covered.
- */
-function BackupCard({ wallet }) {
-  const [shown, setShown] = useState(null)
-  const [showQR, setShowQR] = useState(false)
-  const phrase = hasPhrase()
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Move or back up</h2>
-          <p className="sub">{phrase ? 'Twelve words, or a code to scan' : 'This wallet has no phrase'}</p>
-        </div>
-      </div>
-
-      {phrase ? (
-        <>
-          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            Restore this wallet on your phone by typing the words there, or by scanning the code.
-            Both produce the same account, because the phrase is the account.
-          </p>
-          <div className="inline" style={{ marginTop: 14 }}>
-            <button className="btn" onClick={() => setShown(shown ? null : exportPhrase())}>
-              {shown ? 'Hide phrase' : 'Show phrase'}
-            </button>
-            <button className="btn ghost" onClick={() => setShowQR((q) => !q)}>
-              {showQR ? 'Hide code' : 'Show a code to scan'}
-            </button>
-          </div>
-
-          {shown && (
-            <ol className="phrase-grid" style={{ marginTop: 14 }}>
-              {phraseWords(shown).map((w, i) => (
-                <li key={i}><span className="fine">{i + 1}</span><b className="mono">{w}</b></li>
-              ))}
-            </ol>
-          )}
-
-          {showQR && (
-            <div style={{ marginTop: 14 }}>
-              <QRImage text={`thruscan:${exportPhrase()}`} size={220} label="Scan from the other device's Restore screen." />
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            Because this wallet is older than phrases are, or because it was imported from a raw
-            key. Nothing is wrong with it and nothing has been lost.
-          </p>
-
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            A phrase is not a label stuck on an account afterwards; it is where the account comes
-            from. The twelve words are put through a one-way function to produce the private key,
-            and one-way is the entire point: the key cannot be run backwards into words. So a phrase
-            has to be chosen before the key exists. Yours was made the other way round, as a
-            private key drawn straight from the browser's random number generator, which is just as
-            secure and just as much yours. It only travels differently.
-          </p>
-
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            Which means your backup is the key itself, below. It restores this account anywhere,
-            here or in the CLI, exactly as twelve words would. The one thing it will not do is get
-            typed into a phone without mistakes, which is what phrases were invented for.
-          </p>
-
-          <div className="rows" style={{ marginTop: 14 }}>
-            <div className="row">
-              <span>To keep this account</span>
-              <span className="fine">Export the key below and store it somewhere safe</span>
-            </div>
-            <div className="row">
-              <span>To get a phrase</span>
-              <span className="fine">Make a second wallet, then move your balances to it</span>
-            </div>
-          </div>
-
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            There is no rush on the second one. This is alphanet: every balance here disappears at
-            the next genesis reset anyway, so the natural moment to switch to a phrase-backed wallet
-            is whenever that happens.
-          </p>
-        </>
-      )}
-    </section>
-  )
-}
-
-
-function CreateWallet({ onDone }) {
-  const [mode, setMode] = useState('create')      // create | phrase | key
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [keyHex, setKeyHex] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const [newPhrase, setNewPhrase] = useState(null)
-  const [scanning, setScanning] = useState(false)
-
-  // Shown once, before the wallet is usable. Nothing else on the page matters
-  // until these twelve words are somewhere other than this screen.
-  if (newPhrase) return <PhraseReveal phrase={newPhrase} onDone={() => { setNewPhrase(null); onDone?.() }} />
-
-  const go = async () => {
-    setError(null)
-    if (password.length < 8) return setError('Use a password of at least 8 characters.')
-    if (mode === 'create' && password !== confirm) return setError('The two passwords do not match.')
-    if (mode === 'phrase') {
-      const problem = phraseProblem(keyHex)
-      if (problem) return setError(problem)
+/** Thru sorts a transaction's accounts by their raw public key bytes, not by
+ *  the string they print as. Instruction indices are computed against that
+ *  order, so anything that names accounts by index has to sort first. */
+function sortAddresses(list) {
+  return [...new Set(list)].sort((a, b) => {
+    const x = toBytes(a)
+    const y = toBytes(b)
+    for (let i = 0; i < 32; i++) {
+      if (x[i] !== y[i]) return x[i] - y[i]
     }
-    setBusy(true)
-    try {
-      let result
-      if (mode === 'create') result = await createWallet(password)
-      else if (mode === 'phrase') result = await importPhrase(keyHex, password)
-      else result = await importWallet(keyHex, password)
-
-      setState({ address: result.address, unlocked: true, registered: false, balances: {} })
-
-      // A phrase is shown once, here, before anything else happens. Skipping
-      // past this screen is how people lose accounts, so the wallet is not
-      // considered set up until it has been acknowledged.
-      if (result.phrase) setNewPhrase(result.phrase)
-      else onDone?.()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">
-            {mode === 'create' ? 'Create a wallet' : mode === 'phrase' ? 'Restore a wallet' : 'Import a key'}
-          </h2>
-          <p className="sub">
-            {mode === 'create' ? 'Made in this browser, with a phrase you can write down'
-              : mode === 'phrase' ? 'Twelve words from another device'
-              : 'A raw key, so the CLI and the browser are one account'}
-          </p>
-        </div>
-        <div className="inline">
-          <button className="btn ghost" onClick={() => { setMode('create'); setError(null); setKeyHex('') }} aria-current={mode === 'create'}>New</button>
-          <button className="btn ghost" onClick={() => { setMode('phrase'); setError(null); setKeyHex('') }} aria-current={mode === 'phrase'}>Restore</button>
-        </div>
-      </div>
-
-      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        The key is generated here and never leaves this browser. It is encrypted with your password
-        before it is stored, so anyone reading this browser's storage gets ciphertext. A new wallet
-        comes with twelve words, shown once, which restore it on any device including your phone.
-        Write them down: there is no reset and nobody can recover them for you.
-      </p>
-
-      <div className="stack" style={{ marginTop: 16 }}>
-        {mode === 'phrase' && (
-          scanning
-            ? (
-              <QRScanner
-                onResult={(text) => {
-                  setScanning(false)
-                  setKeyHex(String(text).replace(/^thruscan:/, '').trim())
-                }}
-                onCancel={() => setScanning(false)}
-              />
-            )
-            : (
-              <>
-                <textarea
-                  className="field mono"
-                  rows={3}
-                  value={keyHex}
-                  onChange={(e) => { setKeyHex(e.target.value); setError(null) }}
-                  placeholder="twelve words, separated by spaces"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <div className="inline">
-                  <span className="fine">{phraseWords(keyHex).length} of 12 words</span>
-                  {canScan() && (
-                    <button className="btn ghost" onClick={() => setScanning(true)}>Scan a code instead</button>
-                  )}
-                  <button className="linkish" onClick={() => { setMode('key'); setKeyHex(''); setError(null) }}>
-                    use a raw key
-                  </button>
-                </div>
-              </>
-            )
-        )}
-
-        {mode === 'key' && (
-          <>
-            <input
-              className="field mono"
-              value={keyHex}
-              onChange={(e) => { setKeyHex(e.target.value); setError(null) }}
-              placeholder="Private key, 64 hex characters"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="fine">
-              A key imported this way has no phrase, so it can only ever be moved as hex.{' '}
-              <button className="linkish" onClick={() => { setMode('phrase'); setKeyHex(''); setError(null) }}>
-                use a phrase instead
-              </button>
-            </p>
-          </>
-        )}
-        <input
-          className="field"
-          type="password"
-          value={password}
-          onChange={(e) => { setPassword(e.target.value); setError(null) }}
-          placeholder="Password"
-          autoComplete="new-password"
-        />
-        {mode === 'create' && (
-          <input
-            className="field"
-            type="password"
-            value={confirm}
-            onChange={(e) => { setConfirm(e.target.value); setError(null) }}
-            placeholder="Password again"
-            autoComplete="new-password"
-          />
-        )}
-        <button className="btn" onClick={go} disabled={busy || !password || (mode !== 'create' && !keyHex.trim())}>
-          {busy ? 'Working' : mode === 'create' ? 'Create wallet' : mode === 'phrase' ? 'Restore wallet' : 'Import key'}
-        </button>
-      </div>
-
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-
-      <p className="fine" style={{ marginTop: 14 }}>
-        This is alphanet. Everything here is a test token with no value, and every account
-        disappears when the network resets from genesis. Do not reuse a password you care about.
-      </p>
-    </section>
-  )
-}
-
-function UnlockWallet({ onDone }) {
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const stored = storedWallet()
-
-  const go = async () => {
-    setBusy(true); setError(null)
-    try {
-      const { address } = await unlock(password)
-      setState({ address, unlocked: true })
-      onDone?.()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Unlock</h2>
-          <p className="sub mono">{short(stored?.address)}</p>
-        </div>
-      </div>
-      <div className="stack" style={{ marginTop: 16 }}>
-        <input
-          className="field"
-          type="password"
-          value={password}
-          onChange={(e) => { setPassword(e.target.value); setError(null) }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && password) go() }}
-          placeholder="Password"
-          autoComplete="current-password"
-          autoFocus
-        />
-        <button className="btn" onClick={go} disabled={busy || !password}>
-          {busy ? 'Unlocking' : 'Unlock'}
-        </button>
-      </div>
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      <p className="fine" style={{ marginTop: 14 }}>
-        Lost the password? There is no way back into this key. You can{' '}
-        <button
-          className="btn ghost"
-          style={{ padding: '2px 8px' }}
-          onClick={() => {
-            if (confirm('This deletes the stored key. If you did not export it, it is gone for good. Continue?')) {
-              forgetWallet()
-              setState({ address: null, unlocked: false, registered: false, balances: {} })
-            }
-          }}
-        >
-          start over
-        </button>{' '}
-        with a new one.
-      </p>
-    </section>
-  )
-}
-
-/* ---------- the live wallet ---------- */
-
-function Balances({ wallet, mints }) {
-  const [busy, setBusy] = useState(null)
-  const [error, setError] = useState(null)
-
-  const open = async (mint) => {
-    setBusy(mint); setError(null)
-    try {
-      await openTokenAccount(mint)
-      // The account lands a slot or two later, so give the chain a moment
-      // rather than showing "missing" immediately after opening it.
-      await new Promise((r) => setTimeout(r, 2500))
-      await wallet.refresh(mints.map((m) => m.mint))
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Balances</h2>
-          <p className="sub">One account per token, at an address fixed by you and the mint</p>
-        </div>
-        <button className="btn ghost" onClick={() => wallet.refresh(mints.map((m) => m.mint))}>Refresh</button>
-      </div>
-
-      <div className="rows" style={{ marginTop: 12 }}>
-        {mints.map(({ mint }) => {
-          const row = wallet.balances[mint]
-          // The ticker comes off the mint record. Until that read lands there is
-          // nothing honest to show but the address, so show that rather than an
-          // invented name.
-          const ticker = wallet.tickers?.[mint]
-          const dp = wallet.decimals?.[mint] ?? DECIMALS
-          return (
-            <div className="row balance-row" key={mint}>
-              <span className="balance-name">
-                <b>{ticker || short(mint)}</b>
-                <span className="addr-group">
-                  <AddressChip address={mint} label={`${ticker || 'token'} mint`} />
-                  {row?.account && <AddressChip address={row.account} label="your token account" />}
-                </span>
-              </span>
-              {row?.exists
-                ? <b className="mono">{fmt(row.amount, dp)}</b>
-                : (
-                  <button className="btn ghost" onClick={() => open(mint)} disabled={busy === mint}>
-                    {busy === mint ? 'Opening' : 'Open account'}
-                  </button>
-                )}
-            </div>
-          )
-        })}
-      </div>
-
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      <p className="fine" style={{ marginTop: 12 }}>
-        Opening an account is paid for by ThruScan. Trading is not: a Thru transaction carries one
-        signature, the fee payer's, so your tokens only move when you sign for them yourself.
-      </p>
-    </section>
-  )
-}
-
-/**
- * Two currencies, two buttons, and they are genuinely different things.
- *
- * tUSD is our test token: it is what pools and launches are priced in, and
- * ThruScan mints it. THRU is the network's own asset, it is what pays fees, and
- * it comes from Thru's faucet rather than from us. The wallet claims that one
- * for itself, signing and paying for the claim, because the faucet pays
- * whoever paid the fee and so cannot be pointed at anybody else.
- */
-export function TopUpCard() {
-  const wallet = useWallet()
-  const [busy, setBusy] = useState(null)
-  const [note, setNote] = useState(null)
-  const [error, setError] = useState(null)
-
-  const claimTokens = async () => {
-    setBusy('tusd'); setError(null); setNote(null)
-    try {
-      const j = await claimTusd()
-      setNote(`${fmt(j.amount)} tUSD on the way.`)
-      await new Promise((r) => setTimeout(r, 2500))
-      await wallet.refresh()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const claimGas = async () => {
-    setBusy('thru'); setError(null); setNote(null)
-    try {
-      await claimNativeThru()
-      setNote('10,000 THRU on the way. That is what pays your transaction fees.')
-      await new Promise((r) => setTimeout(r, 3000))
-      await wallet.refresh()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Top up</h2>
-          <p className="sub">tUSD to trade with, THRU to pay fees with</p>
-        </div>
-      </div>
-
-      <div className="rows" style={{ marginTop: 12 }}>
-        <div className="row">
-          <span>
-            <b>tUSD</b>{' '}
-            <span className="fine">what pools and launches are priced in</span>
-          </span>
-          <button className="btn" onClick={claimTokens} disabled={busy !== null}>
-            {busy === 'tusd' ? 'Sending' : 'Claim 500'}
-          </button>
-        </div>
-        <div className="row">
-          <span>
-            <b>THRU</b>{' '}
-            <span className="fine">
-              the network's own asset, {wallet.native?.toString() ?? '0'} held
-            </span>
-          </span>
-          <button className="btn ghost" onClick={claimGas} disabled={busy !== null}>
-            {busy === 'thru' ? 'Claiming' : 'Claim 10,000'}
-          </button>
-        </div>
-      </div>
-
-      {note && <p className="notice" style={{ marginTop: 14 }}>{note}</p>}
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-
-      <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-        tUSD is 500 a day per account, capped at 10,000 held at once, and it opens your token
-        account for you if you do not have one. The daily limit is read off the chain rather than
-        remembered by a server, so refreshing does not reset it. THRU comes from Thru's own faucet
-        rather than from ThruScan, so it is capped at 10,000 a time by the network and you can come
-        back for more.
-      </p>
-    </section>
-  )
-}
-
-function Danger({ wallet }) {
-  const [shown, setShown] = useState(null)
-
-  return (
-    <section className="card">
-      <h2 className="h2">Your key</h2>
-      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        Export it and you can use the same account from the CLI, or bring it back after clearing
-        this browser. Anyone who sees it controls the account, so treat the screen as public.
-      </p>
-
-      <div className="form-row" style={{ marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
-        <button className="btn ghost" onClick={() => setShown(shown ? null : exportPrivateKey())}>
-          {shown ? 'Hide key' : 'Show private key'}
-        </button>
-        <button
-          className="btn ghost"
-          onClick={() => { locked(); setState({ unlocked: false, balances: {} }) }}
-        >
-          Lock
-        </button>
-        <button
-          className="btn ghost"
-          onClick={() => {
-            if (confirm('This deletes the key from this browser. Export it first if you want it back. Continue?')) {
-              forgetWallet()
-              setState({ address: null, unlocked: false, registered: false, balances: {} })
-            }
-          }}
-        >
-          Forget this wallet
-        </button>
-      </div>
-
-      {shown && (
-        <div className="stack" style={{ marginTop: 14 }}>
-          <div className="codewrap"><code className="mono" style={{ wordBreak: 'break-all' }}>{shown}</code></div>
-          <Copyable text={shown} label="Copy private key" />
-        </div>
-      )}
-    </section>
-  )
-}
-
-const STEP_LABEL = {
-  registering: 'Registering',
-  waiting: 'Waiting for the chain',
-  funding: 'Claiming THRU for fees',
-}
-
-function LiveWallet({ wallet, mints }) {
-  const [step, setStep] = useState(null)
-  const [error, setError] = useState(null)
-
-  useEffect(() => { wallet.refresh(mints.map((m) => m.mint)) /* eslint-disable-next-line */ }, [])
-
-  const register = async () => {
-    setStep('registering'); setError(null)
-    try {
-      await registerAndFund(setStep)
-      await wallet.refresh(mints.map((m) => m.mint))
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setStep(null)
-    }
-  }
-
-  return (
-    <>
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <p className="eyebrow">Your address</p>
-            <h2 className="h2 mono" style={{ wordBreak: 'break-all' }}>{wallet.address}</h2>
-          </div>
-          <Copyable text={wallet.address} label="Copy address" />
-        </div>
-
-        {!wallet.registered && (
-          <>
-            <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-              This key exists, but it has no account on chain yet. A brand new key cannot pay its
-              own way into existence, so ThruScan pays for that one transaction. It is authorised by
-              a signature made here with your key, which names this chain and this payer, so it
-              cannot be reused for anything else. Straight after, the wallet claims THRU from Thru's
-              own faucet and starts paying its own fees.
-            </p>
-            <button className="btn" style={{ marginTop: 14 }} onClick={register} disabled={step !== null}>
-              {step ? `${STEP_LABEL[step] ?? 'Working'}…` : 'Register on chain'}
-            </button>
-          </>
-        )}
-
-        {wallet.registered && (
-          <div className="rows" style={{ marginTop: 12 }}>
-            <div className="row"><span>Status</span><b>Live on alphanet</b></div>
-            <div className="row">
-              <span>Fees</span>
-              <b className="mono">
-                {wallet.native > 0n ? `${wallet.native.toString()} THRU` : 'unfunded, paying zero'}
-              </b>
-            </div>
-            <div className="row">
-              <span>Explorer</span>
-              <a className="mono" href={`/account/${wallet.address}`}>{short(wallet.address)}</a>
-            </div>
-          </div>
-        )}
-
-        {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      </section>
-
-      {wallet.registered && <TopUpCard />}
-      {wallet.registered && <Balances wallet={wallet} mints={mints} />}
-      <BackupCard wallet={wallet} />
-      <Danger wallet={wallet} />
-    </>
-  )
-}
-
-/* ---------- the page ---------- */
-
-export function WalletPage() {
-  const wallet = useWallet()
-  const [, bump] = useState(0)
-  const mints = useMemo(() => {
-    // tUSD and WTHRU always, since those are the two quote assets, then
-    // whatever else this wallet has touched.
-    const known = [{ mint: TUSD_MINT }, { mint: WTHRU_MINT }]
-    for (const mint of Object.keys(wallet.balances)) {
-      if (!known.some((k) => k.mint === mint)) known.push({ mint })
-    }
-    return known
-  }, [wallet.balances])
-
-  return (
-    <div className="wrap">
-      <p className="eyebrow">Beta</p>
-      <h1 className="h1">Wallet</h1>
-      <p className="lede">
-        A wallet that lives in this browser, so you can trade on ThruScan without a terminal. The
-        key is made here and encrypted with your password before it is stored. It is never sent
-        anywhere, and no part of ThruScan can move your tokens: every trade is signed by you.
-      </p>
-
-      {!hasWallet() && <CreateWallet onDone={() => bump((n) => n + 1)} />}
-      {hasWallet() && !wallet.unlocked && <UnlockWallet onDone={() => bump((n) => n + 1)} />}
-      {hasWallet() && wallet.unlocked && <LiveWallet wallet={wallet} mints={mints} />}
-
-      <section className="card">
-        <h2 className="h2">What this is, and what it is not</h2>
-        <div className="rows" style={{ marginTop: 12 }}>
-          <div className="row">
-            <span>Custody</span>
-            <span className="fine">Yours. The key is in this browser and nowhere else</span>
-          </div>
-          <div className="row">
-            <span>Recovery</span>
-            <span className="fine">Only by exporting the key. There is no reset</span>
-          </div>
-          <div className="row">
-            <span>Paid for by ThruScan</span>
-            <span className="fine">Registering, and opening token accounts</span>
-          </div>
-          <div className="row">
-            <span>Paid for and signed by you</span>
-            <span className="fine">Every swap, buy, sell and launch</span>
-          </div>
-          <div className="row">
-            <span>When mainnet comes</span>
-            <span className="fine">Export the key, or move to Privy or Thru's own wallet</span>
-          </div>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-/* ---------- what the trading pages use ---------- */
-
-/**
- * Sign and send one of the builder payloads from swap.js or pad.js, then wait
- * for the chain's verdict. Returns { signature, succeeded }.
- *
- * The builders already sort the accounts and derive their indices from the
- * sorted order, so their readWrite and readOnly go straight through.
- */
-export async function sendBuilt(program, built) {
-  const signature = await signAndSend({
-    program,
-    readWrite: built.readWrite,
-    readOnly: built.readOnly,
-    data: built.data,
+    return 0
   })
-  const result = await waitForResult(signature)
-  return { signature, ...result }
 }
 
-export { deriveTokenAccount, openTokenAccount, isUnlocked, currentAddress }
+function concat(...parts) {
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const p of parts) { out.set(p, at); at += p.length }
+  return out
+}
+
+export function bytesToHex(b) {
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+}
+
+export function hexToBytes(hex) {
+  const clean = String(hex).trim().replace(/^0x/, '')
+  if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length % 2) throw new Error('Not valid hex.')
+  const out = new Uint8Array(clean.length / 2)
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16)
+  return out
+}
+
+const b64 = {
+  encode: (bytes) => btoa(String.fromCharCode(...bytes)),
+  decode: (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0)),
+}
+
+async function sha256(bytes) {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+}
+
+/** A token account's address is fixed by its owner and mint, so the wallet can
+ *  find every balance without anyone pasting anything. Seed is 32 zero bytes,
+ *  which is what the CLI's derive-token-account uses. Checked against it. */
+export async function deriveTokenAccount(mint, owner, seed = new Uint8Array(32)) {
+  const digest = await sha256(concat(toBytes(owner), toBytes(mint), seed))
+  return deriveProgramAddress({ programAddress: TOKEN_PROGRAM, seed: digest }).address
+}
+
+async function api(action, body = {}) {
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, ...body }),
+  })
+  let data
+  try { data = await res.json() } catch { throw new Error(`The server replied with ${res.status}.`) }
+  if (!res.ok || data?.ok === false) throw new Error(data?.error || `Request failed (${res.status}).`)
+  return data
+}
+
+/* ---------- encryption at rest ----------
+   PBKDF2 to turn a password into a key, then AES-GCM. Both are in every
+   browser's WebCrypto, so this pulls in no dependency and no code of mine is
+   between the password and the cipher. The iteration count is deliberately
+   high: this key sits in localStorage where anything running on the page can
+   read the ciphertext, so the password is the only real barrier. */
+
+const PBKDF2_ROUNDS = 310_000
+
+async function keyFromPassword(password, salt) {
+  const material = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'],
+  )
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ROUNDS, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+/* ---------- stored wallet ---------- */
+
+export function storedWallet() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.address ? parsed : null
+  } catch { return null }
+}
+
+export function hasWallet() { return storedWallet() !== null }
+
+/** Removes the wallet from this browser. The key is gone unless it was
+ *  exported, which is why every caller should make the visitor confirm. */
+export function forgetWallet() {
+  localStorage.removeItem(STORE_KEY)
+  locked()
+}
+
+/* ---------- the unlocked key, in memory only ---------- */
+
+let session = null   // { address, publicKey, privateKey }
+
+export function isUnlocked() { return session !== null }
+export function currentAddress() { return session?.address ?? storedWallet()?.address ?? null }
+export function locked() { if (session?.privateKey) session.privateKey.fill(0); session = null }
+
+async function persist(address, publicKey, privateKey, password, phrase = null) {
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const key = await keyFromPassword(password, salt)
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, privateKey))
+
+  /* The phrase is stored under the same password as the key, with its own
+     nonce. It is not derivable from the key, so a wallet that loses it can
+     never get it back, which is why it is kept at all rather than shown once
+     and discarded. A wallet imported from raw hex has none, and says so. */
+  let phraseIv = null
+  let phraseCt = null
+  if (phrase) {
+    const piv = crypto.getRandomValues(new Uint8Array(12))
+    const bytes = new TextEncoder().encode(phrase)
+    phraseCt = b64.encode(new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: piv }, key, bytes)))
+    phraseIv = b64.encode(piv)
+  }
+
+  localStorage.setItem(STORE_KEY, JSON.stringify({
+    v: 2,
+    address,
+    publicKey: b64.encode(publicKey),
+    salt: b64.encode(salt),
+    iv: b64.encode(iv),
+    ct: b64.encode(ct),
+    phraseIv,
+    phraseCt,
+    createdAt: new Date().toISOString(),
+  }))
+}
+
+/** Make a new wallet. The key exists only in this tab until it is persisted,
+ *  and the caller decides whether to also register it on chain. */
+export async function createWallet(password) {
+  if (!password || password.length < 8) throw new Error('Use a password of at least 8 characters.')
+
+  /* Born from a phrase rather than from raw randomness, so it can be written
+     down and carried. Same scheme Thru's own HD wallet uses, so the phrase is
+     not ThruScan-specific. */
+  const phrase = newPhrase()
+  const pair = accountFromPhrase(phrase)
+  await persist(pair.address, pair.publicKey, pair.privateKey, password, phrase)
+  session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey, phrase }
+  return { address: pair.address, phrase }
+}
+
+/** Restore from twelve words, on any device. */
+export async function importPhrase(phrase, password) {
+  if (!password || password.length < 8) throw new Error('Use a password of at least 8 characters.')
+  const problem = phraseProblem(phrase)
+  if (problem) throw new Error(problem)
+
+  const pair = accountFromPhrase(phrase)
+  const clean = String(phrase).trim().toLowerCase().split(/\s+/).join(' ')
+  await persist(pair.address, pair.publicKey, pair.privateKey, password, clean)
+  session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey, phrase: clean }
+  return { address: pair.address }
+}
+
+/** Bring an existing key in, so a CLI identity and the browser can be the same
+ *  account rather than two half-funded ones. */
+export async function importWallet(privateKeyHex, password) {
+  if (!password || password.length < 8) throw new Error('Use a password of at least 8 characters.')
+  const privateKey = hexToBytes(privateKeyHex)
+  if (privateKey.length !== 32) throw new Error('A Thru private key is 32 bytes, so 64 hex characters.')
+  const publicKey = await keys.fromPrivateKey(privateKey)
+  const address = Pubkey.from(publicKey).toString()
+  await persist(address, publicKey, privateKey, password)
+  session = { address, publicKey, privateKey }
+  return { address }
+}
+
+export async function unlock(password) {
+  const stored = storedWallet()
+  if (!stored) throw new Error('There is no wallet in this browser.')
+  const salt = b64.decode(stored.salt)
+  const iv = b64.decode(stored.iv)
+  const key = await keyFromPassword(password, salt)
+  let privateKey
+  try {
+    privateKey = new Uint8Array(
+      await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, b64.decode(stored.ct)),
+    )
+  } catch {
+    throw new Error('Wrong password.')
+  }
+  let phrase = null
+  if (stored.phraseCt && stored.phraseIv) {
+    try {
+      const bytes = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: b64.decode(stored.phraseIv) }, key, b64.decode(stored.phraseCt),
+      )
+      phrase = new TextDecoder().decode(bytes)
+    } catch { /* the key decrypted, so a phrase that will not is not fatal */ }
+  }
+
+  session = { address: stored.address, publicKey: b64.decode(stored.publicKey), privateKey, phrase }
+  return { address: stored.address }
+}
+
+/** The whole point of holding your own key is being able to take it with you. */
+export function exportPrivateKey() {
+  if (!session) throw new Error('Unlock the wallet first.')
+  return bytesToHex(session.privateKey)
+}
+
+/**
+ * The twelve words, if this wallet has them.
+ *
+ * Wallets made before phrases existed, and any imported from raw hex, do not.
+ * They are still perfectly usable; they just cannot be moved by writing
+ * something down, which is worth telling their owner rather than hiding.
+ */
+export function exportPhrase() {
+  if (!session) throw new Error('Unlock the wallet first.')
+  return session.phrase ?? null
+}
+
+export function hasPhrase() {
+  const stored = storedWallet()
+  return Boolean(stored?.phraseCt)
+}
+
+function requireSession() {
+  if (!session) throw new Error('Unlock the wallet first.')
+  return session
+}
+
+/* ---------- on chain ---------- */
+
+/** Ask the sponsor to bring this key's account into existence. The signature
+ *  below is the only thing that authorises it, and it is made here. */
+export async function registerOnChain() {
+  const { address, publicKey, privateKey } = requireSession()
+
+  const { chainId, sponsor, exists } = await api('prepare', { address })
+  if (exists) return { already: true, address }
+
+  const message = eoa.buildEOACreateMessage(chainId, toBytes(sponsor), publicKey)
+  // Signed raw. See the note at the top: the message carries its own tag, so
+  // slicing that tag off and re-adding it through the EOA_CREATE domain gives
+  // exactly the raw signature the program verifies.
+  const signature = await signWithDomain(
+    message.slice(16), privateKey, publicKey, SIGNATURE_DOMAIN_EOA_CREATE,
+  )
+
+  const { signature: txn } = await api('create', {
+    address,
+    signature: b64.encode(signature),
+  })
+  return { already: false, address, txn }
+}
+
+/**
+ * Register, wait for the account to actually appear, then fund it.
+ *
+ * The wait is not optional. Creation lands a slot or two after it is submitted,
+ * and a claim sent before then fails as though the account did not exist,
+ * because it does not. `onStep` lets the page say which of the three things is
+ * happening rather than showing one long spinner.
+ */
+export async function registerAndFund(onStep = () => {}) {
+  onStep('registering')
+  const { already, address } = await registerOnChain()
+
+  if (!already) {
+    onStep('waiting')
+    let live = false
+    for (let i = 0; i < 12 && !live; i++) {
+      await new Promise((r) => setTimeout(r, 1800))
+      live = await accountExists(address)
+    }
+    if (!live) throw new Error('The account did not appear. It may still land; try refreshing in a moment.')
+  }
+
+  // Funding is a nicety, not a requirement, so a failure here should not look
+  // like a failure to register. The wallet still works at a zero fee.
+  try {
+    if ((await nativeBalance()) === 0n) {
+      onStep('funding')
+      await claimNativeThru()
+    }
+  } catch { /* leave it unfunded rather than failing the whole flow */ }
+
+  return { address }
+}
+
+/** Token accounts hold balances; the wallet address itself holds none. The
+ *  sponsor opens them because creating an account needs a state proof, and
+ *  ownership is recorded in the account rather than proved by a signature. */
+export async function openTokenAccount(mint) {
+  const { address } = requireSession()
+  return api('open', { owner: address, mint })
+}
+
+export async function tokenBalances(mints) {
+  const { address } = requireSession()
+  const { balances } = await api('balances', { owner: address, mints })
+  return balances
+}
+
+export async function accountExists(address) {
+  const { exists } = await api('prepare', { address })
+  return exists
+}
+
+/**
+ * Sign a transaction with the visitor's own key and send it.
+ *
+ * `readWrite` and `readOnly` must already be in the sorted order the
+ * instruction's indices were computed against; every builder in swap.js and
+ * pad.js returns them that way, so pass them straight through.
+ */
+export async function signAndSend({
+  program, readWrite = [], readOnly = [], data,
+  computeUnits = 300_000_000, stateUnits = 60_000, memoryUnits = 60_000,
+}) {
+  const { address, privateKey } = requireSession()
+  const { nonce, startSlot, chainId, balance } = await api('prepare', { address })
+
+  // Pay a real fee when there is a balance to pay it from, and zero when there
+  // is not. A fee above the balance fails the transaction outright rather than
+  // being taken from elsewhere, so a brand new account has to start at zero.
+  // Alphanet accepts zero today; funding the wallet means it does not have to.
+  const fee = BigInt(balance ?? 0) > 0n ? 1n : 0n
+
+  const { rawTransaction } = await new TransactionBuilder().buildAndSign({
+    feePayer: { publicKey: address, privateKey },
+    program,
+    accounts: { readWriteAccounts: readWrite, readOnlyAccounts: readOnly },
+    header: {
+      fee,
+      nonce: BigInt(nonce),
+      startSlot: BigInt(startSlot),
+      expiryAfter: 100,
+      chainId,
+      computeUnits,
+      stateUnits,
+      memoryUnits,
+    },
+    instructionData: data,
+  })
+
+  const { signature } = await api('submit', { raw: b64.encode(rawTransaction) })
+  return signature
+}
+
+/**
+ * Claim native THRU from Thru's own faucet, signed and paid for by this wallet.
+ *
+ * This is the step that takes the wallet off its training wheels. Until it has
+ * a native balance it cannot pay a fee at all, so every transaction has to go
+ * out at zero, which alphanet allows and mainnet will not. One claim and the
+ * wallet is paying its own way through the same code path it will use later.
+ *
+ * Nothing about it is sponsored. The faucet pays whoever paid the fee, so a
+ * wallet can only ever claim for itself.
+ */
+export async function claimNativeThru(amount = NATIVE_FAUCET_MAX) {
+  const capped = amount > NATIVE_FAUCET_MAX ? NATIVE_FAUCET_MAX : amount
+
+  const data = new Uint8Array(16)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 1, true)          // WITHDRAW
+  dv.setUint32(4, 2, true)          // the faucet account, the only read-write, at index 2
+  dv.setBigUint64(8, capped, true)
+
+  return signAndSend({
+    program: NATIVE_FAUCET_PROGRAM,
+    readWrite: [NATIVE_FAUCET_ACCOUNT],
+    data,
+    computeUnits: 300_000,
+    stateUnits: 10_000,
+    memoryUnits: 10_000,
+  })
+}
+
+/** Claim tUSD. The endpoint opens the token account first if there is not one. */
+export async function claimTusd() {
+  const { address } = requireSession()
+  return api('faucet', { owner: address })
+}
+
+/* ---------- giving it back ----------
+ *
+ * A testnet faucet is a shared tap, and someone who is done with 9,000 tUSD is
+ * holding it away from everyone else. Both of these are signed by the wallet
+ * itself, which is the whole point: nobody can push a return on your behalf.
+ *
+ * The two work differently because the two assets are different.
+ *
+ * tUSD is burned. ThruScan's sponsor is the mint authority, so the faucet does
+ * not hold a pile it hands out; it mints on demand and the supply goes up. The
+ * exact opposite of that is a burn, which takes the tokens out of existence and
+ * puts the supply back where it was. Sending them to some "faucet wallet"
+ * instead would only move the pile somewhere else.
+ *
+ *   BURN: [0x04][account u16][mint u16][authority u16][amount u64]
+ *
+ * recovered from a live transaction: two read-write accounts, one 115 bytes
+ * (a mint) and one 73 (a token account), with the indices in that order.
+ *
+ * THRU really is transferred, because Thru's own faucet is an account with a
+ * balance, and putting THRU back into it is the thing that lets the next person
+ * draw it out.
+ *
+ *   TRANSFER: [u32 op = 1][u64 amount][u16 from_idx][u16 to_idx]
+ *
+ * recovered by decoding twelve live transfers: the op and the trailing index
+ * pair were identical across all of them and the u64 tracked the amount.
+ */
+
+const TOKEN_OP_BURN = 0x04
+
+/** Burn tokens the wallet holds. Used to hand tUSD back to the faucet. */
+export async function burnToken(mint, amount) {
+  const { address } = requireSession()
+  const account = await deriveTokenAccount(mint, address)
+
+  const readWrite = sortAddresses([mint, account])
+  const at = (a) => 2 + readWrite.indexOf(a)
+
+  const data = new Uint8Array(15)
+  const dv = new DataView(data.buffer)
+  dv.setUint8(0, TOKEN_OP_BURN)
+  dv.setUint16(1, at(account), true)
+  dv.setUint16(3, at(mint), true)
+  dv.setUint16(5, 0, true)             // the authority is the fee payer, index 0
+  dv.setBigUint64(7, BigInt(amount), true)
+
+  return signAndSend({
+    program: TOKEN_PROGRAM,
+    readWrite,
+    data,
+    computeUnits: 1_000_000,
+    stateUnits: 20_000,
+    memoryUnits: 20_000,
+  })
+}
+
+/** Send native THRU somewhere. Used to put it back in Thru's faucet. */
+export async function sendNativeThru(to, amount) {
+  const data = new Uint8Array(16)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 1, true)             // TRANSFER
+  dv.setBigUint64(4, BigInt(amount), true)
+  dv.setUint16(12, 0, true)            // from: the fee payer
+  dv.setUint16(14, 2, true)            // to: the only read-write account
+
+  return signAndSend({
+    program: EOA_PROGRAM,
+    readWrite: [to],
+    data,
+    computeUnits: 300_000,
+    stateUnits: 10_000,
+    memoryUnits: 10_000,
+  })
+}
+
+/** Put native THRU back in the faucet everyone draws from. */
+export async function returnNativeThru(amount) {
+  return sendNativeThru(NATIVE_FAUCET_ACCOUNT, amount)
+}
+
+/**
+ * Make the three accounts a launch needs.
+ *
+ * All three need creation state proofs, which a browser cannot produce, so
+ * ThruScan makes them. It does not make the launch: that one is signed here,
+ * because thrupad records the launch transaction's fee payer as the creator and
+ * pays the fees to them.
+ */
+export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
+  const { address } = requireSession()
+  return api('pad-accounts', { owner: address, symbol, quoteMint, padProgram })
+}
+
+/* ---------- names ----------
+   Claiming is sponsored, because registering under a root needs that root's
+   authority and ThruScan holds it. Records are not: the name service checks the
+   DOMAIN's owner, which is the visitor, so only they can write to their own
+   name. That split is a feature. It means ThruScan can hand out names it cannot
+   afterwards edit. */
+
+const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+const KEY_FIELD = 32
+const VALUE_FIELD = 256
+
+export async function checkName(name) {
+  return api('name-check', { name })
+}
+
+export async function claimName(name) {
+  const { address } = requireSession()
+  return api('name-register', { name, owner: address })
+}
+
+/**
+ * APPEND_RECORD, signed by the name's owner.
+ *
+ *   [u32 2][u16 domain][u16 authority][u32 key_len][32 key][u32 value_len][256 value]
+ *
+ * The domain is the only read-write account, so it is at index 2, and the
+ * authority is the fee payer at 0.
+ */
+export async function setNameRecord(domainAccount, key, value) {
+  const keyBytes = new TextEncoder().encode(key)
+  const valueBytes = new TextEncoder().encode(value)
+  if (!keyBytes.length || keyBytes.length > KEY_FIELD) throw new Error('Record keys are 1 to 32 bytes.')
+  if (valueBytes.length > VALUE_FIELD) throw new Error('Record values are at most 256 bytes.')
+
+  const data = new Uint8Array(4 + 4 + 4 + KEY_FIELD + 4 + VALUE_FIELD)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 2, true)
+  dv.setUint16(4, 2, true)
+  dv.setUint16(6, 0, true)
+  dv.setUint32(8, keyBytes.length, true)
+  data.set(keyBytes, 12)
+  dv.setUint32(12 + KEY_FIELD, valueBytes.length, true)
+  data.set(valueBytes, 12 + KEY_FIELD + 4)
+
+  return signAndSend({
+    program: NAME_SERVICE_PROGRAM,
+    readWrite: [domainAccount],
+    data,
+  })
+}
+
+/** The wallet's own native balance, in base units. */
+export async function nativeBalance() {
+  const { address } = requireSession()
+  const { balance } = await api('prepare', { address })
+  return BigInt(balance ?? 0)
+}
+
+/** Poll until the chain has a verdict, so the UI can say what happened rather
+ *  than leaving a spinner running. */
+export async function waitForResult(signature, timeoutMs = 20_000) {
+  const until = Date.now() + timeoutMs
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 1500))
+    try {
+      const { status } = await api('status', { signature })
+      if (status && status.settled) return status
+    } catch { /* not indexed yet */ }
+  }
+  return { settled: false }
+}
