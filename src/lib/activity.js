@@ -65,12 +65,14 @@ export function describe(item, me) {
       const nop = u32(b, 0)
       if (nop === 1) {
         const n = registeredName(b)
-        return { label: n ? `Registered ${n}.${ROOT_SUFFIX}` : 'Registered a name' }
+        // The name service is shared; only names under our root end in .id.
+        const ours = item.rw?.includes(ROOT_REGISTRAR)
+        return { label: n ? `Registered ${ours ? `${n}.${ROOT_SUFFIX}` : `"${n}"`}` : 'Registered a name' }
       }
       return { label: ({ 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[nop] ?? 'Name service' }
     }
     case TOKEN_PROGRAM: {
-      if (op === 2) return { label: byMe ? 'Sent tokens' : 'Received tokens' }
+      if (op === 2) return { label: !me ? 'Token transfer' : byMe ? 'Sent tokens' : 'Received tokens' }
       if (op === 3) {
         const mint = item.rw.find((a) => a === TUSD_MINT || a === WTHRU_MINT)
         return { label: !byMe && mint === TUSD_MINT ? 'tUSD from faucet' : 'Minted tokens' }
@@ -82,7 +84,7 @@ export function describe(item, me) {
     case EOA_PROGRAM: {
       const eop = u32(b, 0)
       if (eop === 0) return { label: 'Account created' }
-      if (eop === 1) return { label: byMe ? 'Sent THRU' : 'Received THRU' }
+      if (eop === 1) return { label: !me ? 'THRU transfer' : byMe ? 'Sent THRU' : 'Received THRU' }
       return { label: 'Account program' }
     }
     default:
@@ -117,7 +119,7 @@ export async function namesFromHistory(address, maxPages = 6) {
     for (const it of items) {
       if (it.program !== NAME_SERVICE_PROGRAM || it.ok === false) continue
       const b = bytesOf(it.data)
-      if (u32(b, 0) !== 1) continue
+      if (u32(b, 0) !== 1 || !it.rw.includes(ROOT_REGISTRAR)) continue
       const name = registeredName(b)
       const account = it.rw.find((a) => a !== ROOT_REGISTRAR)
       if (name && account && !found.has(name)) found.set(name, account)

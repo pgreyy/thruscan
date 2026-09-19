@@ -10,6 +10,7 @@ import { GameIdentity } from './components/GameIdentity.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
+import { HomePage } from './pages/Home.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -3105,7 +3106,7 @@ export default function App() {
         <WalletPill />
         <Routes>
           <Route path="/" element={<Tabs tabs={[
-            { key: 'explorer', label: 'Explorer', el: <ExplorerPage /> },
+            { key: 'explorer', label: 'Explorer', el: <HomePage /> },
             { key: 'wall', label: 'Wall', el: <WallV2 /> },
           ]} />} />          <Route path="/wall" element={<WallV2 />} />
           <Route path="/tx/:id" element={<ExplorerAt />} />

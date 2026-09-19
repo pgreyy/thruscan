@@ -233,6 +233,75 @@ function serializeHistoryItem(tx) {
   }
 }
 
+/* ---------- overview ----------
+   The explorer's front page: the newest blocks and transactions on the whole
+   chain, in one round trip. Each list is a single query to the node. */
+
+function tsMs(t) {
+  return t ? Number(t.seconds) * 1000 + Math.floor((t.nanos ?? 0) / 1e6) : null
+}
+
+async function overview(client, blockCount = 60, txCount = 25) {
+  const [blocks, txs, status] = await Promise.all([
+    withTimeout(client.ctx.query.listBlocks({ page: { pageSize: blockCount }, view: 2 }), CALL_TIMEOUT_MS),
+    withTimeout(client.ctx.query.listTransactions({ page: { pageSize: 100 } }), CALL_TIMEOUT_MS),
+    withTimeout(client.node.getStatus(), CALL_TIMEOUT_MS).catch(() => null),
+  ])
+
+  const perSlot = {}
+  const items = (txs.transactions ?? []).map((p) => Transaction.fromProto(p))
+  for (const t of items) {
+    const k = t.slot?.toString()
+    perSlot[k] = (perSlot[k] ?? 0) + 1
+  }
+
+  const blockRows = (blocks.blocks ?? []).map((b) => {
+    const slot = b.header?.slot?.toString() ?? null
+    return {
+      slot,
+      time: tsMs(b.header?.blockTime),
+      producer: b.header?.producer?.value ? Pubkey.from(b.header.producer.value).toThruFmt() : null,
+      compute: b.footer?.consumedComputeUnits?.toString() ?? '0',
+      txs: perSlot[slot] ?? null,
+    }
+  })
+  const times = Object.fromEntries(blockRows.map((b) => [b.slot, b.time]))
+
+  // Counts are only known for slots the transaction list reaches back to.
+  const oldestTxSlot = items.length ? items[items.length - 1].slot : null
+  for (const b of blockRows) {
+    if (b.txs === null && oldestTxSlot !== null && BigInt(b.slot) > oldestTxSlot) b.txs = 0
+  }
+
+  const latest = items.slice(0, txCount).map((t) => {
+    const row = serializeHistoryItem(t)
+    row.time = times[row.slot] ?? null
+    return row
+  })
+
+  const timed = blockRows.filter((b) => b.time)
+  const blockTime = timed.length > 1
+    ? (timed[0].time - timed[timed.length - 1].time) / (Number(BigInt(timed[0].slot) - BigInt(timed[timed.length - 1].slot)) || 1)
+    : null
+
+  // Throughput over the slots the transaction list covers, timed by the
+  // average block time, since the oldest of those blocks may not be listed.
+  let tps = null
+  if (items.length > 1 && blockTime) {
+    const span = Number(items[0].slot - items[items.length - 1].slot) + 1
+    tps = items.length / ((span * blockTime) / 1000)
+  }
+
+  return {
+    finalized: status?.finalizedSlot?.toString() ?? blockRows[0]?.slot ?? null,
+    executed: status?.locallyExecutedSlot?.toString() ?? null,
+    blockTimeMs: blockTime,
+    tps,
+    blocks: blockRows,
+    transactions: latest,
+  }
+}
+
 function json(res, status, body, { cacheSeconds = 0 } = {}) {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -331,6 +400,11 @@ export default async function handler(req, res) {
         )
       }
 
+
+      case 'overview': {
+        const data = await overview(client)
+        return json(res, 200, { ok: true, ...data }, { cacheSeconds: 2 })
+      }
 
       case 'history': {
         const addresses = String(params.addresses ?? params.address ?? '')
