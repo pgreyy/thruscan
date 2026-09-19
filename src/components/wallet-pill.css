@@ -1085,3 +1085,19 @@ button[aria-current="true"] {
 /* A name that is taken, but taken by you. Not an error and not an invitation. */
 .name-field[data-state="yours"] { border-color: var(--signal, #2f55e0); background: var(--signal-soft, #edf0fd); }
 .name-field[data-state="yours"] .name-verdict { background: rgba(47, 85, 224, 0.16); color: var(--signal, #2f55e0); }
+
+/* Builders: findings as a tight two-part list, title then one line. */
+.findings { display: grid; gap: 0; }
+.finding {
+  display: grid;
+  grid-template-columns: minmax(180px, 34%) 1fr;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line, rgba(127,127,127,.18));
+  line-height: 1.5;
+}
+.finding:first-child { border-top: 0; padding-top: 0; }
+.finding b { font-weight: 600; }
+@media (max-width: 640px) {
+  .finding { grid-template-columns: 1fr; }
+}

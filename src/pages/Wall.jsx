@@ -232,9 +232,7 @@ function Composer({ onPosted, fixedTo = null }) {
       <section className="card">
         <h2 className="h2">Open a wallet to post</h2>
         <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Posts are signed by whoever sends them, which is what makes the address on a message
-          worth anything. <Link to="/wallet">Open a wallet</Link>, which takes about fifteen
-          seconds, and your messages are signed by you rather than by us.
+          Posts are signed by your wallet. <Link to="/wallet">Open one</Link>.
         </p>
       </section>
     )
@@ -253,16 +251,10 @@ function Composer({ onPosted, fixedTo = null }) {
         </div>
       </div>
 
-      {!name && (
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          You are posting as your address. <Link to="/names">Claim a .{ROOT_SUFFIX} name</Link> and
-          it becomes your label here and everywhere else, without you typing it each time.
-        </p>
-      )}
 
       {!fixedTo && (
         <div className="form-row" style={{ marginTop: 14 }}>
-          <label className="label">To, if anyone</label>
+          <label className="label">To (optional)</label>
           <input
             className="field mono"
             value={toInput}
@@ -274,11 +266,6 @@ function Composer({ onPosted, fixedTo = null }) {
             <p className="fine" style={{ margin: '6px 0 0' }}>
               Goes to <span className="mono">{short(resolved.address)}</span>
               {resolved.label ? `, which is ${resolved.label}` : ''}.
-            </p>
-          )}
-          {!toInput.trim() && (
-            <p className="fine" style={{ margin: '6px 0 0' }}>
-              Leave it empty and the message is public, which is what the wall has always been.
             </p>
           )}
         </div>
@@ -315,10 +302,7 @@ function Composer({ onPosted, fixedTo = null }) {
       )}
 
       <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-        Anyone can address a message to any account, the same way anyone can send one a
-        transaction, so arriving in someone's inbox is not a sign that they know you. Everything
-        here is public and permanent for as long as alphanet lives: the wall holds a fixed number
-        of messages and the oldest is overwritten when it fills.
+        Public. Anyone can message any address. Oldest posts are overwritten when the wall fills.
       </p>
     </section>
   )
@@ -332,9 +316,7 @@ function NotDeployed() {
       <section className="card">
         <h2 className="h2">Not deployed yet</h2>
         <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          The wall program that carries a recipient is written but is not on chain yet. Once it is
-          deployed and its two addresses are in <code className="mono">src/lib/addresses.js</code>,
-          this page reads it and messages work.
+          Wall program addresses are missing from <code className="mono">src/lib/addresses.js</code>.
         </p>
       </section>
     </div>
@@ -437,8 +419,8 @@ export function WallPage() {
           label: 'To you',
           badge: inbox.length || null,
           el: panel(inbox, you
-            ? 'Nothing has been addressed to you. Anyone can send here by putting your address or your name in the To field.'
-            : 'Open a wallet and anything addressed to it shows up here.'),
+            ? 'Nothing addressed to you yet.'
+            : 'Open a wallet to see messages to you.'),
         },
         { key: 'sent', label: 'Sent', el: panel(sent, 'You have not posted anything yet.'), badge: sent.length || null },
       ]}

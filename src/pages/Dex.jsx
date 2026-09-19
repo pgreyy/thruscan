@@ -215,11 +215,7 @@ function Execute({ program, needs, buildWith, cli, label, spend, onDone }) {
   if (!hasWallet()) {
     return (
       <>
-        <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
-          <Link to="/wallet">Open a wallet</Link> to do this in one click, or run it yourself: replace
-          the placeholder accounts with your own and <code className="mono">YOUR_KEY_NAME</code>{' '}
-          with your CLI key.
-        </p>
+        <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}><Link to="/wallet">Open a wallet</Link>, or run it from a terminal:</p>
         <CopyBlock text={cli} />
       </>
     )
@@ -252,10 +248,7 @@ function NotLive({ what }) {
   return (
     <section className="card">
       <h2 className="h2">{what} is not connected yet</h2>
-      <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>
-        The program is deployed on alphanet, but this page needs its addresses before it can read
-        anything. Set them in the site's environment variables and redeploy, and this page fills in.
-      </p>
+      <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>Not configured yet.</p>
     </section>
   )
 }
@@ -378,12 +371,7 @@ function TerminalFaucet() {
           Using your own CLI key instead
         </summary>
 
-        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-          Only needed if you are working from a terminal with a key you generated yourself. Your
-          public key is what <code className="mono">thru keys list</code> prints, and your key name
-          is whatever you called it when you ran <code className="mono">thru keys generate</code>.
-          Open this once to create a tUSD account; it prints an address.
-        </p>
+        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>Your public key is what <code className="mono">thru keys list</code> prints. Run this once, then paste the address it returns.</p>
         <CopyBlock text={setupCommand} label="Copy setup command" />
 
         <div className="stack" style={{ marginTop: 16 }}>
@@ -567,20 +555,12 @@ function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
         </div>
       </div>
 
-      <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>
-        Your fee is capped at 10% and is charged on every buy and sell, claimable at any time.
-        Opening liquidity is virtual: it sets the starting price without you putting anything in,
-        and a smaller number means a steeper curve. tUSD is where the liquidity is today; WTHRU is
-        wrapped native THRU, which is what will be worth something once the network distributes it.
-      </p>
+      <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>Your fee (max 10%) is charged on every trade and claimable any time.</p>
 
       {problem && <p className="fine" style={{ marginTop: 12 }}>{problem}</p>}
 
       {!hasWallet() && (
-        <p className="fine" style={{ marginTop: 12 }}>
-          <Link to="/wallet">Open a wallet</Link> first. The launch has to be signed by you, because
-          that is how the chain knows who the fees belong to.
-        </p>
+        <p className="fine" style={{ marginTop: 12 }}><Link to="/wallet">Open a wallet</Link> first.</p>
       )}
 
       <button
@@ -609,10 +589,7 @@ function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
 
       <details style={{ marginTop: 16 }}>
         <summary className="fine">Do it from the terminal instead</summary>
-        <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>
-          Three accounts, then the launch. The placeholders below are placeholders: substitute your
-          own key name and the addresses each step prints.
-        </p>
+        <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>Substitute your key name and the addresses each step prints.</p>
         <CopyBlock text={manual} label="Copy the setup commands" />
       </details>
     </section>
@@ -899,11 +876,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       )}
 
       {veryThin && (
-        <p className="notice bad" style={{ marginTop: 14 }}>
-          This pool is very thin, and a trade this size would move the price by{' '}
-          {(Number(impactBps) / 100).toFixed(0)}%. You would get back a small fraction of what the
-          rate suggests. Try an amount closer to a hundredth of the pool.
-        </p>
+        <p className="notice bad" style={{ marginTop: 14 }}>Thin pool: this trade moves the price {(Number(impactBps) / 100).toFixed(0)}% and you'd get far less than fair value. Trade smaller.</p>
       )}
       {thin && !veryThin && (
         <p className="notice" style={{ marginTop: 14 }}>
@@ -928,10 +901,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       </button>
 
       {!hasWallet() && (
-        <p className="fine" style={{ marginTop: 10 }}>
-          <Link to="/wallet">Open a wallet</Link> first. It takes about fifteen seconds and the key
-          never leaves your browser.
-        </p>
+        <p className="fine" style={{ marginTop: 10 }}><Link to="/wallet">Open a wallet</Link> first.</p>
       )}
 
       {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
@@ -1001,11 +971,8 @@ function PoolRow({ pool, balances, tickers, decimalsOf }) {
  * An LP token is a claim on a share of whatever the pool holds right now, not a
  * receipt for what you put in, and those are different numbers the moment
  * anyone trades. So this shows the claim: your percentage, and what that
- * percentage is worth in both tokens at this instant.
- *
- * It deliberately does not show a profit figure. Working one out honestly means
- * knowing what you deposited and when, which is history this page does not
- * have, and a made up number would be worse than none.
+ * percentage is worth in both tokens at this instant. No profit figure, since
+ * that needs deposit history this page does not have.
  */
 function Positions({ pools, balances, tickers, decimalsOf }) {
   const wallet = useWallet()
@@ -1044,11 +1011,7 @@ function Positions({ pools, balances, tickers, decimalsOf }) {
       </div>
 
       {mine.length === 0 ? (
-        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-          Deposit into a pool below and it appears here, with your share of it and what that share
-          is currently worth. If you have just deposited and this is still empty, the transaction
-          may not have settled yet: give it a few seconds and press Refresh.
-        </p>
+        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>Just deposited? It can take a few seconds. Press Refresh.</p>
       ) : (
         mine.map(({ pool, lp, shareA, shareB, pct }) => (
           <div className="position" key={pool.id}>
@@ -1072,11 +1035,7 @@ function Positions({ pools, balances, tickers, decimalsOf }) {
         ))
       )}
 
-      <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-        Your share is a claim on whatever the pool holds now, not a receipt for what you put in.
-        Those stop being the same number the moment anyone trades, which is the risk. The fees are
-        the compensation.
-      </p>
+      <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>Your share tracks what the pool holds now, not what you put in. Fees offset the difference.</p>
     </section>
   )
 }
@@ -1349,13 +1308,7 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
             </p>
           )}
 
-          <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-            Deposits go in at the pool's current ratio, so the second amount is worked out rather
-            than typed: putting in more of one side than the ratio wants means the pool simply keeps
-            the excess. What you get back later is your share of whatever the pool holds then, which
-            is not the same as what you put in. That difference is the risk, and the trading fees are
-            the compensation.
-          </p>
+          <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>Deposits go in at the pool's ratio, so the second amount is worked out for you.</p>
         </>
       )}
     </section>
@@ -1430,7 +1383,7 @@ export function SwapPage() {
   return (
     <Tabs
       title="Swap"
-      lede="A constant product market maker on Thru. Reserves live in token accounts the program itself owns, so no one signs for them and the price is whatever the ratio says it is."
+      lede="Constant-product pools on Thru."
       tabs={[
         { key: 'swap', label: 'Swap', el: swapTab },
         { key: 'liquidity', label: 'Liquidity', el: liquidityTab },
@@ -1568,12 +1521,6 @@ export function ReturnCard() {
       {note && <p className="notice" style={{ marginTop: 14 }}>{note}</p>}
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
-      <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-        Nothing here is worth anything and everything disappears at the next genesis reset, so this
-        is politeness rather than accounting. It matters because alphanet's faucets are finite while
-        the reset is not scheduled, and someone who has finished testing holding ten thousand of
-        each is the reason the next person's claim fails.
-      </p>
     </section>
   )
 }
@@ -1584,8 +1531,8 @@ function EmptyPools({ loading }) {
       <h2 className="h2">{loading ? 'Reading the chain' : 'No pools yet'}</h2>
       <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
         {loading
-          ? 'Fetching the pool registry.'
-          : 'Nothing has been listed on thruswap yet, so there is nothing to trade against or add to.'}
+          ? 'Reading the chain.'
+          : 'Nothing listed yet.'}
       </p>
     </section>
   )
@@ -1748,10 +1695,7 @@ export function LaunchDetail({ id }) {
       <div className="wrap wrap-top">
         <section className="card">
           <h2 className="h2">Not found</h2>
-          <p className="fine" style={{ marginTop: 10 }}>
-            No launch with that id is in the registry. It may have been on the previous pad, which
-            is still on chain but no longer the one this page reads.
-          </p>
+          <p className="fine" style={{ marginTop: 10 }}>No launch with that id.</p>
           <p style={{ marginTop: 12 }}><Link to="/launchpad">Back to the launchpad</Link></p>
         </section>
       </div>
@@ -1787,10 +1731,6 @@ export function LaunchDetail({ id }) {
           <div className="row"><span>Unclaimed creator fees</span><span className="mono">{fmt(launch.creatorFees)} {quote}</span></div>
         </div>
 
-        <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-          The whole supply went onto the curve at launch and there is no second instruction that
-          mints, so this number cannot go up. Not as a promise: as a property of the program.
-        </p>
       </section>
 
       <div className="stat-strip" style={{ marginTop: 16 }}>
@@ -1833,19 +1773,6 @@ export function LaunchDetail({ id }) {
             quote={quote}
           />
 
-          <section className="card">
-            <h2 className="h2">How this prices itself</h2>
-            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-              Every buy takes {launch.symbol} out of the curve and puts {quote} in, which raises the
-              price for the next buyer, and every sell does the reverse. Nobody sets the price and
-              nobody can move it except by trading against it.
-            </p>
-            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-              At {fmt(threshold)} {quote} raised the curve closes for good and its reserves seed a
-              pool on the swap page. That is graduation: the same tokens, priced by a pool anyone
-              can add to instead of by a curve that only sells.
-            </p>
-          </section>
         </div>
       </div>
     </div>
@@ -1909,17 +1836,11 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
         <div className="progress-track">
           <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
         </div>
-        <p className="fine" style={{ marginTop: 8, lineHeight: 1.6 }}>
-          {fmt(raised)} of {fmt(threshold)} {quote} raised. At the threshold the curve closes and
-          its reserves move to a pool on the swap page.
-        </p>
+        <p className="fine" style={{ marginTop: 8, lineHeight: 1.6 }}>{fmt(raised)} of {fmt(threshold)} {quote} raised</p>
       </div>
 
       {launch.graduated ? (
-        <p className="notice">
-          This curve is frozen. It raised enough to graduate, and its reserves are ready to seed a
-          pool. Trade it on the swap page instead.
-        </p>
+        <p className="notice">Graduated. Trade it on the swap page.</p>
       ) : (
         <>
           <div className="inline" style={{ marginBottom: 12 }}>
@@ -1958,10 +1879,7 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
           )}
 
           {tax > 0n && (
-            <p className="notice" style={{ marginTop: 12 }}>
-              Anti-snipe tax is {(Number(tax) / 100).toFixed(1)}% right now and falling to zero. It
-              is paid to nobody and stays in the curve, so waiting a few seconds gets you more.
-            </p>
+            <p className="notice" style={{ marginTop: 12 }}>Anti-snipe tax {(Number(tax) / 100).toFixed(1)}%, falling to zero in seconds.</p>
           )}
 
           {built && (
@@ -2047,10 +1965,7 @@ export function LaunchpadPage() {
           {creating ? 'Close' : 'Create a token'}
         </button>
       </div>
-      <p className="lede">
-        Every launch puts its whole supply on a bonding curve, priced in whichever asset its creator chose. There is no second
-        instruction that mints, so the supply is fixed by construction rather than by promise.
-      </p>
+      <p className="lede">Fixed-supply tokens on a bonding curve.</p>
 
       {creating && (
         <CreateLaunchCard
@@ -2106,12 +2021,7 @@ export function FaucetPage() {
         : (
           <section className="card">
             <h2 className="h2">Open a wallet first</h2>
-            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-              With a wallet this is two buttons and no addresses at all.{' '}
-              <Link to="/wallet">Open one</Link>, which takes about fifteen seconds. It claims both
-              currencies for you and opens the token accounts they need, so you never have to know
-              what a token account is.
-            </p>
+            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}><Link to="/wallet">Open a wallet</Link> and it claims both for you.</p>
           </section>
         )}
 
@@ -2135,11 +2045,7 @@ export function FaucetPage() {
         : (
           <section className="card">
             <h2 className="h2">Unlock first</h2>
-            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-              Returning funds is a transaction your wallet signs, so it needs to be unlocked.
-              Nobody can move your balances for you, which is the same reason nobody can take
-              them. <Link to="/wallet">Open your wallet</Link>.
-            </p>
+            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>Unlock your wallet to return funds.</p>
           </section>
         )}
     </div>
@@ -2148,7 +2054,7 @@ export function FaucetPage() {
   return (
     <Tabs
       title="Faucet"
-      lede="tUSD is the test currency every pool and every launch is priced in, and THRU is what pays transaction fees. Neither has any value, and both disappear whenever alphanet resets from genesis, which is the point: you can experiment without risking anything."
+      lede="Test tUSD to trade with, THRU for fees. Neither has value."
       tabs={[
         { key: 'get', label: 'Get funds', el: getTab },
         { key: 'return', label: 'Give it back', el: returnTab },

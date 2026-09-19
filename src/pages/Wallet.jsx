@@ -199,8 +199,7 @@ function PhraseReveal({ phrase, onDone }) {
       </div>
 
       <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        This is the only time they are shown before you unlock again. Anyone holding them holds the
-        account, so paper beats a screenshot and both beat a message to yourself.
+        Anyone with these words controls the wallet. Write them on paper.
       </p>
 
       <ol className="phrase-grid">
@@ -262,8 +261,7 @@ function BackupCard({ wallet }) {
       {phrase ? (
         <>
           <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            Restore this wallet on your phone by typing the words there, or by scanning the code.
-            Both produce the same account, because the phrase is the account.
+            Type the words or scan the code on another device to restore this wallet.
           </p>
           <div className="inline" style={{ marginTop: 14 }}>
             <button className="btn" onClick={() => setShown(shown ? null : exportPhrase())}>
@@ -291,23 +289,7 @@ function BackupCard({ wallet }) {
       ) : (
         <>
           <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            Because this wallet is older than phrases are, or because it was imported from a raw
-            key. Nothing is wrong with it and nothing has been lost.
-          </p>
-
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            A phrase is not a label stuck on an account afterwards; it is where the account comes
-            from. The twelve words are put through a one-way function to produce the private key,
-            and one-way is the entire point: the key cannot be run backwards into words. So a phrase
-            has to be chosen before the key exists. Yours was made the other way round, as a
-            private key drawn straight from the browser's random number generator, which is just as
-            secure and just as much yours. It only travels differently.
-          </p>
-
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            Which means your backup is the key itself, below. It restores this account anywhere,
-            here or in the CLI, exactly as twelve words would. The one thing it will not do is get
-            typed into a phone without mistakes, which is what phrases were invented for.
+            Made from a raw key, so there are no words to show. The key below is your backup.
           </p>
 
           <div className="rows" style={{ marginTop: 14 }}>
@@ -321,11 +303,6 @@ function BackupCard({ wallet }) {
             </div>
           </div>
 
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            There is no rush on the second one. This is alphanet: every balance here disappears at
-            the next genesis reset anyway, so the natural moment to switch to a phrase-backed wallet
-            is whenever that happens.
-          </p>
         </>
       )}
     </section>
@@ -396,10 +373,7 @@ function CreateWallet({ onDone }) {
       </div>
 
       <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        The key is generated here and never leaves this browser. It is encrypted with your password
-        before it is stored, so anyone reading this browser's storage gets ciphertext. A new wallet
-        comes with twelve words, shown once, which restore it on any device including your phone.
-        Write them down: there is no reset and nobody can recover them for you.
+        Stays in this browser, encrypted with your password. There is no reset.
       </p>
 
       <div className="stack" style={{ marginTop: 16 }}>
@@ -449,7 +423,7 @@ function CreateWallet({ onDone }) {
               spellCheck={false}
             />
             <p className="fine">
-              A key imported this way has no phrase, so it can only ever be moved as hex.{' '}
+              No phrase with a raw key.{' '}
               <button className="linkish" onClick={() => { setMode('phrase'); setKeyHex(''); setError(null) }}>
                 use a phrase instead
               </button>
@@ -482,8 +456,7 @@ function CreateWallet({ onDone }) {
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
       <p className="fine" style={{ marginTop: 14 }}>
-        This is alphanet. Everything here is a test token with no value, and every account
-        disappears when the network resets from genesis. Do not reuse a password you care about.
+        Alphanet: test tokens only, wiped at each reset. Use a throwaway password.
       </p>
     </section>
   )
@@ -578,7 +551,7 @@ function Balances({ wallet, mints }) {
       <div className="card-head">
         <div>
           <h2 className="h2">Balances</h2>
-          <p className="sub">One account per token, at an address fixed by you and the mint</p>
+          <p className="sub">One account per token</p>
         </div>
         <button className="btn ghost" onClick={() => wallet.refresh(mints.map((m) => m.mint))}>Refresh</button>
       </div>
@@ -613,10 +586,6 @@ function Balances({ wallet, mints }) {
       </div>
 
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      <p className="fine" style={{ marginTop: 12 }}>
-        Opening an account is paid for by ThruScan. Trading is not: a Thru transaction carries one
-        signature, the fee payer's, so your tokens only move when you sign for them yourself.
-      </p>
     </section>
   )
 }
@@ -700,11 +669,7 @@ export function TopUpCard() {
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
       <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-        tUSD is 500 a day per account, capped at 10,000 held at once, and it opens your token
-        account for you if you do not have one. The daily limit is read off the chain rather than
-        remembered by a server, so refreshing does not reset it. THRU comes from Thru's own faucet
-        rather than from ThruScan, so it is capped at 10,000 a time by the network and you can come
-        back for more.
+        tUSD: 500 a day, 10,000 max held. THRU: up to 10,000 a claim from Thru's faucet.
       </p>
     </section>
   )
@@ -717,8 +682,7 @@ function Danger({ wallet }) {
     <section className="card">
       <h2 className="h2">Your key</h2>
       <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        Export it and you can use the same account from the CLI, or bring it back after clearing
-        this browser. Anyone who sees it controls the account, so treat the screen as public.
+        Works in the CLI too. Anyone who sees it controls the account.
       </p>
 
       <div className="form-row" style={{ marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
@@ -791,11 +755,7 @@ function LiveWallet({ wallet, mints }) {
         {!wallet.registered && (
           <>
             <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-              This key exists, but it has no account on chain yet. A brand new key cannot pay its
-              own way into existence, so ThruScan pays for that one transaction. It is authorised by
-              a signature made here with your key, which names this chain and this payer, so it
-              cannot be reused for anything else. Straight after, the wallet claims THRU from Thru's
-              own faucet and starts paying its own fees.
+              Not on chain yet. ThruScan pays to create the account, then claims THRU for your fees.
             </p>
             <button className="btn" style={{ marginTop: 14 }} onClick={register} disabled={step !== null}>
               {step ? `${STEP_LABEL[step] ?? 'Working'}…` : 'Register on chain'}
@@ -848,26 +808,22 @@ export function WalletPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Wallet</h1>
-      <p className="lede">
-        A wallet that lives in this browser, so you can trade on ThruScan without a terminal. The
-        key is made here and encrypted with your password before it is stored. It is never sent
-        anywhere, and no part of ThruScan can move your tokens: every trade is signed by you.
-      </p>
+      <p className="lede">A browser wallet for Thru. Your key never leaves this device.</p>
 
       {!hasWallet() && <CreateWallet onDone={() => bump((n) => n + 1)} />}
       {hasWallet() && !wallet.unlocked && <UnlockWallet onDone={() => bump((n) => n + 1)} />}
       {hasWallet() && wallet.unlocked && <LiveWallet wallet={wallet} mints={mints} />}
 
       <section className="card">
-        <h2 className="h2">What this is, and what it is not</h2>
+        <h2 className="h2">At a glance</h2>
         <div className="rows" style={{ marginTop: 12 }}>
           <div className="row">
             <span>Custody</span>
-            <span className="fine">Yours. The key is in this browser and nowhere else</span>
+            <span className="fine">Yours, in this browser only</span>
           </div>
           <div className="row">
             <span>Recovery</span>
-            <span className="fine">Only by exporting the key. There is no reset</span>
+            <span className="fine">Export the key. No reset</span>
           </div>
           <div className="row">
             <span>Paid for by ThruScan</span>
@@ -879,7 +835,7 @@ export function WalletPage() {
           </div>
           <div className="row">
             <span>When mainnet comes</span>
-            <span className="fine">Export the key, or move to Privy or Thru's own wallet</span>
+            <span className="fine">Export the key to another wallet</span>
           </div>
         </div>
       </section>

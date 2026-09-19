@@ -1163,7 +1163,7 @@ function ExplorerPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Read anything on Thru alphanet</h1>
-      <p className="lede">Accounts, tokens, names and transactions, decoded straight from the chain.</p>
+      <p className="lede">Accounts, tokens, names and transactions on Thru.</p>
 
       <DevAccountCard onLookup={(key) => setPrefill(key)} />
       <UniversalLookup prefill={prefill} onPrefillUsed={() => setPrefill(null)} />
@@ -1437,10 +1437,7 @@ function BrowserPostForm({ onPosted }) {
 
   return (
     <div>
-      <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
-        ThruScan pays the fee for you, so you need no wallet and no tokens. Your message goes on chain exactly as typed
-        and cannot be deleted afterwards.
-      </p>
+      <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>Free to post. Messages are permanent.</p>
 
       <div className="form-row">
         <label className="label">Who are you</label>
@@ -1492,11 +1489,7 @@ function CliPostForm() {
 
   return (
     <div>
-      <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>
-        Post signed with your own key instead of ours. Your entry gets marked as signed by the author, and your account
-        address is recorded from the transaction itself rather than typed in, so it is proven rather than claimed.
-        You need a CLI wallet first, which the <Link to="/guides">wallet guide</Link> covers.
-      </p>
+      <p className="fine" style={{ marginTop: 0, lineHeight: 1.65 }}>Signed with your own CLI key.</p>
 
       <div className="form-row">
         <label className="label">Your key name</label>
@@ -1591,10 +1584,7 @@ function WallPage() {
   return (
     <div className="wrap">
       <h1 className="h1">The Thru Wall</h1>
-      <p className="lede">
-        Leave a message and it gets written into an account on Thru by a program written in C. Not a database, not a
-        server. The words below are stored on the chain itself.
-      </p>
+      <p className="lede">Messages stored on Thru itself, not on a server.</p>
 
       {notLive ? (
         <div className="empty">
@@ -1845,7 +1835,7 @@ function WordleGame({ onFinished, registry }) {
 
       {!myName && (
         <p className="fine" style={{ marginTop: 0 }}>
-          Playing as a guest. Claim a name below and your scores get one.
+          Playing as a guest.
         </p>
       )}
 
@@ -2370,7 +2360,7 @@ function Game2048({ registry }) {
 
         {!myName && (
           <p className="fine" style={{ marginTop: 0 }}>
-            Playing as a guest. Claim a name below and your scores get one.
+            Playing as a guest.
           </p>
         )}
 
@@ -2584,9 +2574,7 @@ function GamesPage() {
   const wordlePanel = (
     <div className="wrap wrap-top">
       <p className="lede" style={{ marginTop: 0 }}>
-        Guess a five letter word in six tries. Every finished game is written to Thru by a program
-        running on chain, and the scoreboard beside it is read straight back out of it. No wallet
-        needed, ThruScan pays.
+        Five letters, six tries. Results are recorded on Thru.
       </p>
 
       <div className="game-grid">
@@ -2614,23 +2602,14 @@ function GamesPage() {
                     {loading ? 'Reading' : 'Retry'}
                   </button>
                 </div>
-                <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-                  {loading
-                    ? 'Scores live in one account on Thru and are read straight out of it.'
-                    : 'The scoreboard account did not answer. Your game still records normally; this is only the reading of it.'}
-                </p>
+                {!loading && <p className="fine" style={{ marginTop: 12 }}>Your games still record.</p>}
               </section>
             )}
         </aside>
       </div>
 
       <footer className="foot">
-        <p className="fine">
-          The program recomputes your score from the word and your guesses, so a claimed win has to
-          come with the guess that proves it. It cannot check which word you were given, since the
-          game runs in your browser.
-        </p>
-        <p className="fine">Scores reset whenever alphanet resets. Think of them as seasons.</p>
+        <p className="fine">Scores reset with alphanet.</p>
       </footer>
     </div>
   )
@@ -2638,9 +2617,7 @@ function GamesPage() {
   const g2048Panel = (
     <div className="wrap wrap-top">
       <p className="lede" style={{ marginTop: 0 }}>
-        Slide tiles together to reach 2048. Every single swipe is its own transaction, and the board
-        itself lives on chain between moves, so the chain is playing along rather than just keeping
-        score.
+        Reach 2048. Every move is a transaction, and the board lives on chain.
       </p>
 
       <div className="game-grid">
@@ -2654,12 +2631,7 @@ function GamesPage() {
       </div>
 
       <footer className="foot">
-        <p className="fine">
-          The chain does the sliding, merging, scoring and tile spawning. Nothing here reports a
-          score: the board is read back out of the account after every move, so what you see is what
-          the chain computed.
-        </p>
-        <p className="fine">Scores reset whenever alphanet resets. Think of them as seasons.</p>
+        <p className="fine">Scores reset with alphanet.</p>
       </footer>
     </div>
   )
@@ -2729,7 +2701,7 @@ function GuidesPage() {
   return (
     <div className="wrap">
       <h1 className="h1">How to do things on Thru</h1>
-      <p className="lede">Step by step, written for people who have not done this before. Every command can be copied, and every step tells you how to check it worked.</p>
+      <p className="lede">Step by step. Every command copies.</p>
 
       {GUIDES.map((g, i) => (
         <button className="guide" key={g.id} onClick={() => setActive(g.id)}>
@@ -2741,10 +2713,6 @@ function GuidesPage() {
           <span className="chev">→</span>
         </button>
       ))}
-
-      <p className="fine" style={{ marginTop: 18 }}>
-        Guides are tested against the current Thru CLI. More will be added as the network grows.
-      </p>
     </div>
   )
 }
@@ -2805,7 +2773,7 @@ function UpdatesPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Releases</h1>
-      <p className="lede">Every version Unto Labs has shipped, newest first, each with a plain-language summary.</p>
+      <p className="lede">Every Thru release, newest first.</p>
 
       {/* The most common reason anyone opens this page is to find out whether
           they are behind. Answer that first, with the command already written
@@ -2908,7 +2876,7 @@ function ProjectsPage() {
   return (
     <div className="wrap-wide">
       <h1 className="h1">Projects</h1>
-      <p className="lede">Teams and tools building on Thru. The list is short because the network is young.</p>
+      <p className="lede">Teams and tools building on Thru.</p>
 
       {PROJECTS.length === 0 && (
         <div className="empty">
@@ -3048,10 +3016,7 @@ function CommunityPage() {
   return (
     <div className="wrap-wide">
       <h1 className="h1">Worth reading</h1>
-      <p className="lede">
-        Articles, threads, videos and tools from people figuring out Thru in public. Pinned items sit at the top;
-        everything else rises as readers open it.
-      </p>
+      <p className="lede">Articles, threads, videos and tools about Thru.</p>
 
       {records.length > 0 && (
         <div className="view-toggle">

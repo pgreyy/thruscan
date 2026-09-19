@@ -60,7 +60,7 @@ export function GameIdentity({ registry, onChanged }) {
       const { code: next } = await usePlayerCodeFromWallet()
       if (!next) throw new Error('Unlock your wallet first.')
       setCode(next)
-      setDone('Your games now follow this wallet. Restore it anywhere and your scores come with it.')
+      setDone('Scores now follow this wallet.')
       onChanged?.()
     } catch (e) {
       setError(String(e?.message ?? e))
@@ -106,13 +106,7 @@ export function GameIdentity({ registry, onChanged }) {
       <section className="card">
         <h2 className="h2">Playing as a guest</h2>
         <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Your scores are tied to this browser and nothing else, so clearing it loses them and
-          they do not follow you to your phone.
-        </p>
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          <Link to="/wallet">Open a wallet</Link> and your games follow it instead: the same scores
-          on every device you restore it on, and your .{ROOT_SUFFIX} name on the leaderboard rather
-          than "Anonymous". It takes about fifteen seconds and you can keep playing either way.
+          Scores stay in this browser. <Link to="/wallet">Open a wallet</Link> to keep them across devices.
         </p>
       </section>
     )
@@ -125,9 +119,7 @@ export function GameIdentity({ registry, onChanged }) {
       <section className="card">
         <h2 className="h2">Unlock to play as yourself</h2>
         <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Your games identity comes from your wallet key, not from your address, so it cannot be
-          worked out by anyone reading a leaderboard. That does mean the wallet has to be unlocked
-          before the games know who you are. Until then you are playing as a guest.
+          Until then you play as a guest.
         </p>
       </section>
     )
@@ -164,10 +156,7 @@ export function GameIdentity({ registry, onChanged }) {
       {!following && (
         <>
           <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-            This browser is still playing under its own code rather than under your wallet.
-            Switching moves future games onto the wallet, so restoring it anywhere brings them with
-            it. Scores already recorded under the old code stay where they are: they belong to that
-            code, and nothing here can move them without being able to prove both are you.
+            New games will follow the wallet. Past guest scores stay with the guest code.
           </p>
           <button className="btn" style={{ marginTop: 12 }} onClick={follow} disabled={busy !== null}>
             {busy === 'switch' ? 'Switching' : 'Play as this wallet'}
@@ -178,9 +167,7 @@ export function GameIdentity({ registry, onChanged }) {
       {following && !registered && label && (
         <>
           <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-            You hold <b>{withSuffix(label)}</b>. The games keep their own small list of names,
-            because they read the leaderboard straight out of one account and cannot resolve a name
-            through the name service while doing it. One click copies it across.
+            You hold <b>{withSuffix(label)}</b>.
           </p>
           <button className="btn" style={{ marginTop: 12 }} onClick={syncName} disabled={busy !== null}>
             {busy === 'name' ? 'Saving' : `Use ${withSuffix(label)} on leaderboards`}
@@ -190,9 +177,7 @@ export function GameIdentity({ registry, onChanged }) {
 
       {following && !registered && !label && (
         <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-          You show as Anonymous because no name points at this wallet yet.{' '}
-          <Link to="/names">Claim a .{ROOT_SUFFIX} name</Link> and it becomes your username here,
-          on the wall, and anywhere else that has to call you something.
+          <Link to="/names">Claim a .{ROOT_SUFFIX} name</Link> to replace Anonymous.
         </p>
       )}
 
@@ -202,9 +187,7 @@ export function GameIdentity({ registry, onChanged }) {
       <details style={{ marginTop: 16 }}>
         <summary className="fine">Play as a guest instead</summary>
         <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Starts a fresh anonymous identity in this browser only. Your wallet's scores are not
-          touched and switching back returns to them, because the wallet's code is derived rather
-          than stored.
+          Your wallet scores are kept. Switch back any time.
         </p>
         <button className="btn ghost" style={{ marginTop: 10 }} onClick={goGuest} disabled={busy !== null}>
           Start a guest identity

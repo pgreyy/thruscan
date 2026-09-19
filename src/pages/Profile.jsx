@@ -174,14 +174,12 @@ export function ProfilePage() {
   if (!hasWallet()) {
     return (
       <div className="wrap">
-        <p className="eyebrow">Account</p>
         <h1 className="h1">Profile</h1>
-        <p className="lede">Your name, your picture, your balances and everything you have launched.</p>
+        <p className="lede">Your name, picture, balances and launches.</p>
         <section className="card">
           <h2 className="h2">No wallet yet</h2>
           <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            <Link to="/wallet">Open one</Link>. It takes about fifteen seconds, the key never leaves
-            your browser, and everything on this page follows from it.
+            <Link to="/wallet">Open one</Link> to see your profile.
           </p>
         </section>
       </div>
@@ -201,8 +199,7 @@ export function ProfilePage() {
           <p className="sub mono" style={{ wordBreak: 'break-all' }}>{wallet.address}</p>
           {!primary && (
             <p className="fine" style={{ marginTop: 8 }}>
-              <Link to="/names">Claim a name</Link> and this becomes yours rather than a string of
-              characters. It is free.
+              <Link to="/names">Claim a name</Link>, free.
             </p>
           )}
         </div>
@@ -218,11 +215,8 @@ export function ProfilePage() {
 
         <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
           {primary
-            ? <>An <code className="mono">avatar</code> record on {withSuffix(primary.name)}, which
-              means any wallet or explorer that reads Thru's name service can show it, and only you
-              can change it. Paste a link to an image.</>
-            : <>The picture lives on your name as a record, so you need a name first. Claiming one
-              is free and takes a few seconds.</>}
+            ? <>Paste an image link. Saved as the <code className="mono">avatar</code> record on {withSuffix(primary.name)}.</>
+            : <>Needs a name first.</>}
         </p>
 
         <div className="stack" style={{ marginTop: 14 }}>
@@ -316,15 +310,6 @@ export function ProfilePage() {
         </div>
       </section>
 
-      <section className="card">
-        <h2 className="h2">Coming to this page</h2>
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Trading history, fees earned across every launch, and whatever turns out to be worth
-          recognising once enough people have used this. All of it has to come off the chain rather
-          than out of a database, so each one is a decoder rather than a column, and they arrive one
-          at a time.
-        </p>
-      </section>
     </div>
   )
 }

@@ -123,7 +123,7 @@ function Claim({ wallet, onClaimed }) {
       <div className="card-head">
         <div>
           <h2 className="h2">Claim a name</h2>
-          <p className="sub">Free, yours, and readable by anything on Thru</p>
+          <p className="sub">Free, and yours on chain</p>
         </div>
       </div>
 
@@ -167,17 +167,14 @@ function Claim({ wallet, onClaimed }) {
 
         {!problem && name && state?.taken && !state?.mine && (
           <p className="fine">
-            {withSuffix(name)} already belongs to someone. Names are first come, first served, so
-            try another.
+            Taken. Try another.
           </p>
         )}
 
         {!problem && name && state?.mine && (
           <>
             <p className="fine" style={{ lineHeight: 1.65 }}>
-              {withSuffix(name)} is already yours. It is registered on chain to this wallet; this
-              browser just had not been told about it, which is what happens on a second device.
-              Adding it here is a note to this browser and costs nothing.
+              Registered to this wallet. Add it to this browser, free.
             </p>
             <button className="btn" onClick={() => { onClaimed?.(name); setName('') }}>
               Add {withSuffix(name)} to this browser
@@ -187,15 +184,13 @@ function Claim({ wallet, onClaimed }) {
 
         {!hasWallet() && (
           <p className="fine">
-            <Link to="/wallet">Open a wallet</Link> to claim one. The name is registered to your
-            wallet, not to ThruScan.
+            <Link to="/wallet">Open a wallet</Link> to claim one.
           </p>
         )}
 
         {hasWallet() && wallet.unlocked && !wallet.registered && (
           <p className="fine">
-            Your wallet needs an account on chain first. <Link to="/wallet">Register it</Link>, which
-            takes a few seconds.
+            <Link to="/wallet">Register your wallet</Link> first.
           </p>
         )}
 
@@ -215,9 +210,7 @@ function Claim({ wallet, onClaimed }) {
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
       <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-        Lowercase letters, numbers and hyphens, three to thirty-two characters. The alphabet is
-        restricted on purpose: without it, two names that look identical to a reader can belong to
-        two different people, and a name that can be impersonated is worse than no name.
+        a-z, 0-9 and hyphens, 3 to 32 characters.
       </p>
     </section>
   )
@@ -334,9 +327,7 @@ function OwnedName({ domain, account, wallet, onChanged }) {
       {!hasAddress && (
         <>
           <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            Point it at your wallet so anyone who resolves {withSuffix(domain.name)} gets somewhere
-            to send tokens. You sign this yourself, because the name service checks the name's owner
-            rather than who is paying. ThruScan gave you this name and cannot edit it.
+            Point it at your wallet so {withSuffix(domain.name)} resolves to your address.
           </p>
           <button
             className="btn"
@@ -421,11 +412,7 @@ export function NamesPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Names</h1>
-      <p className="lede">
-        A <span className="mono">.{ROOT_SUFFIX}</span> name for your account, so people can send you
-        something without copying forty-six characters. It runs on Thru's own name service, not on a
-        program of ours, so the name is a fact about the chain rather than a row in our database.
-      </p>
+      <p className="lede">A readable <span className="mono">.{ROOT_SUFFIX}</span> name for your address, on Thru's name service.</p>
 
       <Claim wallet={wallet} onClaimed={claimed} />
 
@@ -437,31 +424,6 @@ export function NamesPage() {
           was taken, which is exactly what the claim field above does while you
           type, so it was a second answer to a question already answered. */}
 
-      <section className="card">
-        <h2 className="h2">How this works</h2>
-        <div className="rows" style={{ marginTop: 12 }}>
-          <div className="row">
-            <span>Who owns your name</span>
-            <span className="fine">You. It is written into the domain account</span>
-          </div>
-          <div className="row">
-            <span>Who pays to register</span>
-            <span className="fine">ThruScan, because the root's authority has to sign</span>
-          </div>
-          <div className="row">
-            <span>Who can edit its records</span>
-            <span className="fine">Only you. The name service checks the owner</span>
-          </div>
-          <div className="row">
-            <span>Where it lives</span>
-            <span className="fine">Thru's built-in name service, readable by anything</span>
-          </div>
-          <div className="row">
-            <span>Why not .thru</span>
-            <span className="fine">That root is Unto Labs'. This one is ours to run</span>
-          </div>
-        </div>
-      </section>
     </div>
   )
 }
