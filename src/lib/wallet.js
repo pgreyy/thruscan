@@ -571,6 +571,73 @@ export async function burnToken(mint, amount) {
   })
 }
 
+/* ---------- moving to another wallet ----------
+ *
+ * Token TRANSFER: [0x02][source u16][dest u16][amount u64]. No authority
+ * field: the token program checks that the source account's owner signed,
+ * and the fee payer is that owner. The destination token account has to
+ * exist, so the sponsor opens it for the recipient first.
+ *
+ * Names cannot change owner in place; the name service has no transfer. The
+ * owner releases it (UNREGISTER: [u32 4][u16 domain][u16 owner]) and ThruScan
+ * registers it again with the new wallet as owner. Both steps were tested on
+ * alphanet with two throwaway wallets before this was written. Records do not
+ * carry over, since only the new owner can write them.
+ */
+
+const TOKEN_OP_TRANSFER = 0x02
+
+export async function transferToken(mint, to, amount) {
+  const { address } = requireSession()
+  const source = await deriveTokenAccount(mint, address)
+  const dest = await deriveTokenAccount(mint, to)
+
+  if (!(await accountExists(dest))) {
+    await api('open', { owner: to, mint })
+    let live = false
+    for (let i = 0; i < 10 && !live; i++) {
+      await new Promise((r) => setTimeout(r, 1500))
+      live = await accountExists(dest)
+    }
+    if (!live) throw new Error('The new wallet\'s token account did not appear. Try again.')
+  }
+
+  const readWrite = sortAddresses([source, dest])
+  const at = (a) => 2 + readWrite.indexOf(a)
+  const data = new Uint8Array(13)
+  const dv = new DataView(data.buffer)
+  dv.setUint8(0, TOKEN_OP_TRANSFER)
+  dv.setUint16(1, at(source), true)
+  dv.setUint16(3, at(dest), true)
+  dv.setBigUint64(5, BigInt(amount), true)
+
+  return signAndSend({
+    program: TOKEN_PROGRAM,
+    readWrite,
+    data,
+  })
+}
+
+/** Give up a name. Signed by its owner. */
+export async function releaseName(domainAccount) {
+  requireSession()
+  const data = new Uint8Array(8)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 4, true)             // UNREGISTER
+  dv.setUint16(4, 2, true)             // the domain, the only read-write account
+  dv.setUint16(6, 0, true)             // the owner is the fee payer
+  return signAndSend({
+    program: NAME_SERVICE_PROGRAM,
+    readWrite: [domainAccount],
+    data,
+  })
+}
+
+/** Register a free name to someone else's wallet. */
+export async function claimNameFor(name, owner) {
+  return api('name-register', { name, owner })
+}
+
 /** Send native THRU somewhere. Used to put it back in Thru's faucet. */
 export async function sendNativeThru(to, amount) {
   const data = new Uint8Array(16)

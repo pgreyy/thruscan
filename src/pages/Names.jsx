@@ -29,6 +29,7 @@ import { checkName, claimName, setNameRecord, waitForResult } from '../lib/walle
 import { useWallet } from './Wallet.jsx'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { hasWallet } from '../lib/wallet.js'
+import { ownedNames } from '../lib/holdings.js'
 
 const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
 
@@ -283,9 +284,11 @@ function Lookup() {
   )
 }
 
-/* ---------- a name you own ---------- */
+/* ---------- names you own ----------
+   One card, one row per name. A row opens to show its records and the two
+   things you can do with it. */
 
-function OwnedName({ domain, account, wallet, onChanged }) {
+function NameItem({ domain, account, wallet, onChanged }) {
   const gate = useUnlockGate()
   const [key, setKey] = useState('')
   const [value, setValue] = useState('')
@@ -313,58 +316,46 @@ function OwnedName({ domain, account, wallet, onChanged }) {
     }
   }
 
-  const hasAddress = domain.records.some((r) => r.key === 'addr')
+  const addr = domain.records.find((r) => r.key === 'addr')?.value
+  const others = domain.records.filter((r) => r.key !== 'addr')
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2 mono">{withSuffix(domain.name)}</h2>
-        </div>
-        <span className="hero-tag">{domain.records.length} record{domain.records.length === 1 ? '' : 's'}</span>
-      </div>
+    <details className="name-item">
+      <summary className="name-row">
+        <b className="mono">{withSuffix(domain.name)}</b>
+        <span className="fine mono">{addr ? `→ ${short(addr)}` : 'no address set'}</span>
+      </summary>
 
-      {!hasAddress && (
-        <>
-          <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-            Point it at your wallet so {withSuffix(domain.name)} resolves to your address.
-          </p>
-          <button
-            className="btn"
-            style={{ marginTop: 14 }}
-            onClick={() => add('addr', wallet.address)}
-            disabled={busy}
-          >
+      <div className="name-body">
+        {!addr && (
+          <button className="btn" onClick={() => add('addr', wallet.address)} disabled={busy}>
             {busy ? 'Signing' : 'Point it at my wallet'}
           </button>
-        </>
-      )}
+        )}
 
-      {domain.records.length > 0 && (
-        <div className="rows" style={{ marginTop: 14 }}>
-          {domain.records.map((r) => (
-            <div className="row" key={r.key}>
-              <span>{r.key}</span>
-              <span className="mono" style={{ wordBreak: 'break-all' }}>{r.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+        {others.length > 0 && (
+          <div className="rows">
+            {others.map((r) => (
+              <div className="row" key={r.key}>
+                <span>{r.key}</span>
+                <span className="mono" style={{ wordBreak: 'break-all' }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
-      <details style={{ marginTop: 16 }}>
-        <summary className="fine">Add another record</summary>
-        <div className="stack" style={{ marginTop: 12 }}>
-          <input className="field mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="key, for example url or x" />
+        <div className="inline name-add">
+          <input className="field mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="key, e.g. x" />
           <input className="field mono" value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" />
           <button className="btn ghost" onClick={() => add(key.trim(), value.trim())} disabled={busy || !key.trim() || !value.trim()}>
-            {busy ? 'Signing' : 'Add record'}
+            {busy ? 'Signing' : 'Add'}
           </button>
         </div>
-      </details>
 
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+        {error && <p className="notice bad">{error}</p>}
+      </div>
       {gate.modal}
-    </section>
+    </details>
   )
 }
 
@@ -388,19 +379,22 @@ export function NamesPage() {
     } catch { /* private mode; the name is still registered */ }
   }, [storeKey])
 
+  /* The chain first: a name registration names its owner, so this wallet's own
+     history lists every name it claimed, on any device. The browser's list is
+     added in case the history is too long to reach back that far. Each name is
+     then checked for its current owner, so a moved name drops off. */
   const load = useCallback(async () => {
     if (!storeKey) { setMine([]); return }
     let names = []
     try { names = JSON.parse(localStorage.getItem(storeKey) || '[]') } catch {}
-    const rows = []
-    for (const name of names) {
-      try {
-        const r = await checkName(name)
-        if (r.ok && r.taken) rows.push({ name, account: r.account, domain: decodeDomain(decodeBase64(r.data)) })
-      } catch { /* skip the ones that will not read rather than failing the page */ }
-    }
+    const rows = await ownedNames(wallet.address, names).catch(() => null)
+    if (!rows) return   // a failed read is not an empty list; keep what we had
+    // Keep the order this browser already had, so the first name stays first.
+    const rank = (n) => { const i = names.indexOf(n); return i < 0 ? names.length : i }
+    rows.sort((a, b) => rank(a.name) - rank(b.name))
+    try { localStorage.setItem(storeKey, JSON.stringify(rows.map((r) => r.name))) } catch {}
     setMine(rows)
-  }, [storeKey])
+  }, [storeKey, wallet.address])
 
   useEffect(() => { load() }, [load])
 
@@ -416,9 +410,16 @@ export function NamesPage() {
 
       <Claim wallet={wallet} onClaimed={claimed} />
 
-      {mine.map(({ account, domain }) => domain && (
-        <OwnedName key={account} account={account} domain={domain} wallet={wallet} onChanged={load} />
-      ))}
+      {mine.length > 0 && (
+        <section className="card">
+          <h2 className="h2">Your names</h2>
+          <div className="name-list">
+            {mine.map(({ account, domain }) => domain && (
+              <NameItem key={account} account={account} domain={domain} wallet={wallet} onChanged={load} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* The lookup card is gone. It asked for a name and told you whether it
           was taken, which is exactly what the claim field above does while you

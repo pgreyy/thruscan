@@ -29,7 +29,12 @@ import {
   deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
   claimNativeThru, claimTusd, nativeBalance,
   importPhrase, exportPhrase, hasPhrase,
+  transferToken, releaseName, claimNameFor, sendNativeThru,
 } from '../lib/wallet.js'
+import { knownMints, ownedNames } from '../lib/holdings.js'
+import { Activity } from '../components/Activity.jsx'
+import { useConfirm } from '../components/Confirm.jsx'
+import { withSuffix } from '../lib/names.js'
 import { phraseProblem, phraseWords } from '../lib/seed.js'
 import { QRImage, QRScanner, canScan } from '../components/QR.jsx'
 import { TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
@@ -289,20 +294,8 @@ function BackupCard({ wallet }) {
       ) : (
         <>
           <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            Made from a raw key, so there are no words to show. The key below is your backup.
+            Made from a raw key, so there are no words. Back up the key below, or move everything to a new wallet that has a phrase.
           </p>
-
-          <div className="rows" style={{ marginTop: 14 }}>
-            <div className="row">
-              <span>To keep this account</span>
-              <span className="fine">Export the key below and store it somewhere safe</span>
-            </div>
-            <div className="row">
-              <span>To get a phrase</span>
-              <span className="fine">Make a second wallet, then move your balances to it</span>
-            </div>
-          </div>
-
         </>
       )}
     </section>
@@ -728,7 +721,16 @@ function LiveWallet({ wallet, mints }) {
   const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
 
-  useEffect(() => { wallet.refresh(mints.map((m) => m.mint)) /* eslint-disable-next-line */ }, [])
+  useEffect(() => {
+    wallet.refresh(mints.map((m) => m.mint))
+    // Every mint ThruScan knows, so a token bought on another device still shows.
+    knownMints().then((all) => wallet.refresh(all)).catch(() => {})
+    /* eslint-disable-next-line */
+  }, [])
+
+  const tokenAccounts = Object.values(wallet.balances)
+    .filter((b) => b?.exists && b.account)
+    .map((b) => b.account)
 
   const register = async () => {
     setStep('registering'); setError(null)
@@ -784,9 +786,200 @@ function LiveWallet({ wallet, mints }) {
 
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
+      {wallet.registered && <Activity addresses={[wallet.address, ...tokenAccounts].slice(0, 6)} me={wallet.address} />}
+      {wallet.registered && <MoveCard wallet={wallet} />}
       <BackupCard wallet={wallet} />
       <Danger wallet={wallet} />
     </>
+  )
+}
+
+
+/* ---------- moving to another wallet ----------
+   Names, tokens and THRU, in that order, each its own signed transaction. THRU
+   goes last because every step before it pays a fee from it. */
+
+const THRU_KEEP = 2n   // one fee for the THRU transfer itself, plus one spare
+
+function MoveCard({ wallet }) {
+  const confirm = useConfirm()
+  const [to, setTo] = useState('')
+  const [plan, setPlan] = useState(null)       // { names, tokens, native }
+  const [pick, setPick] = useState({})         // id -> bool
+  const [status, setStatus] = useState({})     // id -> { state, sig, error }
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const dest = to.trim()
+
+  const check = async () => {
+    setError(null); setPlan(null); setStatus({})
+    if (dest === wallet.address) { setError('That is this wallet.'); return }
+    setBusy(true)
+    try {
+      if (!(await accountExists(dest).catch(() => false))) {
+        throw new Error('No wallet at that address on chain. Open the new wallet and register it first.')
+      }
+      let cached = []
+      try { cached = JSON.parse(localStorage.getItem(`thruscan.names.${wallet.address}`) || '[]') } catch {}
+      const [names, mints] = await Promise.all([ownedNames(wallet.address, cached), knownMints()])
+      const rows = await tokenBalances(mints, wallet.address)
+      const tokens = rows.filter((r) => r.exists && BigInt(r.amount) > 0n)
+      await wallet.refresh(mints)
+      const native = await nativeBalance(wallet.address).catch(() => 0n)
+      const next = { names, tokens, native }
+      setPlan(next)
+      const all = {}
+      names.forEach((n) => { all[`name:${n.name}`] = true })
+      tokens.forEach((t) => { all[`token:${t.mint}`] = true })
+      if (native > THRU_KEEP) all.native = true
+      setPick(all)
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const mark = (id, patch) => setStatus((s) => ({ ...s, [id]: { ...s[id], ...patch } }))
+
+  const settle = async (sig) => {
+    const r = await waitForResult(sig)
+    if (r.settled && !r.succeeded) throw new Error(`Rejected on chain (error ${r.userError || r.vmError}).`)
+    return r
+  }
+
+  const run = async () => {
+    const chosen = Object.keys(pick).filter((k) => pick[k])
+    if (chosen.length === 0) return
+    const ok = await confirm.ask({
+      title: 'Move to the other wallet?',
+      body: 'Each item is its own transaction and cannot be undone. Only this wallet can sign them, so keep this page open until the list finishes.',
+      detail: [{ label: 'To', value: short(dest) }, { label: 'Items', value: String(chosen.length) }],
+      confirmLabel: 'Move them',
+    })
+    if (!ok) return
+
+    setBusy(true); setError(null)
+    for (const n of plan.names) {
+      const id = `name:${n.name}`
+      if (!pick[id]) continue
+      mark(id, { state: 'working' })
+      try {
+        await settle(await releaseName(n.account))
+        const r = await claimNameFor(n.name, dest)
+        mark(id, { state: 'done', sig: r.signature })
+        try {
+          const k = `thruscan.names.${wallet.address}`
+          const held = JSON.parse(localStorage.getItem(k) || '[]').filter((x) => x !== n.name)
+          localStorage.setItem(k, JSON.stringify(held))
+        } catch { /* only a cache */ }
+      } catch (e) {
+        mark(id, { state: 'failed', error: `${String(e?.message ?? e)} If it was released, claim ${withSuffix(n.name)} from the new wallet now.` })
+      }
+    }
+    for (const t of plan.tokens) {
+      const id = `token:${t.mint}`
+      if (!pick[id]) continue
+      mark(id, { state: 'working' })
+      try {
+        const sig = await transferToken(t.mint, dest, BigInt(t.amount))
+        await settle(sig)
+        mark(id, { state: 'done', sig })
+      } catch (e) {
+        mark(id, { state: 'failed', error: String(e?.message ?? e) })
+      }
+    }
+    if (pick.native) {
+      mark('native', { state: 'working' })
+      try {
+        const now = await nativeBalance(wallet.address)
+        if (now <= THRU_KEEP) throw new Error('Nothing left to send after fees.')
+        const sig = await sendNativeThru(dest, now - THRU_KEEP)
+        await settle(sig)
+        mark('native', { state: 'done', sig })
+      } catch (e) {
+        mark('native', { state: 'failed', error: String(e?.message ?? e) })
+      }
+    }
+    setBusy(false)
+    wallet.refresh(Object.keys(wallet.balances))
+  }
+
+  const Line = ({ id, label, value }) => {
+    const st = status[id]
+    return (
+      <label className="move-row">
+        <input
+          type="checkbox"
+          checked={!!pick[id]}
+          disabled={busy || st?.state === 'done'}
+          onChange={(e) => setPick((p) => ({ ...p, [id]: e.target.checked }))}
+        />
+        <span className="move-what"><b>{label}</b>{value && <span className="fine"> {value}</span>}</span>
+        <span className="move-state fine">
+          {st?.state === 'working' && 'signing'}
+          {st?.state === 'done' && (st.sig ? <a href={`/tx/${st.sig}`}>moved</a> : 'moved')}
+          {st?.state === 'failed' && <span className="bad-text">failed</span>}
+        </span>
+        {st?.state === 'failed' && <span className="move-error fine">{st.error}</span>}
+      </label>
+    )
+  }
+
+  const nothing = plan && plan.names.length === 0 && plan.tokens.length === 0 && plan.native <= THRU_KEEP
+
+  return (
+    <section className="card">
+      {confirm.modal}
+      <details open={!!plan}>
+        <summary className="h2 move-summary">Move to another wallet</summary>
+
+        <div className="inline" style={{ marginTop: 14 }}>
+          <input
+            className="field mono"
+            value={to}
+            onChange={(e) => { setTo(e.target.value); setPlan(null); setError(null) }}
+            placeholder="New wallet address"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button className="btn ghost" onClick={check} disabled={busy || !dest}>{busy && !plan ? 'Checking' : 'Check'}</button>
+        </div>
+
+        {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+
+        {nothing && <p className="fine" style={{ marginTop: 12 }}>Nothing to move.</p>}
+
+        {plan && !nothing && (
+          <>
+            <div className="move-list">
+              {plan.names.map((n) => (
+                <Line key={n.name} id={`name:${n.name}`} label={withSuffix(n.name)} value="name" />
+              ))}
+              {plan.tokens.map((t) => (
+                <Line
+                  key={t.mint}
+                  id={`token:${t.mint}`}
+                  label={fmt(BigInt(t.amount), wallet.decimals?.[t.mint] ?? DECIMALS)}
+                  value={wallet.tickers?.[t.mint] || short(t.mint)}
+                />
+              ))}
+              {plan.native > THRU_KEEP && (
+                <Line id="native" label={(plan.native - THRU_KEEP).toString()} value="THRU" />
+              )}
+            </div>
+            <button className="btn" style={{ width: '100%', marginTop: 12 }} onClick={run} disabled={busy}>
+              {busy ? 'Moving' : 'Move selected'}
+            </button>
+          </>
+        )}
+
+        <p className="fine" style={{ marginTop: 12 }}>
+          Names arrive without records. Game scores, wall posts and launch fees stay with this address.
+        </p>
+      </details>
+    </section>
   )
 }
 
@@ -799,8 +992,8 @@ export function WalletPage() {
     // tUSD and WTHRU always, since those are the two quote assets, then
     // whatever else this wallet has touched.
     const known = [{ mint: TUSD_MINT }, { mint: WTHRU_MINT }]
-    for (const mint of Object.keys(wallet.balances)) {
-      if (!known.some((k) => k.mint === mint)) known.push({ mint })
+    for (const [mint, b] of Object.entries(wallet.balances)) {
+      if (b?.exists && !known.some((k) => k.mint === mint)) known.push({ mint })
     }
     return known
   }, [wallet.balances])

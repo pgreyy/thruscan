@@ -23,12 +23,13 @@
 //   /api/rpc?action=version
 //   /api/rpc?action=chainInfo
 //   /api/rpc?action=endpoint      -> which endpoint/protocol is live
+//   /api/rpc?action=history&addresses=ta...,ta...&pages={json}  -> recent transactions
 
 import dns from 'node:dns'
-import { createThruClient } from '@thru/sdk'
+import { createThruClient, Pubkey, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
 
-export const config = { runtime: 'nodejs' }
+export const config = { runtime: 'nodejs', maxDuration: 30 }
 
 // Prefer IPv4. rpc.alphanet.thru.org publishes a NAT64 AAAA record alongside
 // its A record, and Node will happily pick the v6 one and fail with EAI_AGAIN
@@ -177,6 +178,61 @@ function serializeTransaction(tx, statusSnapshot) {
   }
 }
 
+
+/* ---------- history ----------
+   The node's list call already returns whole transactions. The SDK's wrapper
+   throws them away and fetches each one again, which made a page of ten take
+   twelve seconds, so this calls the query service directly. Times come from
+   header-only block reads, one per distinct slot, all in parallel. */
+
+const HISTORY_LIMIT = 15
+const MAX_HISTORY_ADDRESSES = 6
+
+async function historyFor(client, address, pageToken) {
+  const res = await withTimeout(client.ctx.query.listTransactionsForAccount({
+    account: Pubkey.from(address).toProtoPubkey(),
+    page: { pageSize: HISTORY_LIMIT, ...(pageToken ? { pageToken } : {}) },
+  }), CALL_TIMEOUT_MS)
+  return {
+    txs: (res.transactions ?? []).map((p) => Transaction.fromProto(p)),
+    next: res.page?.nextPageToken || null,
+  }
+}
+
+async function blockTimes(client, slots) {
+  const out = {}
+  await Promise.all(slots.map(async (slot) => {
+    try {
+      const b = await withTimeout(
+        client.ctx.query.getBlock({ selector: { case: 'slot', value: BigInt(slot) }, view: 1 }),
+        CALL_TIMEOUT_MS,
+      )
+      const t = b.header?.blockTime
+      if (t) out[slot] = Number(t.seconds) * 1000 + Math.floor((t.nanos ?? 0) / 1e6)
+    } catch { /* a missing time is shown as blank, not as an error */ }
+  }))
+  return out
+}
+
+function serializeHistoryItem(tx) {
+  const ex = tx.executionResult
+  const data = tx.instructionData ?? new Uint8Array()
+  return {
+    signature: tx.getSignature?.()?.toThruFmt?.() ?? null,
+    slot: tx.slot?.toString() ?? null,
+    offset: tx.blockOffset ?? 0,
+    program: tx.program?.toThruFmt?.() ?? null,
+    feePayer: tx.feePayer?.toThruFmt?.() ?? null,
+    rw: (tx.readWriteAccounts ?? []).map((a) => a.toThruFmt()),
+    ro: (tx.readOnlyAccounts ?? []).map((a) => a.toThruFmt()),
+    // Enough of the instruction to name the action and read a name or amount,
+    // not the proofs that follow.
+    data: toBase64(data.slice(0, 96)),
+    ok: ex ? (ex.vmError ?? 0) === 0 && BigInt(ex.userErrorCode ?? 0n) === 0n : null,
+    error: ex ? { vm: ex.vmError ?? 0, user: ex.userErrorCode?.toString() ?? '0' } : null,
+  }
+}
+
 function json(res, status, body, { cacheSeconds = 0 } = {}) {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -273,6 +329,37 @@ export default async function handler(req, res) {
           { ok: true, endpoint, transaction: serializeTransaction(tx, statusSnapshot) },
           { cacheSeconds: 10 }
         )
+      }
+
+
+      case 'history': {
+        const addresses = String(params.addresses ?? params.address ?? '')
+          .split(',').map((a) => a.trim()).filter(Boolean).slice(0, MAX_HISTORY_ADDRESSES)
+        if (addresses.length === 0) return json(res, 400, { ok: false, error: 'missing addresses' })
+        let pages = {}
+        try { pages = params.pages ? JSON.parse(params.pages) : {} } catch { pages = {} }
+
+        // An address that has run out of pages is skipped on "more".
+        const wanted = params.pages ? addresses.filter((a) => pages[a]) : addresses
+        const lists = await Promise.all(wanted.map((a) =>
+          historyFor(client, a, pages[a]).catch(() => ({ txs: [], next: null }))))
+
+        const seen = new Map()
+        const next = {}
+        lists.forEach((l, i) => {
+          if (l.next) next[wanted[i]] = l.next
+          for (const tx of l.txs) {
+            const item = serializeHistoryItem(tx)
+            if (item.signature && !seen.has(item.signature)) seen.set(item.signature, item)
+          }
+        })
+        const items = [...seen.values()].sort((a, b) =>
+          (BigInt(b.slot ?? 0) > BigInt(a.slot ?? 0) ? 1 : BigInt(b.slot ?? 0) < BigInt(a.slot ?? 0) ? -1 : (b.offset - a.offset)))
+
+        const times = await blockTimes(client, [...new Set(items.map((t) => t.slot).filter(Boolean))])
+        for (const t of items) t.time = times[t.slot] ?? null
+
+        return json(res, 200, { ok: true, items, next: Object.keys(next).length ? next : null }, { cacheSeconds: 3 })
       }
 
       default:

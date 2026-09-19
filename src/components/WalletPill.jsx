@@ -26,6 +26,7 @@ import { locked, unlock } from '../lib/wallet.js'
 import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
+import { ownedNames } from '../lib/holdings.js'
 
 const DECIMALS = 6
 
@@ -205,6 +206,21 @@ export function WalletPill() {
   const boxRef = useRef(null)
 
   useEffect(() => { setMounted(true) }, [])
+
+  // A new device has no list of names yet. Read them off the chain once, so
+  // the pill shows the name everywhere rather than only where it was claimed.
+  const [, bumpName] = useState(0)
+  useEffect(() => {
+    const address = wallet.address
+    if (!address || primaryName(address)) return
+    let alive = true
+    ownedNames(address).then((rows) => {
+      if (!alive || rows.length === 0) return
+      try { localStorage.setItem(`thruscan.names.${address}`, JSON.stringify(rows.map((r) => r.name))) } catch {}
+      bumpName((n) => n + 1)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [wallet.address])
 
   // Close on a click anywhere else, and on Escape. Both are expected, and a
   // panel that only closes by clicking the thing that opened it is a trap on a

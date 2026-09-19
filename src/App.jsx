@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, useLocation, useParams } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
@@ -9,6 +9,8 @@ import { Tabs } from './components/Tabs.jsx'
 import { GameIdentity } from './components/GameIdentity.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
+import { Activity } from './components/Activity.jsx'
+import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
 import { decodeTokenProgramAccount, formatAmount } from './lib/token'
@@ -387,9 +389,17 @@ function timeAgo(dateStr) {
 // A Thru address is 46 characters of base64url behind a ta prefix, and it is
 // the thing you spend the most time reading here, so it gets a real treatment
 // instead of being dumped as plain text.
-function Address({ value }) {
+function Address({ value, link }) {
   const [copied, setCopied] = useState(false)
   if (!value) return <span className="row-v">-</span>
+  if (link) {
+    return (
+      <Link className="addr" to={`${link}${value}`} title="Open">
+        <span className="addr-body"><span className="addr-pre">{value.slice(0, 2)}</span>{value.slice(2)}</span>
+        <span className="addr-note">open</span>
+      </Link>
+    )
+  }
 
   const copy = () => {
     navigator.clipboard?.writeText(value)
@@ -414,11 +424,11 @@ function Row({ k, v, mono }) {
   )
 }
 
-function AddrRow({ k, v }) {
+function AddrRow({ k, v, link }) {
   return (
     <div className="row">
       <span className="row-k">{k}</span>
-      <Address value={v} />
+      <Address value={v} link={link} />
     </div>
   )
 }
@@ -949,7 +959,7 @@ function AccountChips({ label, list }) {
   return (
     <div style={{ marginTop: 14 }}>
       <div className="chips">
-        {list.map((a) => <Address key={a} value={a} />)}
+        {list.map((a) => <Address key={a} value={a} link="/account/" />)}
       </div>
     </div>
   )
@@ -988,7 +998,7 @@ function AccountResult({ account, fallbackAddress }) {
       <div className="rows">
         <AddrRow k="Public key" v={account.address ?? fallbackAddress} />
         <Row k="Version" v={meta.version} mono />
-        {meta.owner && <AddrRow k="Owner program" v={meta.owner} />}
+        {meta.owner && <AddrRow k="Owner program" v={meta.owner} link="/account/" />}
         {flags && <FlagRow k="Is new" v={flags.isNew} />}
         {flags && <FlagRow k="Is ephemeral" v={flags.isEphemeral} />}
         {flags && <FlagRow k="Is deleted" v={flags.isDeleted} />}
@@ -1032,8 +1042,9 @@ function TransactionResult({ tx, fallbackSignature }) {
 
       <div className="rows">
         <AddrRow k="Signature" v={tx.signature ?? fallbackSignature} />
-        <AddrRow k="Fee payer" v={tx.feePayer} />
-        <AddrRow k="Program" v={tx.program} />
+        <Row k="Action" v={describeTx({ program: tx.program, feePayer: tx.feePayer, rw: tx.readWriteAccounts ?? [], data: tx.instructionData }, null).label} />
+        <AddrRow k="Fee payer" v={tx.feePayer} link="/account/" />
+        <AddrRow k="Program" v={tx.program} link="/account/" />
         {knownLabel(tx.program) && <Row k="Which program" v={knownLabel(tx.program)} />}
         <Row k="Nonce" v={tx.nonce} mono />
         <Row k="Instruction data" v={`${Number(tx.instructionDataSize ?? 0).toLocaleString()} bytes`} mono />
@@ -1053,7 +1064,9 @@ function TransactionResult({ tx, fallbackSignature }) {
         </div>
       )}
 
+      {tx.readWriteAccounts?.length > 0 && <p className="fine" style={{ margin: '16px 0 0' }}>Accounts written</p>}
       <AccountChips label="Accounts written" list={tx.readWriteAccounts} />
+      {tx.readOnlyAccounts?.length > 0 && <p className="fine" style={{ margin: '16px 0 0' }}>Accounts read</p>}
       <AccountChips label="Accounts read" list={tx.readOnlyAccounts} />
     </div>
   )
@@ -1144,39 +1157,32 @@ function UniversalLookup({ prefill, onPrefillUsed }) {
 
       {account && <NameServiceCard account={account} />}
       {account && <TokenCard account={account} />}
+      {account?.address && <Activity key={account.address} addresses={[account.address]} me={account.address} title="Transactions" />}
     </>
   )
 }
 
-function ExplorerPage() {
+function ExplorerPage({ initial = null }) {
   const [prefill, setPrefill] = useState(() => {
+    if (initial) return initial
     const q = new URLSearchParams(window.location.search)
     return q.get('tx') || q.get('account') || null
   })
 
-  // Clear the query string once it has been read, so a refresh or a shared
-  // link does not keep re-triggering the same lookup.
+  // Old ?tx= and ?account= links still work; the query string is cleared once
+  // read. /tx/:id and /account/:id keep their path, so they can be shared.
   useEffect(() => {
-    if (prefill) window.history.replaceState({}, '', window.location.pathname)
+    if (prefill && !initial) window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
   return (
     <div className="wrap">
-      <h1 className="h1">Read anything on Thru alphanet</h1>
+      <h1 className="h1">Explorer</h1>
       <p className="lede">Accounts, tokens, names and transactions on Thru.</p>
 
-      <DevAccountCard onLookup={(key) => setPrefill(key)} />
+      {!initial && <DevAccountCard onLookup={(key) => setPrefill(key)} />}
       <UniversalLookup prefill={prefill} onPrefillUsed={() => setPrefill(null)} />
 
-      <section className="card">
-        <h2 className="h2">Browser wallet</h2>
-        <p className="sub" style={{ marginBottom: 10 }}>Passkey based, no seed phrase or extension</p>
-        <p className="fine" style={{ lineHeight: 1.65 }}>
-          Thru's hosted wallet is pre-alpha and currently cannot create accounts, because the fee payer it relies on does not
-          exist on chain. The React SDK behind the embedded wallet is also unpublished on npm, so the connect button stays off
-          here until both are fixed. In the meantime the <Link to="/guides">CLI wallet guide</Link> works today.
-        </p>
-      </section>
 
       <footer className="foot">
         <p className="fine">Built by <a href="https://x.com/pgreyy" target="_blank" rel="noreferrer">pgreyy</a>, open source on <a href="https://github.com/pgreyy/thruscan" target="_blank" rel="noreferrer">GitHub</a></p>
@@ -1191,6 +1197,12 @@ function ExplorerPage() {
    in a Vercel environment variable and checked server side. The password is
    kept in sessionStorage so a page refresh does not log you out, and is gone
    when the tab closes. */
+
+/** /tx/:id and /account/:id: the explorer with that lookup already run. */
+function ExplorerAt() {
+  const { id } = useParams()
+  return <ExplorerPage key={id} initial={id} />
+}
 
 function ModeratePage() {
   const [password, setPassword] = useState(() => sessionStorage.getItem('thruscan_mod') || '')
@@ -3096,6 +3108,8 @@ export default function App() {
             { key: 'explorer', label: 'Explorer', el: <ExplorerPage /> },
             { key: 'wall', label: 'Wall', el: <WallV2 /> },
           ]} />} />          <Route path="/wall" element={<WallV2 />} />
+          <Route path="/tx/:id" element={<ExplorerAt />} />
+          <Route path="/account/:id" element={<ExplorerAt />} />
           <Route path="/swap" element={<SwapPage />} />
           <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/launch/:id" element={<LaunchDetailPage />} />
