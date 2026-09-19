@@ -142,3 +142,21 @@ export function programName(address) {
     [EOA_PROGRAM]: 'Account program',
   })[address] ?? null
 }
+
+/**
+ * The transaction that wrote a wall message. The wall stores the sender and
+ * the block time but not the signature, so this walks the wall account's own
+ * history back to that time and picks the sender's transaction at it.
+ */
+export async function findWallTransaction(wallAccount, poster, postedAtMs, maxPages = 10) {
+  let pages = null
+  for (let i = 0; i < maxPages; i++) {
+    const { items, next } = await fetchHistory([wallAccount], pages)
+    const hit = items.find((t) => t.feePayer === poster && t.time && Math.abs(t.time - postedAtMs) < 2000)
+    if (hit) return hit.signature
+    const oldest = items[items.length - 1]
+    if (!next || !next[wallAccount] || (oldest?.time && oldest.time < postedAtMs - 60_000)) break
+    pages = next
+  }
+  return null
+}

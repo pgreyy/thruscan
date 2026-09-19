@@ -30,7 +30,8 @@
 //   and this page says that out loud rather than implying otherwise.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { findWallTransaction } from '../lib/activity.js'
 import { getAccount } from '../lib/rpcClient.js'
 import { decodeWall, buildPostInstruction, MESSAGE_CHARS, NAME_CHARS, toHex } from '../lib/wall.js'
 import { WALL_PROGRAM, WALL_ACCOUNT } from '../lib/addresses.js'
@@ -117,6 +118,29 @@ function useWall() {
   return { wall, loading, error, reload: load }
 }
 
+/** Finds the message's transaction only when asked, then opens it. */
+function TxLink({ entry }) {
+  const navigate = useNavigate()
+  const [state, setState] = useState(null)   // null | finding | missing
+
+  const open = async () => {
+    setState('finding')
+    try {
+      const sig = await findWallTransaction(WALL_ACCOUNT, entry.poster, entry.postedAt.getTime())
+      if (sig) navigate(`/tx/${sig}`)
+      else setState('missing')
+    } catch {
+      setState('missing')
+    }
+  }
+
+  return (
+    <button className="linkish wall-tx" onClick={open} disabled={state === 'finding'}>
+      {state === 'finding' ? 'finding…' : state === 'missing' ? 'transaction not found' : 'view transaction ↗'}
+    </button>
+  )
+}
+
 function Message({ entry, you }) {
   const mine = you && entry.poster === you
   const toMe = you && entry.to === you
@@ -147,6 +171,7 @@ function Message({ entry, you }) {
           </>
         )}
         {!entry.to && <span>public</span>}
+        <TxLink entry={entry} />
       </div>
     </article>
   )
