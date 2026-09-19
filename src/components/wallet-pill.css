@@ -1163,3 +1163,20 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 }
 .move-row:first-child { border-top: 0; }
 .move-error { grid-column: 2 / -1; color: #c2412d; }
+
+/* Activity opens in a side panel from the Wallet page title. */
+.activity-open { display: inline-flex; align-items: center; gap: 6px; }
+.drawer-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(22, 24, 29, 0.28); display: flex; justify-content: flex-end; }
+.drawer {
+  position: relative;
+  width: min(460px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--canvas);
+  box-shadow: -12px 0 32px rgba(22, 24, 29, 0.12);
+  padding: 16px;
+  animation: drawer-in .18s ease-out;
+}
+.drawer .card { margin: 0; }
+.drawer-top { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+@keyframes drawer-in { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }

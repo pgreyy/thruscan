@@ -401,6 +401,13 @@ export default async function handler(req, res) {
       }
 
 
+      case 'blocktimes': {
+        const slots = String(params.slots ?? '').split(',').map((x) => x.trim()).filter((x) => /^\d+$/.test(x)).slice(0, 50)
+        const times = await blockTimes(client, slots)
+        // A block's time never changes, so these can be cached for a long time.
+        return json(res, 200, { ok: true, times }, { cacheSeconds: 86400 })
+      }
+
       case 'overview': {
         const data = await overview(client)
         return json(res, 200, { ok: true, ...data }, { cacheSeconds: 2 })

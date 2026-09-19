@@ -129,3 +129,16 @@ export async function namesFromHistory(address, maxPages = 6) {
   }
   return [...found.keys()]
 }
+
+/** A readable name for the programs ThruScan knows, or null. */
+export function programName(address) {
+  return ({
+    [THRUSWAP_PROGRAM]: 'ThruSwap',
+    [THRUPAD_PROGRAM]: 'ThruPad launchpad',
+    [WALL_PROGRAM]: 'ThruWall',
+    [TOKEN_PROGRAM]: 'Token program',
+    [NAME_SERVICE_PROGRAM]: 'Name service',
+    [NATIVE_FAUCET_PROGRAM]: 'Thru faucet',
+    [EOA_PROGRAM]: 'Account program',
+  })[address] ?? null
+}

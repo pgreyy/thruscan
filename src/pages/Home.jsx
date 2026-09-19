@@ -17,6 +17,13 @@ import './home.css'
 
 const REFRESH_MS = 5000
 const short = (s, a = 6, b = 4) => (s ? `${s.slice(0, a)}…${s.slice(-b)}` : '')
+const kilo = (n) => {
+  const v = Number(n ?? 0)
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`
+  return String(v)
+}
 const num = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString())
 
 function bytesOf(b64) {
@@ -79,7 +86,7 @@ function useCounts() {
 
 /* ---------- search ---------- */
 
-function Search() {
+export function Search({ compact = false }) {
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
@@ -109,7 +116,7 @@ function Search() {
   }
 
   return (
-    <form className="home-search" onSubmit={go}>
+    <form className={`home-search${compact ? ' compact' : ''}`} onSubmit={go}>
       <input
         value={q}
         onChange={(e) => { setQ(e.target.value); setError(null) }}
@@ -185,7 +192,7 @@ function BlockRow({ b }) {
         <span>Producer <Link className="mono" to={`/account/${b.producer}`}>{short(b.producer, 8, 4)}</Link></span>
         <span className="fine">{b.txs === null ? 'txns not counted' : `${b.txs} txn${b.txs === 1 ? '' : 's'}`}</span>
       </span>
-      <span className="home-badge mono">{num(b.compute)} CU</span>
+      <span className="home-badge" title="Compute units used by this block">{kilo(b.compute)} compute</span>
     </div>
   )
 }
@@ -211,6 +218,13 @@ function TxRow({ t }) {
 /* ---------- the page ---------- */
 
 export function HomePage() {
+  const navigate = useNavigate()
+  // Links from before these pages had their own address: /?tx=... and /?account=...
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('tx')) navigate(`/tx/${q.get('tx')}`, { replace: true })
+    else if (q.get('account')) navigate(`/account/${q.get('account')}`, { replace: true })
+  }, [navigate])
   const { data, error } = useOverview()
   const counts = useCounts()
   const blocks = data?.blocks ?? []

@@ -22,6 +22,7 @@
 //   building rather than faking with a shared account.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   createWallet, importWallet, unlock, locked, forgetWallet,
   hasWallet, storedWallet, isUnlocked, currentAddress,
@@ -728,9 +729,6 @@ function LiveWallet({ wallet, mints }) {
     /* eslint-disable-next-line */
   }, [])
 
-  const tokenAccounts = Object.values(wallet.balances)
-    .filter((b) => b?.exists && b.account)
-    .map((b) => b.account)
 
   const register = async () => {
     setStep('registering'); setError(null)
@@ -786,7 +784,6 @@ function LiveWallet({ wallet, mints }) {
 
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
-      {wallet.registered && <Activity addresses={[wallet.address, ...tokenAccounts].slice(0, 6)} me={wallet.address} />}
       {wallet.registered && <MoveCard wallet={wallet} />}
       <BackupCard wallet={wallet} />
       <Danger wallet={wallet} />
@@ -985,8 +982,31 @@ function MoveCard({ wallet }) {
 
 /* ---------- the page ---------- */
 
+/** Activity in a side panel, so it is one click away without making the
+    page endless. */
+function ActivityDrawer({ addresses, me, onClose }) {
+  useEffect(() => {
+    const key = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', key)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', key); document.body.style.overflow = prev }
+  }, [onClose])
+
+  return createPortal(
+    <div className="drawer-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Activity">
+        <div className="drawer-top"><button className="btn ghost" onClick={onClose}>Close</button></div>
+        <Activity addresses={addresses} me={me} />
+      </aside>
+    </div>,
+    document.body,
+  )
+}
+
 export function WalletPage() {
   const wallet = useWallet()
+  const [showActivity, setShowActivity] = useState(false)
   const [, bump] = useState(0)
   const mints = useMemo(() => {
     // tUSD and WTHRU always, since those are the two quote assets, then
@@ -1000,8 +1020,23 @@ export function WalletPage() {
 
   return (
     <div className="wrap">
-      <h1 className="h1">Wallet</h1>
+      <div className="page-head">
+        <h1 className="h1">Wallet</h1>
+        {hasWallet() && wallet.address && (
+          <button className="btn ghost activity-open" onClick={() => setShowActivity(true)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
+            Activity
+          </button>
+        )}
+      </div>
       <p className="lede">A browser wallet for Thru. Your key never leaves this device.</p>
+      {showActivity && (
+        <ActivityDrawer
+          addresses={[wallet.address, ...Object.values(wallet.balances).filter((b) => b?.exists && b.account).map((b) => b.account)].slice(0, 6)}
+          me={wallet.address}
+          onClose={() => setShowActivity(false)}
+        />
+      )}
 
       {!hasWallet() && <CreateWallet onDone={() => bump((n) => n + 1)} />}
       {hasWallet() && !wallet.unlocked && <UnlockWallet onDone={() => bump((n) => n + 1)} />}
