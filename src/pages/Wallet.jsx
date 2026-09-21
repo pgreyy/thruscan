@@ -34,6 +34,7 @@ import {
   transferToken, releaseName, claimNameFor, sendNativeThru, checkName,
 } from '../lib/wallet.js'
 import { knownMints, ownedNames } from '../lib/holdings.js'
+import { onExternalChange, restoreExternal, isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
 import { customMints, addCustomMint, removeCustomMint, lookupToken, onCustomMintsChange } from '../lib/customTokens.js'
 import { Activity } from '../components/Activity.jsx'
 import { useConfirm } from '../components/Confirm.jsx'
@@ -66,6 +67,12 @@ function setState(patch) {
   state = { ...state, ...patch }
   listeners.forEach((fn) => fn(state))
 }
+
+// Connecting or disconnecting an outside wallet swaps whose balances these are.
+onExternalChange(() => {
+  setState({ address: currentAddress(), unlocked: isUnlocked(), registered: false, native: 0n, balances: {} })
+})
+restoreExternal()
 
 export function useWallet() {
   const [snapshot, setSnapshot] = useState(state)
@@ -796,11 +803,24 @@ function LiveWallet({ wallet, mints }) {
         <div className="card-head">
           <div>
             <h2 className="h2 mono" style={{ wordBreak: 'break-all' }}>{wallet.address}</h2>
+            {isExternal() && <p className="sub" style={{ marginTop: 4 }}>Connected with {externalName()}. It signs everything; ThruScan never sees its keys.</p>}
           </div>
-          <Copyable text={wallet.address} label="Copy address" />
+          <div className="inline">
+            <Copyable text={wallet.address} label="Copy address" />
+            {isExternal() && <button className="btn ghost" onClick={() => disconnectExternal()}>Disconnect</button>}
+          </div>
         </div>
 
-        {!wallet.registered && (
+        {!wallet.registered && isExternal() && (
+          <>
+            <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
+              Not on chain yet. Open your wallet extension and press Activate, then check again.
+            </p>
+            <button className="btn" style={{ marginTop: 14 }} onClick={() => wallet.refresh(mints.map((m) => m.mint))}>Check again</button>
+          </>
+        )}
+
+        {!wallet.registered && !isExternal() && (
           <>
             <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
               Not on chain yet. ThruScan pays to create the account, then claims THRU for your fees.
@@ -832,9 +852,11 @@ function LiveWallet({ wallet, mints }) {
 
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
-      {wallet.registered && <MoveCard wallet={wallet} />}
-      <BackupCard wallet={wallet} />
-      <Danger wallet={wallet} />
+      {/* Backing up, moving and forgetting belong to the wallet that holds the
+          keys. For a connected wallet, that is the wallet itself. */}
+      {!isExternal() && wallet.registered && <MoveCard wallet={wallet} />}
+      {!isExternal() && <BackupCard wallet={wallet} />}
+      {!isExternal() && <Danger wallet={wallet} />}
     </>
   )
 }
@@ -1245,6 +1267,32 @@ function ActivityDrawer({ addresses, me, onClose }) {
   )
 }
 
+/** Use a wallet you already have: the ThruScan Wallet extension, or any wallet
+    that provides window.thru. */
+export function ConnectCard({ compact = false }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const found = hasProvider()
+  const connect = async () => {
+    setBusy(true); setError(null)
+    try { await connectExternal() } catch (e) { setError(String(e?.message ?? e)) } finally { setBusy(false) }
+  }
+  return (
+    <section className={compact ? '' : 'card'}>
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Connect a wallet</h2>
+          <p className="sub">{found ? 'Use the Thru wallet in this browser. It keeps your keys and asks before signing.' : 'Use ThruScan Wallet, the Chrome extension. Your keys stay in the extension.'}</p>
+        </div>
+        {found
+          ? <button className="btn" onClick={connect} disabled={busy}>{busy ? 'Waiting for your wallet' : 'Connect'}</button>
+          : <a className="btn ghost" href={EXTENSION_URL} target="_blank" rel="noreferrer">Get the extension</a>}
+      </div>
+      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+    </section>
+  )
+}
+
 export function WalletPage() {
   const wallet = useWallet()
   const [showActivity, setShowActivity] = useState(false)
@@ -1279,7 +1327,7 @@ export function WalletPage() {
       </div>
       {quick === 'send' && <QuickModal title="Send" onClose={() => setQuick(null)}><SendForm wallet={wallet} /></QuickModal>}
       {quick === 'receive' && <QuickModal title="Receive" onClose={() => setQuick(null)}><ReceiveBody address={wallet.address} /></QuickModal>}
-      <p className="lede">A browser wallet for Thru. Your key never leaves this device.</p>
+      <p className="lede">{isExternal() ? `Connected with ${externalName()}.` : 'A browser wallet for Thru, or connect your own.'}</p>
       {showActivity && (
         <ActivityDrawer
           addresses={[wallet.address, ...Object.values(wallet.balances).filter((b) => b?.exists && b.account).map((b) => b.account)].slice(0, 6)}
@@ -1288,6 +1336,7 @@ export function WalletPage() {
         />
       )}
 
+      {!hasWallet() && <ConnectCard />}
       {!hasWallet() && <CreateWallet onDone={() => bump((n) => n + 1)} />}
       {hasWallet() && !wallet.unlocked && <UnlockWallet onDone={() => bump((n) => n + 1)} />}
       {hasWallet() && wallet.unlocked && <LiveWallet wallet={wallet} mints={mints} />}

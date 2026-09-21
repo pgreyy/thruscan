@@ -906,7 +906,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       >
         {step === 'opening' ? 'Opening your token account…'
           : step === 'signing' ? 'Signing…'
-          : !hasWallet() ? 'Create a wallet to swap'
+          : !hasWallet() ? 'Connect a wallet to swap'
           : from && to ? `Swap ${from.ticker} for ${to.ticker}`
           : 'Swap'}
       </button>
@@ -1329,7 +1329,7 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
           >
             {step === 'opening' ? 'Opening your token accounts…'
               : step === 'signing' ? 'Signing…'
-              : !hasWallet() ? 'Create a wallet first'
+              : !hasWallet() ? 'Connect a wallet first'
               : side === 'add' ? 'Add liquidity' : 'Remove liquidity'}
           </button>
 

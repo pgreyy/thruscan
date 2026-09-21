@@ -27,6 +27,7 @@ import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
 import { ownedNames, knownMints } from '../lib/holdings.js'
+import { isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
 
 const DECIMALS = 6
 
@@ -142,6 +143,12 @@ function Panel({ wallet, onClose }) {
           {busy ? 'Unlocking' : 'Unlock'}
         </button>
         {error && <p className="notice bad" style={{ marginTop: 10 }}>{error}</p>}
+        {hasProvider() && (
+          <button className="btn ghost" style={{ marginTop: 8, width: '100%' }}
+            onClick={() => connectExternal().then(onClose).catch((e) => setError(String(e?.message ?? e)))}>
+            Use ThruScan Wallet instead
+          </button>
+        )}
       </div>
     )
   }
@@ -185,12 +192,50 @@ function Panel({ wallet, onClose }) {
 
       <div className="pill-divider" />
 
-      <button
-        className="pill-row"
-        onClick={() => { locked(); wallet.setState({ unlocked: false, balances: {} }); onClose() }}
-      >
-        <span>Lock</span>
-      </button>
+      {isExternal() ? (
+        <button className="pill-row" onClick={() => { disconnectExternal(); onClose() }}>
+          <span>Disconnect</span><span className="fine">{externalName()}</span>
+        </button>
+      ) : (
+        <button
+          className="pill-row"
+          onClick={() => { locked(); wallet.setState({ unlocked: false, balances: {} }); onClose() }}
+        >
+          <span>Lock</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Two ways in: a wallet you already have, or ThruScan's browser wallet. */
+function ConnectMenu({ onClose }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const found = hasProvider()
+  const connect = async () => {
+    setBusy(true); setError(null)
+    try { await connectExternal(); onClose() } catch (e) { setError(String(e?.message ?? e)) } finally { setBusy(false) }
+  }
+  return (
+    <div className="pill-panel connect-menu">
+      <p className="fine" style={{ margin: '2px 4px 8px' }}>Connect with</p>
+      {found ? (
+        <button className="connect-option" onClick={connect} disabled={busy}>
+          <span className="connect-mark">T</span>
+          <span className="connect-text"><b>ThruScan Wallet</b><span className="fine">{busy ? 'Approve in the extension' : 'Extension, detected'}</span></span>
+        </button>
+      ) : (
+        <a className="connect-option" href={EXTENSION_URL} target="_blank" rel="noreferrer">
+          <span className="connect-mark">T</span>
+          <span className="connect-text"><b>ThruScan Wallet</b><span className="fine">Get the Chrome extension</span></span>
+        </a>
+      )}
+      <Link className="connect-option" to="/wallet" onClick={onClose}>
+        <span className="connect-mark ghost"><WalletGlyph /></span>
+        <span className="connect-text"><b>Browser wallet</b><span className="fine">Made here, no install</span></span>
+      </Link>
+      {error && <p className="notice bad" style={{ marginTop: 8 }}>{error}</p>}
     </div>
   )
 }
@@ -239,7 +284,7 @@ export function WalletPill() {
     if (!wallet.unlocked) return
     wallet.refresh()
     knownMints().then((all) => wallet.refresh(all)).catch(() => {})
-  }, [wallet.unlocked])
+  }, [wallet.unlocked, wallet.address])
 
   if (!mounted) return null
 
@@ -255,9 +300,12 @@ export function WalletPill() {
   const body = (
     <div className="wallet-pill-mount" ref={boxRef}>
       {!hasWallet() ? (
-        <Link className="wallet-pill" to="/wallet">
-          <span className="pill-strong">Connect wallet</span>
-        </Link>
+        <>
+          <button className="wallet-pill" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <span className="pill-strong">Connect wallet</span>
+          </button>
+          {open && <ConnectMenu onClose={() => setOpen(false)} />}
+        </>
       ) : (
         <>
           <button className="wallet-pill" onClick={() => setOpen((o) => !o)} aria-expanded={open}>

@@ -35,7 +35,7 @@
 // more, and identical derivations across different uses is how one leak
 // becomes several.
 
-import { exportPrivateKey, isUnlocked, currentAddress } from './wallet.js'
+import { exportPrivateKey, isUnlocked, currentAddress, isExternal } from './wallet.js'
 
 const ID_KEY = 'thruscan_player_id'
 const TAG = 'thruscan.games.playercode.v1'
@@ -44,7 +44,9 @@ const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
 
 /** The code this wallet always produces. Requires the wallet to be unlocked. */
 export async function playerCodeForWallet() {
-  if (!isUnlocked()) return null
+  // A connected wallet never shows this site its key, so games stay on the
+  // guest code for it.
+  if (!isUnlocked() || isExternal()) return null
   const priv = exportPrivateKey()
   const material = new TextEncoder().encode(`${TAG}:${priv}`)
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', material))

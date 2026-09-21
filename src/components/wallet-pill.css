@@ -1248,3 +1248,18 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 .picker-add { border-top: 1px solid var(--line); margin-top: 4px; padding: 10px 8px 6px; }
 .token-remove { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px; margin-left: 6px; border-radius: 6px; }
 .token-remove:hover { color: var(--ink); background: var(--canvas); }
+
+/* Connect menu: an outside wallet or the browser wallet. */
+.connect-menu { width: 280px; }
+.connect-option {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; border-radius: 10px;
+  border: 0; background: none; cursor: pointer; text-align: left; color: inherit; text-decoration: none;
+}
+.connect-option:hover:not(:disabled) { background: rgba(128, 128, 128, 0.1); }
+.connect-mark {
+  width: 34px; height: 34px; border-radius: 10px; background: var(--ink); color: var(--canvas); display: grid; place-items: center;
+  font-family: var(--mono); font-weight: 700; flex-shrink: 0;
+}
+.connect-mark.ghost { background: var(--canvas); color: var(--ink); border: 1px solid var(--line); }
+.connect-text { display: flex; flex-direction: column; line-height: 1.3; }
+.connect-text b { font-size: 14px; }

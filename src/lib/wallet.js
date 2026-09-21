@@ -50,6 +50,7 @@ import {
   Pubkey, TransactionBuilder, deriveProgramAddress, keys, eoa, signWithDomain,
 } from '@thru/sdk'
 import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
+import { isExternal, externalAddress, externalSend } from './external.js'
 
 const STORE_KEY = 'thruscan.wallet.v1'
 const ENDPOINT = '/api/wallet'
@@ -195,7 +196,10 @@ export function storedWallet() {
   } catch { return null }
 }
 
-export function hasWallet() { return storedWallet() !== null }
+/** A wallet to act with: ThruScan's browser wallet, or a connected one. */
+export function hasWallet() { return isExternal() || storedWallet() !== null }
+/** True when a connected wallet (the extension) is doing the signing. */
+export { isExternal } from './external.js'
 
 /** Removes the wallet from this browser. The key is gone unless it was
  *  exported, which is why every caller should make the visitor confirm. */
@@ -208,8 +212,10 @@ export function forgetWallet() {
 
 let session = null   // { address, publicKey, privateKey }
 
-export function isUnlocked() { return session !== null }
-export function currentAddress() { return session?.address ?? storedWallet()?.address ?? null }
+// A connected wallet is always "unlocked" as far as this site is concerned:
+// it asks for its own password, in its own window, when it needs to.
+export function isUnlocked() { return isExternal() || session !== null }
+export function currentAddress() { return externalAddress() ?? session?.address ?? storedWallet()?.address ?? null }
 export function locked() { if (session?.privateKey) session.privateKey.fill(0); session = null }
 
 async function persist(address, publicKey, privateKey, password, phrase = null) {
@@ -342,6 +348,7 @@ export function hasPhrase() {
 }
 
 function requireSession() {
+  if (isExternal()) return { address: externalAddress(), external: true }
   if (!session) throw new Error('Unlock the wallet first.')
   return session
 }
@@ -351,6 +358,13 @@ function requireSession() {
 /** Ask the sponsor to bring this key's account into existence. The signature
  *  below is the only thing that authorises it, and it is made here. */
 export async function registerOnChain() {
+  if (isExternal()) {
+    // A connected wallet puts its own account on chain; this site never holds
+    // its key, so it cannot sign the creation message for it.
+    const address = externalAddress()
+    if (await accountExists(address)) return { already: true, address }
+    throw new Error('Open your wallet extension and press Activate, then come back.')
+  }
   const { address, publicKey, privateKey } = requireSession()
 
   const { chainId, sponsor, exists } = await api('prepare', { address })
@@ -460,6 +474,7 @@ async function signAndSendNow({
   program, readWrite = [], readOnly = [], data,
   computeUnits = 300_000_000, stateUnits = 60_000, memoryUnits = 60_000,
 }) {
+  if (isExternal()) return sendWithConnectedWallet({ program, readWrite, readOnly, data, computeUnits, stateUnits, memoryUnits })
   const { address, privateKey } = requireSession()
   const { nonce, startSlot, chainId, balance } = await api('prepare', { address })
 
@@ -495,6 +510,24 @@ async function signAndSendNow({
       try {
         const now = await api('prepare', { address })
         if (BigInt(now.nonce) > BigInt(nonce)) return
+      } catch { /* keep waiting */ }
+    }
+  })()
+  return { signature, settled }
+}
+
+/** The same request, handed to the connected wallet to approve, sign and send. */
+async function sendWithConnectedWallet(args) {
+  const address = externalAddress()
+  const before = await api('prepare', { address }).catch(() => null)
+  const signature = await externalSend(args)
+  const settled = (async () => {
+    if (!before) return
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500))
+      try {
+        const now = await api('prepare', { address })
+        if (BigInt(now.nonce) > BigInt(before.nonce)) return
       } catch { /* keep waiting */ }
     }
   })()
