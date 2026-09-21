@@ -16,7 +16,7 @@ export function GetWalletPage() {
         <div className="card-head">
           <div>
             <h2 className="h2">Download</h2>
-            <p className="sub">Version 0.3.0 · zip</p>
+            <p className="sub">Version 0.3.1 · zip</p>
           </div>
           <a className="btn" href={ZIP} download="thruscan-wallet.zip">Download</a>
         </div>

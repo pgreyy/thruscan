@@ -18,6 +18,7 @@ const PROGRAM_NAMES = {
   taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ: 'Thru multicall',
   taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH: 'Wrapped THRU (WTHRU)',
   taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03: 'Thru NFT program',
+  taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M: 'Pixel Pals',
 }
 
 /** What we can say for sure about the instruction, from its bytes alone. */
@@ -37,6 +38,9 @@ function explain(program, dataHex) {
   }
   if (program === 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03' && b.length >= 4) {
     return ({ 1: 'Mints an NFT', 2: 'Sends an NFT from this wallet', 3: 'Burns an NFT' })[dv.getUint32(0, true)] ?? null
+  }
+  if (program === 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M' && b.length >= 1) {
+    return ({ 2: 'Mints a Pixel Pal (pays its price in WTHRU)', 3: 'Sends a Pixel Pal from this wallet', 6: 'Claims what a Pixel Pal holds' })[b[0]] ?? null
   }
   if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq') {
     if (b[0] === 2 && b.length >= 13) return `Moves ${dv.getBigUint64(5, true).toLocaleString()} base units of a token`

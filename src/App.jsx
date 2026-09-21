@@ -14,6 +14,7 @@ import { HomePage } from './pages/Home.jsx'
 import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
 import { GetWalletPage } from './pages/GetWallet.jsx'
+import { PalsPage } from './pages/Pals.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -56,6 +57,7 @@ const NAV = [
   { to: '/', label: 'Explorer', icon: 'search' },
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
+  { to: '/pals', label: 'Pixel Pals', icon: 'pal' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/builders', label: 'Builders', icon: 'book' },
@@ -79,6 +81,7 @@ const ICON_PATHS = {
   drop: 'M12 3.2c3.1 3.4 5.4 6.4 5.4 9.1a5.4 5.4 0 0 1-10.8 0c0-2.7 2.3-5.7 5.4-9.1zM9.4 13.3a2.6 2.6 0 0 0 2.6 2.6',
   wallet: 'M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7.5V17M16 12.5h1.5',
   tag: 'M20.5 12.3 12.3 20.5a1.6 1.6 0 0 1-2.3 0l-6.5-6.5a1.6 1.6 0 0 1-.5-1.2V4.6c0-.9.7-1.6 1.6-1.6h8.2c.4 0 .9.2 1.2.5l6.5 6.5a1.6 1.6 0 0 1 0 2.3zM7.8 7.8h.01',
+  pal: 'M8 4h8v2h2v2h2v9h-2v2h-2v2h-2v-2h-4v2H8v-2H6v-2H4V8h2V6h2zM9 11h2M13 11h2M10 15h4',
   rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
 }
 
@@ -3121,6 +3124,7 @@ export default function App() {
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/get-wallet" element={<GetWalletPage />} />
+          <Route path="/pals" element={<PalsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
           <Route path="/builders" element={<Tabs tabs={[

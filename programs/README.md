@@ -16,6 +16,12 @@ cd "$(dirname "$(find ~/$p -name Makefile | head -1)")"
 make -j
 ```
 
+Without the Thru toolchain (it downloads from GitHub releases), Ubuntu's own
+packages work: `apt install gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf`,
+then point the SDK's makefiles at them with `RISCV_TOOLCHAIN_ROOT`. The Pixel
+Pals program and the current thruswap and thrupad2 were built that way and
+tested on alphanet before going live. The exact deployed binaries are in `bin/`.
+
 The SDK compiles with `-Wall -Wextra -Wpedantic -Werror -Wconversion`, which is
 stricter than most projects. Anything relying on a compiler extension has to say
 so explicitly; see the `__extension__` on the 128-bit typedef in `thruswap.c`.
@@ -33,6 +39,7 @@ so explicitly; see the `__extension__` on the 128-bit typedef in `thruswap.c`.
 | `thruswap.c` | Constant-product AMM. Pools, liquidity, swaps, 30 basis points to liquidity providers. |
 | `thrupad2.c` | Bonding-curve launchpad. Fixed supply, each launch priced in tUSD or WTHRU, creator fee, graduation. The live version. |
 | `thruwall2.c` | The wall, version 2: posts signed by the sender, optionally addressed to another account. The live version; `thruwall.c` is the original. |
+| `thrupals.c` | Pixel Pals: 2026 NFTs, 1,000 THRU each, one per wallet, paid straight to a fixed treasury. The program is the collection's authority, so a Pal moves only when its holder signs, and hidden prizes pay only the current holder. |
 
 ## What was learned the hard way
 
@@ -73,8 +80,36 @@ meta account" and leaves the old binary live, which then reads downstream as a
 code bug. Use `thru program upgrade` to replace code at an existing address, or
 a fresh seed during iteration.
 
+**Check the address of every program you call.** A program that takes the
+token program's index from its caller and then trusts the transfer can be
+handed a program of the caller's own that accepts the call and does nothing,
+while the books move as if it had paid. `thru_token.h` has
+`tn_token_is_program()` for this, and every token call's result is checked,
+because a rejected invocation returns a code instead of reverting.
+
+**A program anywhere in the call chain counts as authorized** in the SDK's
+`tsdk_is_account_authorized_by_pubkey`, and so does the fee payer. That is what
+lets a program act as an NFT collection's authority, and it is also why calling
+an unchecked program is dangerous: whatever you call inherits your authority.
+
+**Thru's NFT program only accepts an authority that is signing** when a
+collection is created, so a program cannot be named as the authority up front.
+Create the collection with your own key, then hand it over with
+`set_authority` ([u32 5][mint u16][new authority 32]).
+
 **`getaccountinfo --json` returns its payload under `account_info`.** Guessing
 any other shape silently reads nothing.
+
+## Live addresses
+
+| what | seed | address |
+| --- | --- | --- |
+| Pixel Pals program | `pxpals7Q1` | `taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M` |
+| Pixel Pals state | `palcfg7Q2` | `tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa` |
+| Pixel Pals collection (NFT mint) | `palsmint7Q1` | `ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv` |
+| Pixel Pals treasury (fuck.id's WTHRU account) | | `tastNK-OKQV3FgRH1Q0DX5vV8MOS_b2P08LxSKQ2w_kbvz` |
+| thruswap (upgraded 21 Sep 2026) | `thruswapA2` | `taanfNIPSm5OA3LDWSLFFAgo3iszZ1rOVsdJPYp4dzDfTg` |
+| thrupad2 (upgraded 21 Sep 2026) | `thrupad2A1` | `taX1wTP2Zmfddk6T3VAbncDzeDRXtc9HUCwUamm6d8rmPu` |
 
 ## Error codes
 

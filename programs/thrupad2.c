@@ -73,6 +73,11 @@
 
 #include "thru_token.h"
 
+/* Every token CPI must succeed or the whole instruction reverts. A rejected
+   invocation RETURNS a code rather than reverting, so ignoring it would let
+   the books move while the tokens did not. */
+#define TOKEN_CALL( expr ) do { ulong rc_ = (expr); if( rc_ != 0UL ) tsdk_revert( rc_ ); } while( 0 )
+
 #define OP_INIT     (0x00)
 #define OP_LAUNCH   (0x01)
 #define OP_BUY      (0x02)
@@ -128,6 +133,7 @@
 #define ERR_TOO_SOON      (27UL)
 #define ERR_NO_FEES       (28UL)
 #define ERR_SUPPLY        (29UL)
+#define ERR_TOKEN_PROG    (30UL)  /* the "token program" named is not the token program */
 
 /* --------------------------------------------------------------- storage */
 
@@ -352,6 +358,7 @@ do_launch( uchar const * data, ulong data_sz ) {
 
   struct launch_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
 
   if( a.fee_bps > CREATOR_BPS_MAX )            tsdk_revert( ERR_FEE_RANGE );
   if( a.supply == 0UL || a.virt_quote == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
@@ -408,9 +415,9 @@ do_launch( uchar const * data, ulong data_sz ) {
 
   /* The whole supply onto the curve, in one call, by a program that has no
      instruction to mint again. That is what makes the supply fixed. */
-  tn_token_mint_to( a.token_prog_idx, a.mint_idx, a.token_vault_idx,
+  TOKEN_CALL( tn_token_mint_to( a.token_prog_idx, a.mint_idx, a.token_vault_idx,
                     tsdk_get_current_program_acc_idx(), a.supply,
-                    (tsdk_invoke_auth_t const *)0 );
+                    (tsdk_invoke_auth_t const *)0 ) );
 
   memcpy( rec, &r, LAUNCH_SZ );
 
@@ -452,6 +459,7 @@ do_buy( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct trade_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct trade_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
   if( a.amount_in == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
 
   launch_rec_t * rec = load_live( &a );
@@ -475,10 +483,10 @@ do_buy( uchar const * data, ulong data_sz ) {
   /* Never promise more than the curve actually holds. */
   if( tokens_out > vault_balance( a.token_vault_idx ) ) tsdk_revert( ERR_NOT_FUNDED );
 
-  tn_token_transfer( a.token_prog_idx, a.user_quote_idx, a.quote_vault_idx,
-                     a.amount_in, (tsdk_invoke_auth_t const *)0 );
-  tn_token_transfer( a.token_prog_idx, a.token_vault_idx, a.user_token_idx,
-                     tokens_out, (tsdk_invoke_auth_t const *)0 );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.user_quote_idx, a.quote_vault_idx,
+                     a.amount_in, (tsdk_invoke_auth_t const *)0 ) );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.token_vault_idx, a.user_token_idx,
+                     tokens_out, (tsdk_invoke_auth_t const *)0 ) );
 
   rec->vq            = new_vq;
   rec->vt            = new_vt;
@@ -492,6 +500,7 @@ do_sell( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct trade_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct trade_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
   if( a.amount_in == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
 
   launch_rec_t * rec = load_live( &a );
@@ -515,10 +524,10 @@ do_sell( uchar const * data, ulong data_sz ) {
   if( held < rec->creator_fees ) tsdk_revert( ERR_NOT_FUNDED );
   if( out > held - rec->creator_fees ) tsdk_revert( ERR_NOT_FUNDED );
 
-  tn_token_transfer( a.token_prog_idx, a.user_token_idx, a.token_vault_idx,
-                     a.amount_in, (tsdk_invoke_auth_t const *)0 );
-  tn_token_transfer( a.token_prog_idx, a.quote_vault_idx, a.user_quote_idx,
-                     out, (tsdk_invoke_auth_t const *)0 );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.user_token_idx, a.token_vault_idx,
+                     a.amount_in, (tsdk_invoke_auth_t const *)0 ) );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.quote_vault_idx, a.user_quote_idx,
+                     out, (tsdk_invoke_auth_t const *)0 ) );
 
   rec->vq            = new_vq;
   rec->vt            = new_vt;
@@ -546,6 +555,7 @@ do_claim( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct claim_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct claim_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
 
   launch_rec_t * rec = open_launch( a.reg_idx, a.launch_id, (uchar **)0 );
   if( rec->state == STATE_EMPTY ) tsdk_revert( ERR_NOT_READY );
@@ -569,8 +579,8 @@ do_claim( uchar const * data, ulong data_sz ) {
      fees are recorded as still owed after they have left. */
   rec->creator_fees = 0UL;
 
-  tn_token_transfer( a.token_prog_idx, a.quote_vault_idx, a.dest_idx, owed,
-                     (tsdk_invoke_auth_t const *)0 );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.quote_vault_idx, a.dest_idx, owed,
+                     (tsdk_invoke_auth_t const *)0 ) );
 }
 
 /* --------------------------------------------------------------- GRADUATE */

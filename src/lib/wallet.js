@@ -470,6 +470,22 @@ async function openTokenAccountPaidByMe({ payer, mint, owner, seed }) {
 
 function randomSeed() { return crypto.getRandomValues(new Uint8Array(32)) }
 
+/** A creation state proof for an account that does not exist yet, as bytes. */
+export async function requestProof(address) {
+  const { proof } = await api('proof', { address })
+  return b64.decode(proof)
+}
+
+/** Ask ThruScan to mint any reserved Pals the count has reached. */
+export async function palsAdvance() {
+  return api('pals-advance', {})
+}
+
+/** Ask ThruScan to clear this wallet to mint a Pixel Pal. */
+export async function palsAllow(address = currentAddress()) {
+  return api('pals-allow', { address })
+}
+
 /**
  * Balances for a list of mints.
  *

@@ -37,6 +37,7 @@ import { createThruClient, Pubkey, proofs, deriveProgramAddress, TransactionBuil
 import { createGrpcTransport } from '@connectrpc/connect-node'
 import { createHash } from 'node:crypto'
 import { sendLanded } from './_send.js'
+import { decodeConfig, buildAllow, buildGift, nftAccountFor, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -725,6 +726,92 @@ async function proofFor(c, { address }) {
   return { ok: true, proof: Buffer.from(proof.proof).toString('base64') }
 }
 
+/* ---------- Pixel Pals: clearing a wallet to mint ----------
+ *
+ * The program only lets a wallet mint once ThruScan has added it to the
+ * collection's allowlist, and this is the one place that does. It adds a
+ * wallet only if:
+ *   - the collection is open and not sold out,
+ *   - the wallet has not minted already,
+ *   - the wallet can actually pay (native THRU plus WTHRU covers the price),
+ *   - and its network has not already cleared 3 wallets this week.
+ *
+ * The weekly count lives on chain, not here: each entry carries a tag made
+ * from the network address and the week, salted with a server secret so the
+ * address itself cannot be read back or guessed. Counting entries with the
+ * same tag gives the week's total, which survives cold starts and redeploys. */
+
+const PALS_PER_NETWORK_PER_WEEK = 3
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const palsBusy = new Set()   // ip, while a request from it is in flight
+
+function palsTag(ip) {
+  const week = Math.floor(Date.now() / WEEK_MS)
+  const h = createHash('sha256').update(`pixelpals|${week}|${ip}|${process.env.THRU_SPONSOR_PRIVKEY}`).digest()
+  return h.readBigUInt64LE(0)
+}
+
+async function palsState(c) {
+  const a = await getAccount(c, PALS_CONFIG)
+  return a ? decodeConfig(a.data.data) : null
+}
+
+/* Mint every reserved number the count has reached, to the reserve wallet.
+   The program refuses a public mint of a reserved number, so the public mint
+   waits for this; it runs before a wallet is cleared and whenever the page
+   finds the next number reserved. Safe to call any time: the program itself
+   refuses a GIFT when the next number is not reserved. */
+async function palsGiftPending(c) {
+  let gifted = 0
+  for (let i = 0; i < 25; i++) {
+    const cfg = await palsState(c)
+    if (!cfg || cfg.minted >= cfg.supply || !cfg.reserved(cfg.minted)) break
+    const id = cfg.minted
+    const nft = await nftAccountFor(id)
+    const proof = await proofs.generateStateProof(c.ctx, { address: nft, proofType: PROOF_CREATING })
+    await sponsorSend(c, await buildGift({ payer: process.env.THRU_SPONSOR_PUBKEY, id, reserve: cfg.reserveWallet, proof: proof.proof }))
+    const after = await palsState(c)
+    if (!after || after.minted === id) break   // did not land; leave it for the next call
+    gifted++
+  }
+  return gifted
+}
+
+async function palsAllow(c, { address }, ip) {
+  if (!address) return { ok: false, error: 'Connect a wallet first.' }
+  const cfg = await palsState(c)
+  if (!cfg) return { ok: false, error: 'Pixel Pals is not open yet.' }
+  if (cfg.minted >= cfg.supply) return { ok: false, error: 'Sold out.' }
+  if (cfg.minters.includes(address)) return { ok: false, error: 'This wallet has already minted its Pal.' }
+  if (cfg.allowed().some((r) => r.wallet === address)) {
+    await palsGiftPending(c).catch(() => 0)
+    return { ok: true, already: true }
+  }
+
+  const wallet = await getAccount(c, address)
+  if (!wallet) return { ok: false, error: 'This wallet is not on chain yet.' }
+  const native = wallet.meta?.balance ?? 0n
+  const wthruAccount = await getAccount(c, deriveTokenAccount(WTHRU_MINT, address))
+  const wthru = wthruAccount ? Buffer.from(wthruAccount.data.data).readBigUInt64LE(64) : 0n
+  if (native + wthru < cfg.price + 5n) {
+    return { ok: false, error: `A Pal costs ${cfg.price.toLocaleString('en-US')} THRU, plus a few for fees.` }
+  }
+
+  const tag = palsTag(ip)
+  const used = cfg.allowed().filter((r) => r.tag === tag).length
+  if (used >= PALS_PER_NETWORK_PER_WEEK) {
+    return { ok: false, status: 429, error: `${PALS_PER_NETWORK_PER_WEEK} Pals have already been minted from this network this week.` }
+  }
+
+  await palsGiftPending(c).catch(() => 0)
+  const signature = await sponsorSend(c, buildAllow({ payer: process.env.THRU_SPONSOR_PUBKEY, wallet: address, tag }))
+  const after = await palsState(c)
+  if (!after?.allowed().some((r) => r.wallet === address)) {
+    return { ok: false, error: 'Could not clear this wallet. Try again.', signature }
+  }
+  return { ok: true, signature }
+}
+
 /* ---------- entry ---------- */
 
 export default async function handler(req, res) {
@@ -751,7 +838,9 @@ export default async function handler(req, res) {
     if (!body.mints.every((m) => ADDRESS_RE.test(m))) return bad('mints')
   }
 
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+  // Vercel sets both of these itself and does not pass a client's own through.
+  const ip = String(req.headers['x-real-ip'] || '').trim()
+    || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown'
   const metered = action === 'create' || action === 'open' || action === 'faucet'
     || action === 'name-register' || action === 'pad-accounts'
@@ -784,6 +873,21 @@ export default async function handler(req, res) {
       case 'proof':    return json(res, 200, await proofFor(c, body))
       case 'submit':   return json(res, 200, await submit(c, body))
       case 'status':   return json(res, 200, await status(c, body))
+      case 'pals-advance': {
+        if (palsBusy.has(ip)) return json(res, 429, { ok: false, error: 'One at a time. Try again in a moment.' })
+        palsBusy.add(ip)
+        try { return json(res, 200, { ok: true, gifted: await palsGiftPending(c) }) } finally { palsBusy.delete(ip) }
+      }
+      case 'pals-allow': {
+        if (palsBusy.has(ip)) return json(res, 429, { ok: false, error: 'One at a time. Try again in a moment.' })
+        palsBusy.add(ip)
+        try {
+          const out = await palsAllow(c, body, ip)
+          return json(res, out.ok ? 200 : (out.status ?? 400), out)
+        } finally {
+          palsBusy.delete(ip)
+        }
+      }
       default:         return json(res, 400, { ok: false, error: `Unknown action "${action}".` })
     }
   } catch (err) {

@@ -110,6 +110,26 @@ FD_STATIC_ASSERT( sizeof( tn_token_transfer_ix_t ) == 13UL, tn_token_transfer_sz
 FD_STATIC_ASSERT( sizeof( tn_token_mint_to_ix_t  ) == 15UL, tn_token_mint_to_sz  );
 FD_STATIC_ASSERT( sizeof( tn_token_burn_ix_t     ) == 15UL, tn_token_burn_sz     );
 
+/* ------------------------------------------------------- program identity */
+
+/* The token program's address: 31 zero bytes then 0xaa
+   (taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq).
+
+   Every instruction that calls the token program takes its index from the
+   caller, so a program MUST check that the account at that index really is the
+   token program before relying on a transfer having happened. Otherwise a
+   caller can name a program of their own that accepts the call and does
+   nothing, and the calling program updates its books for a payment that never
+   moved. */
+static inline int
+tn_token_is_program( ushort idx ) {
+  tsdk_txn_t const * txn = tsdk_get_txn();
+  if( idx >= tsdk_txn_account_cnt( txn ) ) return 0;
+  uchar const * k = tsdk_txn_get_acct_addrs( txn )[ idx ].key;
+  for( ulong i=0UL; i<31UL; i++ ) if( k[ i ] ) return 0;
+  return k[ 31 ] == (uchar)0xaa;
+}
+
 /* ----------------------------------------------------------- authorization */
 
 /* tsdk_invoke_auth_t ends in a flexible array, which cannot be declared on the

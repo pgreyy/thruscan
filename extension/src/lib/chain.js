@@ -25,6 +25,13 @@ export const PROGRAMS = {
   NFT: 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03',
 }
 const FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
+// Pixel Pals: its program is the collection's authority, so a Pal is sent
+// through that program's SEND, which checks that the signer holds it.
+export const PALS = {
+  program: 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M',
+  config: 'tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa',
+  mint: 'ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv',
+}
 const FAUCET_MAX = 10_000n
 // The .id names root on Thru's name service.
 const NAMES_ROOT = 'taGEX4QNK_WjsknEK4kl0_ppCJUimoanrmFuU27t1gS3pw'
@@ -149,6 +156,8 @@ export function describe(item, me) {
       return { label: ({ 1: 'Registered a name', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[dv?.getUint32(0, true)] ?? 'Name service' }
     case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ':
       return { label: 'Wrapped THRU' }
+    case PALS.program:
+      return { label: ({ 2: 'Minted a Pixel Pal', 3: byMe ? 'Sent a Pixel Pal' : 'Received a Pixel Pal', 6: 'Claimed a Pixel Pal prize' })[d[0]] ?? 'Pixel Pals' }
     case PROGRAMS.NFT:
       return { label: ({ 0: 'Created an NFT collection', 1: 'Minted an NFT', 2: byMe ? 'Sent an NFT' : 'Received an NFT', 3: 'Burned an NFT' })[dv?.getUint32(0, true)] ?? 'NFT program' }
     case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH':
@@ -219,8 +228,28 @@ export async function nfts(url, address) {
 export async function sendNft(url, signer, nftAccount, to) {
   const n = decodeNft((await accountInfo(url, nftAccount)).data)
   if (!n || n.owner !== signer.address) throw new Error('This wallet does not hold that NFT.')
+  if (to === signer.address) throw new Error('That is this wallet.')
   const m = (await accountInfo(url, n.mint)).data
-  if (m.length !== 48 || Pubkey.from(m.slice(0, 32)).toThruFmt() !== signer.address) {
+  const authority = m.length === 48 ? Pubkey.from(m.slice(0, 32)).toThruFmt() : null
+
+  // A Pixel Pal: SEND [0x03][cfg][nft program][nft mint][nft][dest][id u32].
+  if (n.mint === PALS.mint && authority === PALS.program) {
+    const readWrite = sortAddresses([PALS.config, nftAccount])
+    const readOnly = sortAddresses([PROGRAMS.NFT, n.mint, to])
+    const at = (a) => (readWrite.includes(a) ? 2 + readWrite.indexOf(a) : 2 + readWrite.length + readOnly.indexOf(a))
+    const data = new Uint8Array(15)
+    const dv = new DataView(data.buffer)
+    data[0] = 0x03
+    dv.setUint16(1, at(PALS.config), true)
+    dv.setUint16(3, at(PROGRAMS.NFT), true)
+    dv.setUint16(5, at(n.mint), true)
+    dv.setUint16(7, at(nftAccount), true)
+    dv.setUint16(9, at(to), true)
+    dv.setUint32(11, Number(n.id), true)
+    return sendInstruction(url, signer, { program: PALS.program, readWrite, readOnly, data })
+  }
+
+  if (authority !== signer.address) {
     throw new Error('This collection moves its NFTs through its own program. Send it from the collection\'s site.')
   }
   const readOnly = sortAddresses([to, n.mint])

@@ -65,6 +65,11 @@
 
 #include "thru_token.h"
 
+/* Every token CPI must succeed or the whole instruction reverts. A rejected
+   invocation RETURNS a code rather than reverting, so ignoring it would let
+   the books move while the tokens did not. */
+#define TOKEN_CALL( expr ) do { ulong rc_ = (expr); if( rc_ != 0UL ) tsdk_revert( rc_ ); } while( 0 )
+
 #define OP_INIT   (0x00)
 #define OP_CREATE (0x01)
 #define OP_ADD    (0x02)
@@ -108,6 +113,7 @@
 #define ERR_FEE_RANGE     (20UL)
 #define ERR_OVERFLOW      (21UL)
 #define ERR_LP_SUPPLY     (22UL)
+#define ERR_TOKEN_PROG    (23UL)  /* the "token program" named is not the token program */
 
 /* --------------------------------------------------------------- storage */
 
@@ -398,6 +404,7 @@ do_add( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct flow_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct flow_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
 
   ulong amount_a = a.amount_0;
   ulong amount_b = a.amount_1;
@@ -428,12 +435,12 @@ do_add( uchar const * data, ulong data_sz ) {
   /* Pull both sides in before minting anything. If either transfer reverts the
      whole transaction unwinds, so there is no state in which the LP tokens
      exist but the deposit does not. */
-  tn_token_transfer( a.token_prog_idx, a.user_a_idx, a.vault_a_idx, amount_a, (tsdk_invoke_auth_t const *)0 );
-  tn_token_transfer( a.token_prog_idx, a.user_b_idx, a.vault_b_idx, amount_b, (tsdk_invoke_auth_t const *)0 );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.user_a_idx, a.vault_a_idx, amount_a, (tsdk_invoke_auth_t const *)0 ) );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.user_b_idx, a.vault_b_idx, amount_b, (tsdk_invoke_auth_t const *)0 ) );
 
-  tn_token_mint_to( a.token_prog_idx, a.lp_mint_idx, a.user_lp_idx,
+  TOKEN_CALL( tn_token_mint_to( a.token_prog_idx, a.lp_mint_idx, a.user_lp_idx,
                     tsdk_get_current_program_acc_idx(), minted,
-                    (tsdk_invoke_auth_t const *)0 );
+                    (tsdk_invoke_auth_t const *)0 ) );
 
   pool->lp_supply += minted;
 }
@@ -443,6 +450,7 @@ do_remove( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct flow_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct flow_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
 
   ulong lp_amount = a.amount_0;
   if( lp_amount == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
@@ -457,13 +465,17 @@ do_remove( uchar const * data, ulong data_sz ) {
   ulong out_b = mul_div( lp_amount, res_b, pool->lp_supply );
   if( out_a == 0UL && out_b == 0UL ) tsdk_revert( ERR_DUST );
 
-  /* Burn first. A burn that fails must not be followed by a payout. */
-  tn_token_burn( a.token_prog_idx, a.user_lp_idx, a.lp_mint_idx,
-                 tsdk_get_current_program_acc_idx(), lp_amount,
-                 (tsdk_invoke_auth_t const *)0 );
+  /* Burn first. A burn that fails must not be followed by a payout.
+     The token program lets only the LP account's owner burn from it, and that
+     owner signs this transaction as fee payer (index 0). Naming this program
+     instead, as the first version did, made every REMOVE fail with token
+     error 4 or 5: nobody could take liquidity out. */
+  TOKEN_CALL( tn_token_burn( a.token_prog_idx, a.user_lp_idx, a.lp_mint_idx,
+                 (ushort)0, lp_amount,
+                 (tsdk_invoke_auth_t const *)0 ) );
 
-  if( out_a ) tn_token_transfer( a.token_prog_idx, a.vault_a_idx, a.user_a_idx, out_a, (tsdk_invoke_auth_t const *)0 );
-  if( out_b ) tn_token_transfer( a.token_prog_idx, a.vault_b_idx, a.user_b_idx, out_b, (tsdk_invoke_auth_t const *)0 );
+  if( out_a ) TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.vault_a_idx, a.user_a_idx, out_a, (tsdk_invoke_auth_t const *)0 ) );
+  if( out_b ) TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.vault_b_idx, a.user_b_idx, out_b, (tsdk_invoke_auth_t const *)0 ) );
 
   pool->lp_supply -= lp_amount;
 }
@@ -477,6 +489,7 @@ do_swap( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct flow_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct flow_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
 
   ulong amount_in = a.amount_0;
   ulong min_out   = a.amount_1;
@@ -515,8 +528,8 @@ do_swap( uchar const * data, ulong data_sz ) {
   if( amount_out >= res_out )  tsdk_revert( ERR_EMPTY_POOL );
   if( amount_out < min_out )   tsdk_revert( ERR_SLIPPAGE );
 
-  tn_token_transfer( a.token_prog_idx, a.user_a_idx, a.vault_a_idx, amount_in,  (tsdk_invoke_auth_t const *)0 );
-  tn_token_transfer( a.token_prog_idx, a.vault_b_idx, a.user_b_idx, amount_out, (tsdk_invoke_auth_t const *)0 );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.user_a_idx, a.vault_a_idx, amount_in,  (tsdk_invoke_auth_t const *)0 ) );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.vault_b_idx, a.user_b_idx, amount_out, (tsdk_invoke_auth_t const *)0 ) );
 
   pool->swap_count += 1UL;
 }

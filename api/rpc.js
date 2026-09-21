@@ -24,10 +24,15 @@
 //   /api/rpc?action=chainInfo
 //   /api/rpc?action=endpoint      -> which endpoint/protocol is live
 //   /api/rpc?action=history&addresses=ta...,ta...&pages={json}  -> recent transactions
+//   /api/rpc?action=pals[&wallet=ta...]  -> Pixel Pals: count, price, minters, and this wallet's Pals
+//   /api/rpc?action=pal&id=N             -> Pal N's metadata (what the NFT on chain points at)
+//   /api/rpc?action=palimg&id=N          -> Pal N's picture, as SVG
 
 import dns from 'node:dns'
 import { createThruClient, Pubkey, Signature, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
+import { decodeConfig, PALS_CONFIG, PALS_NFT_MINT, PALS_SITE } from '../src/lib/pals/chain.js'
+import { allPals, toSvg } from '../src/lib/pals/art.js'
 
 export const config = { runtime: 'nodejs', maxDuration: 30 }
 
@@ -410,6 +415,36 @@ function json(res, status, body, { cacheSeconds = 0 } = {}) {
   res.status(status).send(JSON.stringify(body))
 }
 
+/* ---------- Pixel Pals ----------
+   One account holds the whole collection's state. Read it at most every few
+   seconds per warm instance; the art is a pure function of that state. */
+
+let palsCache = null
+
+async function palsState(client) {
+  if (palsCache && Date.now() - palsCache.at < 4000) return palsCache.cfg
+  let cfg = null
+  try {
+    const a = await withTimeout(client.accounts.get(PALS_CONFIG), CALL_TIMEOUT_MS)
+    cfg = decodeConfig(a?.data?.data)
+  } catch (err) {
+    if (!/not ?found/i.test(String(err?.message ?? err))) throw err
+  }
+  palsCache = { at: Date.now(), cfg }
+  return cfg
+}
+
+function palMeta(id, pal) {
+  const attributes = Object.entries(pal.traits).map(([trait_type, value]) => ({ trait_type, value }))
+  return {
+    name: `Pixel Pal #${id}`,
+    description: 'One of 2,026 Pixel Pals on Thru. Every one is different.',
+    image: `${PALS_SITE}/api/rpc?action=palimg&id=${id}`,
+    external_url: `${PALS_SITE}/pals?id=${id}`,
+    attributes,
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return json(res, 204, {})
 
@@ -575,6 +610,56 @@ export default async function handler(req, res) {
         for (const t of items) t.time = times[t.slot] ?? null
 
         return json(res, 200, { ok: true, items, next: Object.keys(next).length ? next : null }, { cacheSeconds: 3 })
+      }
+
+      case 'pals': {
+        const cfg = await palsState(client)
+        if (!cfg) return json(res, 200, { ok: true, live: false, supply: 2026, minted: 0, price: '1000' }, { cacheSeconds: 5 })
+        const wallet = typeof params.wallet === 'string' && /^ta[A-Za-z0-9_-]{44}$/.test(params.wallet) ? params.wallet : null
+        let mine = null
+        if (wallet) {
+          const holding = []
+          cfg.owners.forEach((o, id) => { if (o === wallet) holding.push(id) })
+          // A Pal's prize shows only to the wallet holding it, and only once
+          // the prizes are locked in and funded.
+          const prizes = cfg.prizesLocked
+            ? holding.filter((id) => cfg.prize(id) > 0n && !cfg.claimed(id)).map((id) => ({ id, amount: cfg.prize(id).toString() }))
+            : []
+          mine = {
+            minted: cfg.minters.includes(wallet),
+            allowed: cfg.allowed().some((r) => r.wallet === wallet),
+            holding,
+            prizes,
+          }
+        }
+        return json(res, 200, {
+          ok: true, live: true,
+          supply: cfg.supply, minted: cfg.minted, price: cfg.price.toString(),
+          nextReserved: cfg.minted < cfg.supply && cfg.reserved(cfg.minted),
+          treasury: cfg.treasury, nftMint: PALS_NFT_MINT, prizeVault: cfg.prizeVault,
+          minters: cfg.minters, mine,
+        }, { cacheSeconds: wallet ? 0 : 3 })
+      }
+
+      case 'pal':
+      case 'palimg': {
+        const id = Number(params.id)
+        const cfg = await palsState(client)
+        if (!cfg || !Number.isInteger(id) || id < 0 || id >= cfg.minted) {
+          return json(res, 404, { ok: false, error: 'No such Pal yet.' })
+        }
+        const pal = allPals(cfg.minters.slice(0, id + 1))[id]
+        // A minted Pal never changes, so these can be cached for a long time.
+        if (action === 'palimg') {
+          res.setHeader('Content-Type', 'image/svg+xml')
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.setHeader('Cache-Control', 'public, s-maxage=31536000, max-age=86400, immutable')
+          return res.status(200).send(toSvg(pal.grid, 480))
+        }
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Cache-Control', 'public, s-maxage=31536000, max-age=86400, immutable')
+        return res.status(200).send(JSON.stringify(palMeta(id, pal)))
       }
 
       default:

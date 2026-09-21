@@ -1356,3 +1356,34 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 /* Numbered steps on the get-wallet page. */
 .steps-list { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.55; }
+
+/* ---------- Pixel Pals ---------- */
+.pal-art { flex-shrink: 0; border-radius: var(--r-sm); overflow: hidden; }
+.pal-art svg { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.pal-mint { display: flex; gap: 24px; align-items: center; }
+.pal-mint-art { flex-shrink: 0; }
+.pal-mint-body { flex: 1; min-width: 0; }
+.pal-teaser { display: grid; grid-template-columns: repeat(2, 112px); gap: 8px; }
+.pal-reveal { border: 0; padding: 0; background: none; cursor: pointer; }
+.pal-count { margin-bottom: 8px; }
+.pal-count-n { font-family: var(--mono); font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.pal-bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin-bottom: 14px; }
+.pal-bar > div { height: 100%; background: var(--ink); border-radius: 99px; transition: width 0.4s ease; }
+.pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.pal-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px; background: var(--canvas); border: 1px solid var(--line);
+  border-radius: var(--r-md); cursor: pointer; font: inherit; color: inherit;
+}
+.pal-tile:hover { border-color: var(--ink); }
+.pal-tile .pal-art { width: 100% !important; height: auto !important; aspect-ratio: 1; }
+.pal-name { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.pal-modal { max-width: 420px; max-height: 92vh; overflow-y: auto; }
+.pal-modal-art { display: flex; justify-content: center; }
+.pal-modal-art .pal-art { width: min(280px, 100%) !important; height: auto !important; aspect-ratio: 1; }
+.linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; cursor: pointer; }
+@media (max-width: 640px) {
+  .pal-mint { flex-direction: column; align-items: stretch; }
+  .pal-mint-art { display: flex; justify-content: center; }
+  .pal-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+}

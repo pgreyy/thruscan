@@ -35,6 +35,18 @@ dns.setDefaultResultOrder('ipv4first')
 
 const RPC_URL = process.env.THRU_RPC_URL || 'https://rpc.alphanet.thru.org'
 
+/* The live game programs and boards. They are public on chain (each board's
+   owner is its program), so they have working defaults here and the
+   environment variables only override them after a redeploy. */
+const GAMES = {
+  idProgram:     process.env.THRU_ID_PROGRAM     || 'taFoIdpH-VZkPOQf9k8miE7SWY1g1OGRhcBnm5gji9nNPs',
+  idRegistry:    process.env.THRU_ID_REGISTRY    || 'tae4puDMa2813e0NipKkOq9jgkS3d-PGfHz4EUBuyWcUQu',
+  wordleProgram: process.env.THRU_WORDLE_PROGRAM || 'taHL3huykk5Vqu3Im-dLZTA8dpOYQ7cDm4NESwBsGF_iBt',
+  wordleBoard:   process.env.THRU_WORDLE_BOARD   || 'taPSd8H3VPIcuZ66VeMbIllvD9y1a_8RFf3A95el29jT3E',
+  g2048Program:  process.env.THRU_2048_PROGRAM   || 'tanqCpW1ULxuVu5ENnXJUjynpb5p-cVPbq9EHeJdjxbL58',
+  g2048Board:    process.env.THRU_2048_BOARD     || 'taDhVDJRhsiMfC6-NA6rXQEmy3zo2lAPNCjwVy4WsXzmel',
+}
+
 const NAME_MIN = 3
 const NAME_MAX = 24
 const WORD_LEN = 5
@@ -152,8 +164,8 @@ function plan(body) {
       if (name.length < NAME_MIN) return { error: `Names are at least ${NAME_MIN} characters.` }
       if (!/^[a-z0-9_]+$/.test(name)) return { error: 'Lowercase letters, numbers and underscores only.' }
       return {
-        program: process.env.THRU_ID_PROGRAM,
-        account: process.env.THRU_ID_REGISTRY,
+        program: GAMES.idProgram,
+        account: GAMES.idRegistry,
         data: buildRegister(playerId, name),
       }
     }
@@ -177,16 +189,16 @@ function plan(body) {
       if (!solved && guesses.length !== MAX_GUESSES) return { error: 'That game does not add up.' }
 
       return {
-        program: process.env.THRU_WORDLE_PROGRAM,
-        account: process.env.THRU_WORDLE_BOARD,
+        program: GAMES.wordleProgram,
+        account: GAMES.wordleBoard,
         data: buildWordle({ playerId, name, answer, guesses, solved }),
       }
     }
 
     case '2048-new':
       return {
-        program: process.env.THRU_2048_PROGRAM,
-        account: process.env.THRU_2048_BOARD,
+        program: GAMES.g2048Program,
+        account: GAMES.g2048Board,
         data: build2048New(playerId, name),
       }
 
@@ -194,8 +206,8 @@ function plan(body) {
       const dir = Number(body.dir)
       if (!(dir >= 0 && dir <= 3)) return { error: 'Bad direction.' }
       return {
-        program: process.env.THRU_2048_PROGRAM,
-        account: process.env.THRU_2048_BOARD,
+        program: GAMES.g2048Program,
+        account: GAMES.g2048Board,
         data: build2048Move(playerId, dir),
       }
     }

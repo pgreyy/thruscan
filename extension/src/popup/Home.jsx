@@ -9,6 +9,9 @@ import {
   bg, go, EXPLORER, Header, Notice, Copy, useAction, fmtUnits, toUnits, unitsToText, short, timeAgo,
 } from './ui.jsx'
 
+// Pixel Pals are sent through the collection's own program (see lib/chain.js).
+const PALS = { program: 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M', mint: 'ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv' }
+
 /** The overview, refreshed every few seconds while the wallet is open. */
 export function useOverview() {
   const [data, setData] = useState(null)
@@ -233,6 +236,7 @@ export function NftScreen({ account: nftAccount, me }) {
       </div>
     )
   }
+  const canSend = n.authority === me || (n.mint === PALS.mint && n.authority === PALS.program)
   const send = () => act.run(async () => {
     const sig = await bg('sendNft', { account: nftAccount, to: to.trim() })
     const r = await bg('waitFor', { signature: sig })
@@ -250,10 +254,10 @@ export function NftScreen({ account: nftAccount, me }) {
           <div><span>Number</span><b>#{n.id}</b></div>
           <div><span>Mint</span><a className="mono" href={`${EXPLORER}/account/${n.mint}`} target="_blank" rel="noreferrer">{short(n.mint)}</a></div>
         </div>
-        {n.authority !== me && !result && (
+        {!canSend && !result && (
           <p className="fine">Transfers for this collection go through its own program, so send it from the collection's site.</p>
         )}
-        {n.authority !== me ? null : !result ? (
+        {!canSend ? null : !result ? (
           <>
             <label className="field">
               <span>Send to</span>
