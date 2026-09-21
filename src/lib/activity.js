@@ -160,3 +160,73 @@ export async function findWallTransaction(wallAccount, poster, postedAtMs, maxPa
   }
   return null
 }
+
+/* ---------- amounts ---------- */
+
+/** Token transfers, mints and burns for these transactions, from the chain. */
+export async function fetchEvents(signatures) {
+  const list = [...new Set(signatures.filter(Boolean))]
+  if (list.length === 0) return { events: {}, accounts: {} }
+  const out = { events: {}, accounts: {} }
+  // A handful per request keeps each one well inside the server's time limit.
+  for (let i = 0; i < list.length; i += 15) {
+    const q = new URLSearchParams({ action: 'events', signatures: list.slice(i, i + 15).join(',') })
+    const body = await fetch(`/api/rpc?${q}`).then((r) => r.json()).catch(() => null)
+    if (!body?.ok) continue
+    Object.assign(out.events, body.events)
+    Object.assign(out.accounts, body.accounts)
+  }
+  return out
+}
+
+/**
+ * What one transaction did to `me`'s balances: [{ label, delta }], where delta
+ * is a signed number already scaled by decimals. THRU moves are read from the
+ * instruction, token moves from the token program's records.
+ */
+export function movements(item, extra, me) {
+  if (!me) return []
+  const out = new Map()   // label -> number
+  const add = (label, v) => out.set(label, (out.get(label) ?? 0) + v)
+  const b = bytesOf(item.data)
+  const dv = b.length ? new DataView(b.buffer, b.byteOffset) : null
+
+  if (item.program === EOA_PROGRAM && u32(b, 0) === 1 && b.length >= 16) {
+    const amount = Number(dv.getBigUint64(4, true))
+    // [u32 1][u64 amount][u16 from][u16 to]; from is the fee payer.
+    if (item.feePayer === me) add('THRU', -amount)
+    else if (item.rw.includes(me)) add('THRU', amount)
+  }
+  if (item.program === NATIVE_FAUCET_PROGRAM && item.feePayer === me && b.length >= 16) {
+    add('THRU', Number(dv.getBigUint64(8, true)))
+  }
+
+  const events = extra?.events?.[item.signature] ?? []
+  const acc = extra?.accounts ?? {}
+  const mineAcc = (a) => acc[a]?.kind === 'token' && acc[a].owner === me
+  const scale = (tokenAccount, mint, amount) => {
+    const m = mint ?? acc[tokenAccount]?.mint
+    const info = acc[m]
+    const decimals = info?.kind === 'mint' ? info.decimals : 6
+    const label = info?.kind === 'mint' && info.ticker ? info.ticker : (m ? `${m.slice(0, 4)}…` : 'tokens')
+    return [label, Number(amount) / 10 ** decimals]
+  }
+  for (const e of events) {
+    if (e.op === 'transfer') {
+      if (mineAcc(e.from) && !mineAcc(e.to)) { const [l, v] = scale(e.from, null, e.amount); add(l, -v) }
+      if (mineAcc(e.to) && !mineAcc(e.from)) { const [l, v] = scale(e.to, null, e.amount); add(l, v) }
+    } else if (e.op === 'mint' && mineAcc(e.to)) {
+      const [l, v] = scale(e.to, e.mint, e.amount); add(l, v)
+    } else if (e.op === 'burn' && mineAcc(e.from)) {
+      const [l, v] = scale(e.from, e.mint, e.amount); add(l, -v)
+    }
+  }
+  return [...out].filter(([, v]) => v !== 0).map(([label, delta]) => ({ label, delta }))
+}
+
+export function formatDelta({ label, delta }) {
+  const abs = Math.abs(delta)
+  const n = abs >= 1e6 ? abs.toLocaleString(undefined, { maximumFractionDigits: 0 })
+    : abs.toLocaleString(undefined, { maximumFractionDigits: abs < 1 ? 6 : 4 })
+  return `${delta < 0 ? '−' : '+'}${n} ${label}`
+}

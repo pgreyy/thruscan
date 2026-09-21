@@ -1185,3 +1185,25 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 .wall-msg-foot .wall-tx { margin-left: auto; padding: 0; background: none; color: var(--ink); font-size: inherit; cursor: pointer; }
 .wall-msg-foot .wall-tx:hover { background: none; text-decoration: underline; text-underline-offset: 3px; }
 .wall-msg-foot .wall-tx:disabled { color: var(--muted); cursor: default; }
+
+/* Launch price history. */
+.price-chart { width: 100%; height: 140px; display: block; }
+.price-chart-axis { stroke: var(--line); stroke-width: 1; }
+.price-chart-line { fill: none; stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.price-chart-dot { fill: var(--surface); stroke: var(--ink); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.price-chart-dot.buy { fill: var(--ink); }
+.trade-list { margin-top: 12px; }
+.trade-row {
+  display: grid; grid-template-columns: 44px 1fr auto auto; gap: 10px; align-items: baseline;
+  padding: 8px 0; border-top: 1px solid var(--line); color: inherit; text-decoration: none; font-size: 13.5px;
+}
+.trade-row:hover .mono:first-of-type { text-decoration: underline; text-underline-offset: 3px; }
+.trade-side { font-weight: 600; }
+.trade-side.sell { color: #c2412d; }
+@media (max-width: 560px) { .trade-row { grid-template-columns: 40px 1fr auto; } .trade-row > :last-child { display: none; } }
+
+/* Amounts under each activity row. */
+.activity-what { flex-wrap: wrap; row-gap: 2px; }
+.activity-moves { display: flex; flex-wrap: wrap; gap: 4px 10px; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.activity-moves .in { color: #1f8a5c; }
+.activity-moves .out { color: var(--muted); }

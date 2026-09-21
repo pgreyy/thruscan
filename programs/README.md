@@ -31,6 +31,8 @@ so explicitly; see the `__extension__` on the 128-bit typedef in `thruswap.c`.
 | `thruid.c` | Username registry, so a name means the same thing across every game. |
 | `thrucpi.c` | A probe, not a product. Established that a program can hold and spend tokens. Kept because it is the cheapest way to re-test that assumption after a network reset. |
 | `thruswap.c` | Constant-product AMM. Pools, liquidity, swaps, 30 basis points to liquidity providers. |
+| `thrupad2.c` | Bonding-curve launchpad. Fixed supply, each launch priced in tUSD or WTHRU, creator fee, graduation. The live version. |
+| `thruwall2.c` | The wall, version 2: posts signed by the sender, optionally addressed to another account. The live version; `thruwall.c` is the original. |
 
 ## What was learned the hard way
 

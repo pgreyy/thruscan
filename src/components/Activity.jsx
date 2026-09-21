@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchHistory, describe, timeAgo } from '../lib/activity.js'
+import { fetchHistory, describe, timeAgo, fetchEvents, movements, formatDelta } from '../lib/activity.js'
 
 const short = (s) => (s ? `${s.slice(0, 6)}…${s.slice(-4)}` : '')
 
@@ -15,6 +15,20 @@ export function Activity({ addresses, me, title = 'Activity' }) {
   const [next, setNext] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [extra, setExtra] = useState({ events: {}, accounts: {} })
+
+  // Amounts come in a second step, so the list shows at once and fills in.
+  useEffect(() => {
+    if (!me || items.length === 0) return
+    const missing = items.map((t) => t.signature).filter((s) => !(s in extra.events))
+    if (missing.length === 0) return
+    let alive = true
+    fetchEvents(missing).then((r) => {
+      if (!alive) return
+      setExtra((old) => ({ events: { ...old.events, ...r.events }, accounts: { ...old.accounts, ...r.accounts } }))
+    })
+    return () => { alive = false }
+  }, [items, me]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
     if (!key) return
@@ -65,11 +79,19 @@ export function Activity({ addresses, me, title = 'Activity' }) {
         <div className="activity">
           {items.map((t) => {
             const { label } = describe(t, me)
+            const moves = t.ok === false ? [] : movements(t, extra, me)
             return (
               <Link className="activity-row" key={t.signature} to={`/tx/${t.signature}`}>
                 <span className="activity-what">
                   <b>{label}</b>
                   {t.ok === false && <span className="activity-failed">failed</span>}
+                  {moves.length > 0 && (
+                    <span className="activity-moves">
+                      {moves.map((m) => (
+                        <span key={m.label} className={m.delta < 0 ? 'out' : 'in'}>{formatDelta(m)}</span>
+                      ))}
+                    </span>
+                  )}
                 </span>
                 <span className="activity-when fine">{timeAgo(t.time)}</span>
                 <span className="activity-sig mono fine">{short(t.signature)}</span>

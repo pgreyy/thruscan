@@ -7,8 +7,8 @@ const REPO = 'https://github.com/pgreyy/thruscan'
 
 const PROGRAMS = [
   { name: 'thruswap', what: 'Constant-product AMM', file: 'programs/thruswap.c' },
-  { name: 'thrupad', what: 'Bonding-curve launchpad', file: 'programs/thrupad.c' },
-  { name: 'thruwall', what: 'Wall and addressed messages', file: 'programs/thruwall.c' },
+  { name: 'thrupad', what: 'Bonding-curve launchpad', file: 'programs/thrupad2.c' },
+  { name: 'thruwall', what: 'Wall and addressed messages', file: 'programs/thruwall2.c' },
   { name: 'thruwordle · thru2048 · thruid', what: 'Games and player names', file: 'programs/' },
   { name: 'thru_token.h', what: 'Token program ABI, recovered from CLI transactions', file: 'programs/thru_token.h' },
 ]

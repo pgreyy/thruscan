@@ -36,6 +36,7 @@ import dns from 'node:dns'
 import { createThruClient, Pubkey, proofs, deriveProgramAddress, TransactionBuilder } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
 import { createHash } from 'node:crypto'
+import { sendLanded } from './_send.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -235,24 +236,31 @@ async function getAccount(c, address) {
 async function sponsorSend(c, { program, readWrite = [], readOnly = [], data, stateUnits = 60_000 }) {
   const pub = process.env.THRU_SPONSOR_PUBKEY
   const priv = hexToBytes(process.env.THRU_SPONSOR_PRIVKEY)
-  const [me, height] = await Promise.all([c.accounts.get(pub), c.blocks.getBlockHeight()])
-  const { rawTransaction } = await new TransactionBuilder().buildAndSign({
-    feePayer: { publicKey: pub, privateKey: priv },
-    program,
-    accounts: { readWriteAccounts: readWrite, readOnlyAccounts: readOnly },
-    header: {
-      fee: 1n,
-      nonce: me?.meta?.nonce ?? 0n,
-      startSlot: height.finalized,
-      expiryAfter: 100,
-      chainId: await c.chain.getChainId(),
-      computeUnits: 300_000_000,
-      stateUnits,
-      memoryUnits: 60_000,
+  const chainId = await c.chain.getChainId()
+  // Confirmed on chain before this returns, and rebuilt with a fresh nonce if
+  // another send took this one. See api/_send.js for why.
+  return sendLanded(c, {
+    nonceOf: async () => (await c.accounts.get(pub))?.meta?.nonce ?? 0n,
+    build: async (nonce) => {
+      const height = await c.blocks.getBlockHeight()
+      return new TransactionBuilder().buildAndSign({
+        feePayer: { publicKey: pub, privateKey: priv },
+        program,
+        accounts: { readWriteAccounts: readWrite, readOnlyAccounts: readOnly },
+        header: {
+          fee: 1n,
+          nonce,
+          startSlot: height.finalized,
+          expiryAfter: 100,
+          chainId,
+          computeUnits: 300_000_000,
+          stateUnits,
+          memoryUnits: 60_000,
+        },
+        instructionData: data,
+      })
     },
-    instructionData: data,
   })
-  return c.transactions.send(rawTransaction)
 }
 
 /* ---------- actions ---------- */

@@ -1604,14 +1604,14 @@ function CurveChart({ vq, vt, tokensSold, symbol, quote }) {
            aria-label={`Price of ${symbol} against supply sold`}>
         <defs>
           <linearGradient id="curvefill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--signal, #2f55e0)" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="var(--signal, #2f55e0)" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--ink, #16181d)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--ink, #16181d)" stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d={area} fill="url(#curvefill)" />
-        <path d={path} fill="none" stroke="var(--signal, #2f55e0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        <circle cx={dot[0]} cy={dot[1]} r="4.5" fill="var(--signal, #2f55e0)" />
-        <circle cx={dot[0]} cy={dot[1]} r="9" fill="var(--signal, #2f55e0)" opacity="0.18" />
+        <path d={path} fill="none" stroke="var(--ink, #16181d)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <circle cx={dot[0]} cy={dot[1]} r="4.5" fill="var(--ink, #16181d)" />
+        <circle cx={dot[0]} cy={dot[1]} r="9" fill="var(--ink, #16181d)" opacity="0.18" />
       </svg>
       <div className="curve-legend">
         <span>none sold</span>
@@ -1666,7 +1666,7 @@ function LaunchRow({ launch, balances, tickers, threshold }) {
 export function LaunchDetail({ id }) {
   const launchId = Number(id)
   const [slot, setSlot] = useState(null)
-  const { loading, error, data, balances, tickers, reload } = useChainData(
+  const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
     (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
@@ -1737,7 +1737,7 @@ export function LaunchDetail({ id }) {
       <div className="stat-strip" style={{ marginTop: 16 }}>
         <div className="stat-cell">
           <span className="k">Price</span>
-          <span className="v mono">{price.toExponential(3)}</span>
+          <span className="v mono">{sig4(price)}</span>
         </div>
         <div className="stat-cell">
           <span className="k">Raised</span>
@@ -1766,6 +1766,12 @@ export function LaunchDetail({ id }) {
         />
 
         <div className="stack">
+          <PriceHistory
+            launch={launch}
+            quote={quote}
+            quoteDecimals={decimals?.[quoteMint] ?? DECIMALS}
+            refreshKey={Number(launch.tradeCount)}
+          />
           <CurveChart
             vq={launch.vq}
             vt={launch.vt}
@@ -1780,6 +1786,93 @@ export function LaunchDetail({ id }) {
   )
 }
 
+
+/**
+ * Price over time for one launch, from its trades on chain.
+ *
+ * Every buy and sell moves quote tokens through the launch's quote vault, so
+ * that account's transaction history is the trade history, and the token
+ * program's transfer records in each transaction give the exact amounts. The
+ * price plotted is what each trade actually paid per token.
+ */
+/** 0.0000000803 rather than 8.030e-8: the same four digits, readable. */
+const sig4 = (v) => v.toLocaleString(undefined, { maximumSignificantDigits: 4, maximumFractionDigits: 20 })
+
+function PriceHistory({ launch, quote, quoteDecimals, refreshKey }) {
+  const [trades, setTrades] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    const q = new URLSearchParams({ action: 'launchtrades', quoteVault: launch.quoteVault, tokenVault: launch.tokenVault })
+    // The node is sometimes slow to answer; one quiet retry before saying so.
+    const get = () => fetch(`/api/rpc?${q}`).then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.error); return j })
+    get().catch(() => new Promise((r) => setTimeout(r, 1500)).then(get))
+      .then((j) => { if (alive) { setTrades(j.trades); setError(null) } })
+      .catch((e) => { if (alive) setError(String(e?.message ?? e)) })
+    return () => { alive = false }
+  }, [launch.quoteVault, launch.tokenVault, refreshKey])
+
+  const points = (trades ?? []).map((t) => ({
+    ...t,
+    price: (Number(t.quote) / 10 ** quoteDecimals) / (Number(t.tokens) / 10 ** DECIMALS),
+  })).filter((t) => isFinite(t.price) && t.price > 0)
+
+  const W = 320, H = 120, P = 6
+  let chart = null
+  if (points.length > 0) {
+    const prices = points.map((p) => p.price)
+    const lo = Math.min(...prices), hi = Math.max(...prices)
+    const span = hi - lo || hi || 1
+    const x = (i) => (points.length === 1 ? W / 2 : P + (i / (points.length - 1)) * (W - 2 * P))
+    const y = (v) => H - P - ((v - (hi === lo ? lo - span / 2 : lo)) / (hi === lo ? span : span)) * (H - 2 * P)
+    const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.price).toFixed(1)}`).join(' ')
+    chart = (
+      <svg className="price-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
+        aria-label={`Price of ${launch.symbol} across ${points.length} trades`}>
+        <line x1="0" x2={W} y1={H - P} y2={H - P} className="price-chart-axis" />
+        {points.length > 1 && <path d={path} className="price-chart-line" />}
+        {points.map((p, i) => (
+          <circle key={p.signature} cx={x(i)} cy={y(p.price)} r={points.length > 40 ? 1.8 : 3}
+            className={`price-chart-dot ${p.side}`}>
+            <title>{`${p.side === 'buy' ? 'Buy' : 'Sell'} at ${sig4(p.price)} ${quote}`}</title>
+          </circle>
+        ))}
+      </svg>
+    )
+  }
+
+  const last = points[points.length - 1]
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Price</h2>
+          <p className="sub">{last ? `${sig4(last.price)} ${quote} per ${launch.symbol}, last trade` : `${quote} per ${launch.symbol}`}</p>
+        </div>
+      </div>
+
+      {error && <p className="notice bad" style={{ marginTop: 12 }}>Could not read the trades: {error}</p>}
+      {!error && trades === null && <p className="fine" style={{ marginTop: 12 }}>Reading the chain.</p>}
+      {trades !== null && points.length === 0 && <p className="fine" style={{ marginTop: 12 }}>No trades yet.</p>}
+      {chart && <div style={{ marginTop: 12 }}>{chart}</div>}
+
+      {points.length > 0 && (
+        <div className="trade-list">
+          {[...points].reverse().slice(0, 8).map((t) => (
+            <Link key={t.signature} className="trade-row" to={`/tx/${t.signature}`}>
+              <span className={`trade-side ${t.side}`}>{t.side === 'buy' ? 'Buy' : 'Sell'}</span>
+              <span className="mono">{fmt(BigInt(t.tokens))} {launch.symbol}</span>
+              <span className="mono fine">{fmt(BigInt(t.quote), quoteDecimals)} {quote}</span>
+              <span className="fine">{t.time ? new Date(t.time).toLocaleDateString() : ''}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 /** What App.jsx mounts at /launch/:id. */
 export function LaunchDetailPage() {

@@ -26,7 +26,7 @@
 //   /api/rpc?action=history&addresses=ta...,ta...&pages={json}  -> recent transactions
 
 import dns from 'node:dns'
-import { createThruClient, Pubkey, Transaction } from '@thru/sdk'
+import { createThruClient, Pubkey, Signature, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
 
 export const config = { runtime: 'nodejs', maxDuration: 30 }
@@ -302,6 +302,82 @@ async function overview(client, blockCount = 60, txCount = 25) {
   }
 }
 
+/* ---------- token movements ----------
+   The token program records every transfer, mint and burn as an event on the
+   transaction: which accounts, and how much. The list call leaves events out,
+   so each transaction is fetched once more with them. Token accounts and mints
+   are read once per warm server and kept, since neither changes. */
+
+const TOKEN_PROGRAM_HEX = '00'.repeat(31) + 'aa'
+const accountInfo = new Map()   // address -> { kind: 'token', mint, owner } | { kind: 'mint', ticker, decimals } | { kind: 'other' }
+
+async function describeAccounts(client, addresses) {
+  const missing = [...new Set(addresses)].filter((a) => !accountInfo.has(a))
+  await Promise.all(missing.map(async (a) => {
+    try {
+      const acc = await withTimeout(client.accounts.get(a), CALL_TIMEOUT_MS)
+      const b = acc.data?.data ?? new Uint8Array()
+      if (b.length === 73) {
+        accountInfo.set(a, { kind: 'token', mint: Pubkey.from(b.slice(0, 32)).toThruFmt(), owner: Pubkey.from(b.slice(32, 64)).toThruFmt() })
+      } else if (b.length === 115) {
+        const len = Math.min(b[0x6a], 8)
+        accountInfo.set(a, { kind: 'mint', decimals: b[0], ticker: Buffer.from(b.slice(0x6b, 0x6b + len)).toString('ascii') })
+      } else {
+        accountInfo.set(a, { kind: 'other' })
+      }
+    } catch { /* unknown for now; tried again next time */ }
+  }))
+}
+
+async function tokenEvents(client, signature) {
+  const t = await withTimeout(
+    client.ctx.query.getTransaction({ signature: { value: Signature.from(signature).toBytes() }, returnEvents: true }),
+    CALL_TIMEOUT_MS,
+  )
+  const out = []
+  for (const e of t.executionResult?.events ?? []) {
+    if (Buffer.from(e.program?.value ?? []).toString('hex') !== TOKEN_PROGRAM_HEX) continue
+    const p = Buffer.from(e.payload ?? [])
+    if (p.length < 73) continue
+    const a = Pubkey.from(p.subarray(1, 33)).toThruFmt()
+    const b = Pubkey.from(p.subarray(33, 65)).toThruFmt()
+    if (p[0] === 2) out.push({ op: 'transfer', from: a, to: b, amount: p.readBigUInt64LE(65).toString() })
+    else if (p[0] === 3 && p.length >= 105) out.push({ op: 'mint', mint: a, to: b, amount: p.readBigUInt64LE(97).toString() })
+    else if (p[0] === 4 && p.length >= 105) out.push({ op: 'burn', from: a, mint: b, amount: p.readBigUInt64LE(97).toString() })
+  }
+  return out
+}
+
+/** Events for several transactions, plus what every account in them is. */
+async function eventsFor(client, signatures) {
+  const lists = await Promise.all(signatures.map((s) => tokenEvents(client, s).catch(() => null)))
+  const events = {}
+  const touched = []
+  signatures.forEach((s, i) => {
+    if (!lists[i]) return
+    events[s] = lists[i]
+    for (const e of lists[i]) touched.push(...[e.from, e.to, e.mint].filter(Boolean))
+  })
+  await describeAccounts(client, touched)
+  // Burns name the account and the mint in an order that is easiest to settle
+  // by what each account turns out to be.
+  for (const list of Object.values(events)) {
+    for (const e of list) {
+      if (e.op === 'burn' && accountInfo.get(e.from)?.kind === 'mint') [e.from, e.mint] = [e.mint, e.from]
+    }
+  }
+  const mints = new Set()
+  for (const a of touched) {
+    const info = accountInfo.get(a)
+    if (info?.kind === 'token') mints.add(info.mint)
+    if (info?.kind === 'mint') mints.add(a)
+  }
+  await describeAccounts(client, [...mints])
+  const accounts = {}
+  for (const a of new Set([...touched, ...mints])) if (accountInfo.has(a)) accounts[a] = accountInfo.get(a)
+  return { events, accounts }
+}
+
 function json(res, status, body, { cacheSeconds = 0 } = {}) {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -406,6 +482,44 @@ export default async function handler(req, res) {
         const times = await blockTimes(client, slots)
         // A block's time never changes, so these can be cached for a long time.
         return json(res, 200, { ok: true, times }, { cacheSeconds: 86400 })
+      }
+
+      case 'events': {
+        const signatures = String(params.signatures ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 30)
+        const out = await eventsFor(client, signatures)
+        // A transaction's events never change once it has landed.
+        return json(res, 200, { ok: true, ...out }, { cacheSeconds: 3600 })
+      }
+
+      case 'launchtrades': {
+        // Every buy and sell moves quote tokens through the launch's quote
+        // vault, so that account's history is the launch's trade history.
+        const quoteVault = String(params.quoteVault ?? '')
+        const tokenVault = String(params.tokenVault ?? '')
+        if (!quoteVault || !tokenVault) return json(res, 400, { ok: false, error: 'missing vaults' })
+        const txs = []
+        let token = null
+        for (let i = 0; i < 4; i++) {
+          const page = await historyFor(client, quoteVault, token)
+          txs.push(...page.txs)
+          token = page.next
+          if (!token) break
+        }
+        const items = txs.map(serializeHistoryItem).filter((t) => t.ok !== false && t.signature)
+        const { events } = await eventsFor(client, items.map((t) => t.signature).slice(0, 60))
+        const times = await blockTimes(client, [...new Set(items.map((t) => t.slot))])
+        const trades = []
+        for (const t of items) {
+          const ev = events[t.signature] ?? []
+          const qIn = ev.find((e) => e.op === 'transfer' && e.to === quoteVault)
+          const qOut = ev.find((e) => e.op === 'transfer' && e.from === quoteVault)
+          const tIn = ev.find((e) => e.op === 'transfer' && e.to === tokenVault)
+          const tOut = ev.find((e) => e.op === 'transfer' && e.from === tokenVault)
+          if (qIn && tOut) trades.push({ side: 'buy', quote: qIn.amount, tokens: tOut.amount, trader: t.feePayer, signature: t.signature, time: times[t.slot] ?? null })
+          else if (tIn && qOut) trades.push({ side: 'sell', quote: qOut.amount, tokens: tIn.amount, trader: t.feePayer, signature: t.signature, time: times[t.slot] ?? null })
+        }
+        trades.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+        return json(res, 200, { ok: true, trades }, { cacheSeconds: 10 })
       }
 
       case 'overview': {

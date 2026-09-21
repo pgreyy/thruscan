@@ -444,7 +444,19 @@ export async function accountExists(address) {
  * instruction's indices were computed against; every builder in swap.js and
  * pad.js returns them that way, so pass them straight through.
  */
-export async function signAndSend({
+/* One send at a time from this tab. Two transactions signed in the same
+   moment carry the same nonce, and the second fails with error -511 (seen when
+   Move and Remove liquidity ran together). Each send holds the line until the
+   chain has moved the nonce on, which takes a second or two. */
+let sendLine = Promise.resolve()
+
+export function signAndSend(args) {
+  const run = sendLine.then(() => signAndSendNow(args))
+  sendLine = run.then((r) => r.settled).catch(() => {})
+  return run.then((r) => r.signature)
+}
+
+async function signAndSendNow({
   program, readWrite = [], readOnly = [], data,
   computeUnits = 300_000_000, stateUnits = 60_000, memoryUnits = 60_000,
 }) {
@@ -475,7 +487,18 @@ export async function signAndSend({
   })
 
   const { signature } = await api('submit', { raw: b64.encode(rawTransaction) })
-  return signature
+
+  // Resolves once the nonce has moved on, or after about ten seconds.
+  const settled = (async () => {
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500))
+      try {
+        const now = await api('prepare', { address })
+        if (BigInt(now.nonce) > BigInt(nonce)) return
+      } catch { /* keep waiting */ }
+    }
+  })()
+  return { signature, settled }
 }
 
 /**
