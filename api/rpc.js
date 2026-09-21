@@ -636,6 +636,9 @@ export default async function handler(req, res) {
           ok: true, live: true,
           supply: cfg.supply, minted: cfg.minted, price: cfg.price.toString(),
           nextReserved: cfg.minted < cfg.supply && cfg.reserved(cfg.minted),
+          // Numbers already set aside for the team wallet but not reached yet.
+          // They are taken, so the page counts them with the minted ones.
+          reservedAhead: (() => { let n = 0; for (let i = cfg.minted; i < cfg.supply; i++) if (cfg.reserved(i)) n++; return n })(),
           treasury: cfg.treasury, nftMint: PALS_NFT_MINT, prizeVault: cfg.prizeVault,
           minters: cfg.minters, mine,
         }, { cacheSeconds: wallet ? 0 : 3 })

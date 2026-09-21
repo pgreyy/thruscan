@@ -44,8 +44,10 @@ function price(v) {
 
 function usePoll(fn, ms) {
   const [data, setData] = useState(null)
-  const load = useCallback(async () => {
-    try { setData(await fn()) } catch { /* keep the last good value */ }
+  const load = useCallback(async (attempt = 0) => {
+    // Keep the last good value on a failure; on a first load, try again soon
+    // rather than showing nothing until the next round.
+    try { setData(await fn()) } catch { if (attempt < 3) setTimeout(() => load(attempt + 1), 2500) }
   }, [fn])
   useEffect(() => {
     load()
@@ -69,22 +71,37 @@ async function readPals() {
   return j
 }
 
-/** THRU in tUSD from the WTHRU/tUSD pool, and every launch's price and size. */
+/** Trades between two vaults (a pool or a launch), oldest first. */
+async function tradesOf(quoteVault, tokenVault) {
+  try {
+    const q = new URLSearchParams({ action: 'launchtrades', quoteVault, tokenVault, pages: '1' })
+    const j = await (await fetch(`/api/rpc?${q}`)).json()
+    return j.ok ? j.trades : []
+  } catch { return [] }
+}
+
+/**
+ * Prices: THRU from the WTHRU/tUSD pool, tUSD in THRU, and the launchpad's
+ * biggest tokens, each with its recent trades for a small price line.
+ */
 async function readMarkets() {
   const [swapAcct, padAcct] = await Promise.all([
     getAccount(THRUSWAP_REGISTRY).catch(() => null),
     getAccount(THRUPAD_REGISTRY).catch(() => null),
   ])
+  const tokens = []
   let thru = null
   try {
     const pools = decodeSwapRegistry(swapAcct?.data?.base64).pools
     const pool = pools.find((p) => [p.mintA, p.mintB].includes(WTHRU_MINT) && [p.mintA, p.mintB].includes(TUSD_MINT))
     if (pool) {
-      const [va, vb] = await Promise.all([getAccount(pool.vaultA), getAccount(pool.vaultB)])
-      const a = tokenAmount(va), b = tokenAmount(vb)
-      const [w, t] = pool.mintA === WTHRU_MINT ? [a, b] : [b, a]
+      const [wVault, tVault] = pool.mintA === WTHRU_MINT ? [pool.vaultA, pool.vaultB] : [pool.vaultB, pool.vaultA]
+      const [w, t] = await Promise.all([getAccount(wVault).then(tokenAmount), getAccount(tVault).then(tokenAmount)])
       // One native THRU is one WTHRU base unit; tUSD has 6 decimals.
       if (w && t !== null) thru = Number(t) / 1e6 / Number(w)
+      const pair = { quoteVault: tVault, tokenVault: wVault, qd: 6, td: 0 }
+      tokens.push({ symbol: 'THRU', price: thru, unit: 'tUSD', pair, to: '/swap' })
+      if (thru) tokens.push({ symbol: 'tUSD', price: 1 / thru, unit: 'THRU', pair, invert: true, to: '/swap' })
     }
   } catch { /* unknown */ }
 
@@ -93,14 +110,39 @@ async function readMarkets() {
     launches = decodePadRegistry(padAcct?.data?.base64).launches.map((l) => {
       const vq = Number(l.vq), vt = Number(l.vt), sold = Number(l.tokensSold)
       const inTusd = l.quoteMint === TUSD_MINT
-      const quoteDecimals = inTusd ? 6 : 0   // WTHRU base units are whole THRU
-      // Market cap in the quote asset: price per token unit times all units.
-      const cap = vt > 0 ? (vq / vt) * (vt + sold) / 10 ** quoteDecimals : null
-      return { id: l.id, symbol: l.symbol || `#${l.id}`, graduated: l.graduated, cap, unit: inTusd ? 'tUSD' : 'THRU' }
+      const qd = inTusd ? 6 : 0   // WTHRU base units are whole THRU
+      const price = vt > 0 ? (vq / 10 ** qd) / (vt / 1e6) : null
+      const cap = vt > 0 ? (vq / vt) * (vt + sold) / 10 ** qd : null
+      return { ...l, symbol: l.symbol || `#${l.id}`, price, cap, unit: inTusd ? 'tUSD' : 'THRU', qd }
     })
     launches.sort((a, b) => (b.cap ?? 0) - (a.cap ?? 0))
+    for (const l of launches.filter((x) => !x.graduated).slice(0, 4 - tokens.length)) {
+      tokens.push({ symbol: l.symbol, price: l.price, unit: l.unit, pair: { quoteVault: l.quoteVault, tokenVault: l.tokenVault, qd: l.qd, td: 6 }, to: `/launch/${l.id}` })
+    }
   } catch { /* unknown */ }
-  return { thru, launches }
+  return { thru, launches, tokens }
+}
+
+/** Each token's recent trade prices, fetched after the prices themselves. */
+function useSeries(tokens) {
+  const [lines, setLines] = useState({})
+  const key = (tokens ?? []).map((t) => t.symbol).join(',')
+  useEffect(() => {
+    if (!tokens?.length) return
+    let alive = true
+    const pairs = [...new Map(tokens.map((t) => [t.pair.quoteVault + t.pair.tokenVault, t.pair])).values()]
+    Promise.all(pairs.map(async (p) => [p.quoteVault + p.tokenVault, (await tradesOf(p.quoteVault, p.tokenVault))
+      .filter((x) => Number(x.tokens) > 0)
+      .map((x) => (Number(x.quote) / 10 ** p.qd) / (Number(x.tokens) / 10 ** p.td))]))
+      .then((entries) => { if (alive) setLines(Object.fromEntries(entries)) })
+    return () => { alive = false }
+  }, [key])  // eslint-disable-line react-hooks/exhaustive-deps
+  return (tokens ?? []).map((t) => {
+    const raw = [...(lines[t.pair.quoteVault + t.pair.tokenVault] ?? [])]
+    const base = t.invert ? 1 / t.price : t.price
+    if (base) raw.push(base)
+    return { ...t, series: t.invert ? raw.map((v) => 1 / v) : raw }
+  })
 }
 
 /* ---------- pieces ---------- */
@@ -127,17 +169,55 @@ function Banner({ pals }) {
       </div>
       <div className="lp-banner-text">
         <h2>Pixel Pals</h2>
-        <p>2,026 on Thru · {pals && pals.minted < pals.supply ? 'minting now' : pals ? 'sold out' : 'collection'}</p>
+        <p>2,026 on Thru · {pals && pals.minted + (pals.reservedAhead ?? 0) < pals.supply ? 'minting now' : pals ? 'sold out' : 'collection'}</p>
         <div className="lp-banner-row">
           <dl className="lp-banner-stats">
             <div><dt>Price</dt><dd>{pals ? num(pals.price) : '–'} THRU</dd></div>
-            <div><dt>Minted</dt><dd>{pals ? `${num(pals.minted)} / ${num(pals.supply)}` : '–'}</dd></div>
+            <div><dt>Minted</dt><dd>{pals ? `${num(pals.minted + (pals.reservedAhead ?? 0))} / ${num(pals.supply)}` : '–'}</dd></div>
             <div><dt>Limit</dt><dd>1 per wallet</dd></div>
           </dl>
           <span className="lp-banner-btn">Mint</span>
         </div>
       </div>
     </Link>
+  )
+}
+
+/** A small price line from a list of prices; flat when there is no history. */
+function Spark({ series }) {
+  const pts = series?.length > 1 ? series.slice(-24) : [1, 1]
+  const lo = Math.min(...pts), hi = Math.max(...pts)
+  const y = (v) => (hi === lo ? 14 : 24 - ((v - lo) / (hi - lo)) * 20)
+  const d = pts.map((v, i) => `${(i / (pts.length - 1)) * 72},${y(v).toFixed(1)}`).join(' ')
+  return <svg className="lp-spark" width="72" height="28" viewBox="0 0 72 28" aria-hidden="true"><polyline points={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></svg>
+}
+
+function change(series) {
+  if (!series || series.length < 2 || !series[0]) return null
+  return ((series[series.length - 1] - series[0]) / series[0]) * 100
+}
+
+function Tokens({ tokens }) {
+  return (
+    <section className="lp-block">
+      <header className="lp-block-head"><h3>Tokens</h3><Link to="/swap">Swap</Link></header>
+      <div className="lp-tokens">
+        {(tokens ?? [null, null, null, null]).map((t, i) => {
+          if (!t) return <div key={i} className="lp-token lp-token-empty" />
+          const c = change(t.series)
+          return (
+            <Link key={t.symbol} to={t.to} className="lp-token">
+              <span className="lp-coin">{t.symbol.slice(0, 2)}</span>
+              <span className="lp-token-main">
+                <b>{t.symbol}</b>
+                <span className="mono">{price(t.price)} {t.unit}{c !== null && Math.abs(c) >= 0.05 && <i className={c >= 0 ? 'up' : 'down'}> {c >= 0 ? '+' : ''}{c.toFixed(1)}%</i>}</span>
+              </span>
+              <Spark series={t.series} />
+            </Link>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -162,6 +242,7 @@ export function LandingPage() {
   const blocks = overview?.blocks ?? []
   const txs = overview?.transactions ?? []
   const launches = markets?.launches ?? []
+  const series = useSeries(markets?.tokens)
 
   return (
     <div className="lp">
@@ -171,11 +252,13 @@ export function LandingPage() {
         <div className="lp-main">
           <Banner pals={pals} />
 
+          <Tokens tokens={markets ? series : null} />
+
           <div className="lp-stats">
             <Stat label="Finalized block" value={num(overview?.finalized)} />
             <Stat label="Block time" value={overview?.blockTimeMs ? `${Math.round(overview.blockTimeMs)} ms` : '–'} />
             <Stat label="Transactions / sec" value={overview?.tps ? overview.tps.toFixed(0) : '–'} />
-            <Stat label="THRU price" value={markets?.thru ? `${price(markets.thru)} tUSD` : '–'} />
+            <Stat label="Launches" value={markets ? num(launches.length) : '–'} />
           </div>
 
           <div className="lp-tables">

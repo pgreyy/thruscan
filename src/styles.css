@@ -1387,3 +1387,48 @@ textarea.field { resize: vertical; min-height: 84px; }
   .pal-mint-art { display: flex; justify-content: center; }
   .pal-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 }
+
+/* ---------- desktop top bar (replaces the side rail from 900px up) ---------- */
+
+.deskbar { display: none; }
+
+@media (min-width: 900px) {
+  .rail { display: none; }
+  .main, .main[data-nav='false'] { margin-left: 0; padding: 26px 32px 56px; }
+
+  .deskbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 22px;
+    height: 64px; padding: 0 200px 0 28px; box-sizing: border-box;
+    background: rgba(241, 240, 237, 0.92); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .deskbar .brand { flex: 0 0 auto; }
+  .deskbar-search { flex: 0 1 420px; min-width: 200px; }
+  .deskbar-search .home-search { max-width: none; padding: 3px; box-shadow: none; }
+  .deskbar-search .home-search input { padding: 7px 10px; font-size: 14px; }
+  .deskbar-search .home-search button { width: 36px; }
+  .deskbar-nav { display: flex; align-items: center; gap: 4px; }
+  .deskbar-nav > a, .deskbar-more summary {
+    padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted);
+    text-decoration: none; white-space: nowrap; cursor: pointer; list-style: none;
+  }
+  .deskbar-more summary::-webkit-details-marker { display: none; }
+  .deskbar-nav > a:hover, .deskbar-more summary:hover { color: var(--ink); background: rgba(22, 24, 29, 0.05); }
+  .deskbar-nav > a[aria-current='page'] { color: var(--ink); }
+  .deskbar-more { position: relative; }
+  .deskbar-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; min-width: 180px; padding: 6px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column;
+  }
+  .deskbar-menu a { padding: 9px 10px; border-radius: 8px; font-size: 14px; color: var(--ink); text-decoration: none; }
+  .deskbar-menu a:hover { background: #f7f6f3; }
+  .deskbar-right { margin-left: auto; flex: 0 0 auto; }
+  .deskbar-right .status { font-family: var(--mono); font-size: 12px; }
+}
+@media (min-width: 900px) and (max-width: 1180px) {
+  .deskbar { gap: 12px; }
+  .deskbar-search { flex-basis: 260px; }
+  .deskbar-right { display: none; }
+}

@@ -98,3 +98,25 @@ a.lp-tr:hover { background: #f7f6f3; color: var(--ink); }
   .lp-cols-txs { grid-template-columns: 110px minmax(0, 1fr) 56px; }
   .lp-cols-txs > :nth-child(3) { display: none; }
 }
+
+/* Tokens row */
+.lp-block { display: flex; flex-direction: column; gap: 10px; }
+.lp-block-head { display: flex; align-items: baseline; justify-content: space-between; }
+.lp-block-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.lp-block-head a { font-size: 13px; color: var(--muted); }
+.lp-tokens { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.lp-token {
+  display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none;
+}
+.lp-token:hover { border-color: var(--ink); color: var(--ink); }
+.lp-token-empty { height: 66px; box-sizing: border-box; }
+.lp-token-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lp-token-main b { font-size: 14px; }
+.lp-token-main .mono { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-token-main i { font-style: normal; }
+.lp-token-main i.up { color: #1d6b45; }
+.lp-token-main i.down { color: #b42318; }
+.lp-spark { flex: 0 0 auto; color: var(--ink); }
+@media (max-width: 1100px) { .lp-tokens { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .lp-search { display: none; } }

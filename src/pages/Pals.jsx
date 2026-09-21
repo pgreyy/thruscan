@@ -145,9 +145,10 @@ function MintCard({ info, pals, wallet, reload, open }) {
 
   const live = info?.live
   const minted = info?.minted ?? 0
+  const taken = minted + (info?.reservedAhead ?? 0)
   const supply = info?.supply ?? 2026
   const price = BigInt(info?.price ?? '1000')
-  const soldOut = live && minted >= supply
+  const soldOut = live && taken >= supply
   const already = info?.mine?.minted
   const mineId = already ? pals.findIndex((_, id) => info.minters[id] === wallet.address) : -1
 
@@ -237,10 +238,10 @@ function MintCard({ info, pals, wallet, reload, open }) {
       </div>
       <div className="pal-mint-body">
         <div className="pal-count">
-          <span className="pal-count-n">{fmt(minted)}</span>
+          <span className="pal-count-n">{fmt(taken)}</span>
           <span className="fine"> / {fmt(supply)} minted</span>
         </div>
-        <div className="pal-bar"><div style={{ width: `${Math.min(100, (minted / supply) * 100)}%` }} /></div>
+        <div className="pal-bar"><div style={{ width: `${Math.min(100, (taken / supply) * 100)}%` }} /></div>
 
         <div className="row"><span className="row-k">Price</span><span className="row-v num">{fmt(price)} THRU</span></div>
         <div className="row"><span className="row-k">Limit</span><span className="row-v">1 per wallet</span></div>

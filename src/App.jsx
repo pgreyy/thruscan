@@ -10,7 +10,7 @@ import { GameIdentity } from './components/GameIdentity.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
-import { HomePage } from './pages/Home.jsx'
+import { HomePage, Search } from './pages/Home.jsx'
 import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
 import { GetWalletPage } from './pages/GetWallet.jsx'
@@ -65,6 +65,22 @@ const NAV = [
   { to: '/builders', label: 'Builders', icon: 'book' },
   { to: '/games', label: 'Games', icon: 'game' },
   { to: '/updates', label: 'Updates', icon: 'bell' },
+]
+
+const TOP_NAV = [
+  { to: '/explorer', label: 'Explore' },
+  { to: '/swap', label: 'Swap' },
+  { to: '/launch', label: 'Launchpad' },
+  { to: '/pals', label: 'NFTs' },
+  { to: '/names', label: 'Names' },
+  { to: '/games', label: 'Games' },
+]
+const MORE_NAV = [
+  { to: '/faucet', label: 'Faucet' },
+  { to: '/wall', label: 'Wall' },
+  { to: '/builders', label: 'Builders' },
+  { to: '/updates', label: 'Updates' },
+  { to: '/get-wallet', label: 'ThruScan Wallet' },
 ]
 
 /* Inline rather than an icon package: seven glyphs is not worth a dependency,
@@ -659,6 +675,28 @@ function Shell({ children }) {
 
         <div className="rail-foot"><NetworkStatus /></div>
       </nav>
+
+      {/* Desktop: one bar across the top, like a marketplace. The rail above
+          is the phone menu only. */}
+      <header className="deskbar">
+        <Link to="/" className="brand">
+          <span className="brand-mark">T</span>
+          <span className="brand-name">ThruScan</span>
+        </Link>
+        <div className="deskbar-search"><Search compact /></div>
+        <nav className="deskbar-nav">
+          {TOP_NAV.map((l) => (
+            <Link key={l.to} to={l.to} aria-current={pathname === l.to || pathname.startsWith(l.to + '/') ? 'page' : undefined}>{l.label}</Link>
+          ))}
+          <details className="deskbar-more">
+            <summary>More</summary>
+            <div className="deskbar-menu">
+              {MORE_NAV.map((l) => <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>)}
+            </div>
+          </details>
+        </nav>
+        <div className="deskbar-right"><NetworkStatus /></div>
+      </header>
 
       <header className="topbar">
         <div className="inline" style={{ gap: 6 }}>
