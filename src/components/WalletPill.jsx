@@ -166,26 +166,22 @@ function Panel({ wallet, onClose }) {
 
       <div className="pill-divider" />
 
-      {rows.length === 0
-        ? <p className="fine" style={{ padding: '6px 2px' }}>No balances yet.</p>
-        : rows.map((r) => (
-          <div className="pill-row" key={r.mint} style={{ cursor: 'default' }}>
-            <span>{r.ticker}</span>
-            <span className="mono">{r.amount}</span>
-          </div>
-        ))}
-
+      {/* THRU first: it is the chain's own asset, not a footnote about fees. */}
       <div className="pill-row" style={{ cursor: 'default' }}>
-        <span className="fine">Fees</span>
-        <span className="mono fine">{wallet.native?.toString() ?? '0'} THRU</span>
+        <span>THRU</span>
+        <span className="mono">{Number(wallet.native ?? 0n).toLocaleString()}</span>
       </div>
+      {rows.map((r) => (
+        <Link className="pill-row" key={r.mint} to={`/token/${r.mint}`} onClick={onClose}>
+          <span>{r.ticker}</span>
+          <span className="mono">{r.amount}</span>
+        </Link>
+      ))}
 
       <div className="pill-divider" />
 
       <Link className="pill-row" to="/profile" onClick={onClose}><span>Profile</span><span>→</span></Link>
       <Link className="pill-row" to="/wallet" onClick={onClose}><span>Wallet</span><span>→</span></Link>
-      <Link className="pill-row" to="/names" onClick={onClose}><span>Names</span><span>→</span></Link>
-      <Link className="pill-row" to="/faucet" onClick={onClose}><span>Top up</span><span>→</span></Link>
 
       <div className="pill-divider" />
 

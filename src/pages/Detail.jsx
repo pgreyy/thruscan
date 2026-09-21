@@ -14,6 +14,8 @@ import { ownedNames } from '../lib/holdings.js'
 import { ROOT_SUFFIX, ROOT_REGISTRAR } from '../lib/names.js'
 import { Activity } from '../components/Activity.jsx'
 import { Search } from './Home.jsx'
+import { decodePostInstruction } from '../lib/wall.js'
+import { WALL_PROGRAM } from '../lib/addresses.js'
 import './home.css'
 
 const num = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString())
@@ -98,6 +100,11 @@ export function TxPage() {
   const exec = tx?.execution
   const failed = exec && (exec.userErrorCode !== '0' || (exec.vmError ?? 0) !== 0)
   const action = tx ? describe({ program: tx.program, feePayer: tx.feePayer, rw: tx.readWriteAccounts ?? [], data: tx.instructionData }, null).label : null
+  // A wall post carries its text in the transaction itself, so anyone holding
+  // the signature can read the message without going near the wall.
+  const post = tx?.program === WALL_PROGRAM && tx.instructionData
+    ? decodePostInstruction(Uint8Array.from(atob(tx.instructionData), (c) => c.charCodeAt(0)))
+    : null
 
   return (
     <Frame title="Transaction">
@@ -114,6 +121,8 @@ export function TxPage() {
               {tx.status?.label && <span className="fine detail-after">{pretty(tx.status.label)}</span>}
             </Field>
             <Field k="Action"><b>{action}</b></Field>
+            {post && <Field k="Message"><span className="detail-message">{post.message}</span></Field>}
+            {post?.to && <Field k="To"><Addr value={post.to} /></Field>}
             <Field k="Block">
               <span className="mono">{num(tx.slot)}</span>
               {time && <span className="fine detail-after">{timeAgo(time)} · {new Date(time).toLocaleString()}</span>}

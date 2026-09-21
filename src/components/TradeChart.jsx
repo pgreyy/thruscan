@@ -20,7 +20,13 @@ function amount(units, decimals) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
 
-/** Trades between two vaults, oldest first. */
+const LIVE_MS = 3000
+
+/**
+ * Trades between two vaults, oldest first, kept live: the full history once,
+ * then only the newest page every few seconds while the page is on screen,
+ * merged in by signature so nothing is shown twice.
+ */
 export function useTrades(quoteVault, tokenVault, refreshKey) {
   const [trades, setTrades] = useState(null)
   const [error, setError] = useState(null)
@@ -28,13 +34,28 @@ export function useTrades(quoteVault, tokenVault, refreshKey) {
   useEffect(() => {
     if (!quoteVault || !tokenVault) return
     let alive = true
-    const q = new URLSearchParams({ action: 'launchtrades', quoteVault, tokenVault })
+    const url = (pages) => `/api/rpc?${new URLSearchParams({ action: 'launchtrades', quoteVault, tokenVault, pages: String(pages) })}`
+    const get = (pages) => fetch(url(pages)).then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.error); return j.trades })
+    const merge = (fresh) => setTrades((old) => {
+      const bySig = new Map((old ?? []).map((t) => [t.signature, t]))
+      let changed = old === null
+      for (const t of fresh) if (!bySig.has(t.signature)) { bySig.set(t.signature, t); changed = true }
+      if (!changed) return old
+      return [...bySig.values()].sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+    })
+
     // The node is sometimes slow to answer; one quiet retry before saying so.
-    const get = () => fetch(`/api/rpc?${q}`).then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.error); return j })
-    get().catch(() => new Promise((r) => setTimeout(r, 1500)).then(get))
-      .then((j) => { if (alive) { setTrades(j.trades); setError(null) } })
+    get(4).catch(() => new Promise((r) => setTimeout(r, 1500)).then(() => get(4)))
+      .then((t) => { if (alive) { merge(t); setError(null) } })
       .catch((e) => { if (alive) setError(String(e?.message ?? e)) })
-    return () => { alive = false }
+
+    let busy = false
+    const id = setInterval(() => {
+      if (document.hidden || busy) return
+      busy = true
+      get(1).then((t) => { if (alive) merge(t) }).catch(() => {}).finally(() => { busy = false })
+    }, LIVE_MS)
+    return () => { alive = false; clearInterval(id) }
   }, [quoteVault, tokenVault, refreshKey])
 
   return { trades, error }
@@ -90,7 +111,7 @@ export function TradeChart({
     <>
       <div className="card-head">
         <div>
-          <h2 className="h2">{title}</h2>
+          <h2 className="h2">{title} <span className="home-live" style={{ marginLeft: 6 }}><i />live</span></h2>
           <p className="sub">{last ? `${sig4(last.price)} ${quote} per ${symbol}, last trade` : `${quote} per ${symbol}`}</p>
         </div>
       </div>

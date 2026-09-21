@@ -122,3 +122,4 @@ details[open] > .detail-summary::after { transform: rotate(90deg); }
 @media (max-width: 560px) {
   .detail-field { grid-template-columns: 1fr; }
 }
+.detail-message { font-size: 15px; white-space: pre-wrap; word-break: break-word; }

@@ -199,16 +199,23 @@ async function historyFor(client, address, pageToken) {
   }
 }
 
+const timeCache = new Map()
+
 async function blockTimes(client, slots) {
   const out = {}
   await Promise.all(slots.map(async (slot) => {
+    if (timeCache.has(String(slot))) { out[slot] = timeCache.get(String(slot)); return }
     try {
       const b = await withTimeout(
         client.ctx.query.getBlock({ selector: { case: 'slot', value: BigInt(slot) }, view: 1 }),
         CALL_TIMEOUT_MS,
       )
       const t = b.header?.blockTime
-      if (t) out[slot] = Number(t.seconds) * 1000 + Math.floor((t.nanos ?? 0) / 1e6)
+      if (t) {
+        out[slot] = Number(t.seconds) * 1000 + Math.floor((t.nanos ?? 0) / 1e6)
+        if (timeCache.size > 20000) timeCache.clear()
+        timeCache.set(String(slot), out[slot])
+      }
     } catch { /* a missing time is shown as blank, not as an error */ }
   }))
   return out
@@ -329,7 +336,18 @@ async function describeAccounts(client, addresses) {
   }))
 }
 
+// A landed transaction's events never change, so a warm server keeps them.
+const eventCache = new Map()
+
 async function tokenEvents(client, signature) {
+  if (eventCache.has(signature)) return eventCache.get(signature)
+  const list = await tokenEventsFresh(client, signature)
+  if (eventCache.size > 5000) eventCache.clear()
+  eventCache.set(signature, list)
+  return list
+}
+
+async function tokenEventsFresh(client, signature) {
   const t = await withTimeout(
     client.ctx.query.getTransaction({ signature: { value: Signature.from(signature).toBytes() }, returnEvents: true }),
     CALL_TIMEOUT_MS,
@@ -499,7 +517,9 @@ export default async function handler(req, res) {
         if (!quoteVault || !tokenVault) return json(res, 400, { ok: false, error: 'missing vaults' })
         const txs = []
         let token = null
-        for (let i = 0; i < 4; i++) {
+        // The first load reads back four pages; a live refresh needs only the newest.
+        const pageCount = Math.min(Math.max(Number(params.pages) || 4, 1), 4)
+        for (let i = 0; i < pageCount; i++) {
           const page = await historyFor(client, quoteVault, token)
           txs.push(...page.txs)
           token = page.next
@@ -519,7 +539,7 @@ export default async function handler(req, res) {
           else if (tIn && qOut) trades.push({ side: 'sell', quote: qOut.amount, tokens: tIn.amount, trader: t.feePayer, signature: t.signature, time: times[t.slot] ?? null })
         }
         trades.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
-        return json(res, 200, { ok: true, trades }, { cacheSeconds: 10 })
+        return json(res, 200, { ok: true, trades }, { cacheSeconds: 1 })
       }
 
       case 'overview': {

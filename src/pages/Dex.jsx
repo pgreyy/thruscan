@@ -945,7 +945,6 @@ export function PoolChart({ pool, tickers, decimalsOf, title }) {
       symbol={tickers?.[tokenMint] || short(tokenMint)}
       quoteDecimals={decimalsOf(quoteMint)}
       tokenDecimals={decimalsOf(tokenMint)}
-      refreshKey={Number(pool.swapCount)}
     />
   )
 }
@@ -1710,6 +1709,13 @@ export function LaunchDetail({ id }) {
     return () => { alive = false; clearInterval(id2) }
   }, [])
 
+  // Other people's trades move the curve too, so re-read it every few seconds
+  // while the page is on screen.
+  useEffect(() => {
+    const id3 = setInterval(() => { if (!document.hidden) reload() }, 5000)
+    return () => clearInterval(id3)
+  }, [reload])
+
   const launch = data?.launches?.find((l) => l.id === launchId) ?? null
 
   if (loading && !data) {
@@ -1753,7 +1759,7 @@ export function LaunchDetail({ id }) {
           <div className="row"><span>Mint</span><AddressChip address={launch.mint} /></div>
           <div className="row"><span>Creator</span><AddressChip address={launch.creator} /></div>
           <div className="row"><span>Supply</span><b className="mono">{fmt(supply)} {launch.symbol}</b></div>
-          <div className="row"><span>Unclaimed creator fees</span><span className="mono">{fmt(launch.creatorFees)} {quote}</span></div>
+          <div className="row"><span>Unclaimed creator fees</span><span className="mono">{fmt(launch.creatorFees, decimals?.[quoteMint] ?? DECIMALS)} {quote}</span></div>
         </div>
 
       </section>
@@ -1765,7 +1771,7 @@ export function LaunchDetail({ id }) {
         </div>
         <div className="stat-cell">
           <span className="k">Raised</span>
-          <span className="v mono">{fmt(raised)} {quote}</span>
+          <span className="v mono">{fmt(raised, decimals?.[quoteMint] ?? DECIMALS)} {quote}</span>
         </div>
         <div className="stat-cell">
           <span className="k">To graduation</span>
@@ -1782,6 +1788,7 @@ export function LaunchDetail({ id }) {
           launch={launch}
           quote={quote}
           quoteMint={quoteMint}
+          quoteDecimals={decimals?.[quoteMint] ?? DECIMALS}
           slot={slot}
           threshold={threshold}
           raised={raised}
@@ -1797,7 +1804,6 @@ export function LaunchDetail({ id }) {
             symbol={launch.symbol}
             quoteDecimals={decimals?.[quoteMint] ?? DECIMALS}
             tokenDecimals={DECIMALS}
-            refreshKey={Number(launch.tradeCount)}
           />
           <CurveChart
             vq={launch.vq}
@@ -1822,18 +1828,35 @@ export function LaunchDetailPage() {
 
 
 /** Buy and sell, for one launch. */
-function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progress, onTraded }) {
+function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, threshold, raised, progress, onTraded }) {
   const [side, setSide] = useState('buy')
   const [amount, setAmount] = useState('')
+  const wallet = useWallet()
+
+  // What you hold of both sides, read from the chain, so Max has a number.
+  useEffect(() => {
+    if (wallet.address) wallet.refresh([quoteMint, launch.mint])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet.address, quoteMint, launch.mint])
 
   /* Emptied the moment a trade lands. Leaving the number sitting there after a
      successful buy is how someone buys twice: the button is still live, the
      figure is still in the box, and nothing on screen distinguishes "about to
      spend 50" from "just spent 50". */
-  const traded = () => { setAmount(''); onTraded?.() }
+  const traded = () => {
+    setAmount(''); onTraded?.()
+    wallet.refresh([quoteMint, launch.mint])
+  }
 
   const tax = slot != null ? snipeBps(launch.startSlot, slot) : 0n
-  const amountIn = toUnits(amount)
+  // Buys spend the quote asset and sells spend the token, and the two need not
+  // share decimals: WTHRU has 8, launch tokens 6.
+  const inDecimals = side === 'buy' ? quoteDecimals : DECIMALS
+  const outDecimals = side === 'buy' ? DECIMALS : quoteDecimals
+  const amountIn = toUnits(amount, inDecimals)
+  const spendMint = side === 'buy' ? quoteMint : launch.mint
+  const held = wallet.balances?.[spendMint]
+  const holding = held?.exists ? held.amount : (held ? 0n : null)
 
   const q = useMemo(() => {
     if (side === 'buy') {
@@ -1870,7 +1893,7 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
         <div className="progress-track">
           <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
         </div>
-        <p className="fine" style={{ marginTop: 8, lineHeight: 1.6 }}>{fmt(raised)} of {fmt(threshold)} {quote} raised</p>
+        <p className="fine" style={{ marginTop: 8, lineHeight: 1.6 }}>{fmt(raised, quoteDecimals)} of {fmt(threshold, quoteDecimals)} {quote} raised</p>
       </div>
 
       {launch.graduated ? (
@@ -1885,6 +1908,17 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
           <div className="swap-side">
             <div className="swap-side-head">
               <span className="fine">{side === 'buy' ? `Spend ${quote}` : `Sell ${launch.symbol}`}</span>
+              {wallet.address && (
+                <span className="fine">
+                  Balance {holding === null ? '—' : fmt(holding, inDecimals)} {side === 'buy' ? quote : launch.symbol}
+                  {holding > 0n && (
+                    <button
+                      className="linkish"
+                      onClick={() => setAmount(String(Number(holding) / 10 ** inDecimals))}
+                    >MAX</button>
+                  )}
+                </span>
+              )}
             </div>
             <input
               className="swap-amount mono"
@@ -1900,11 +1934,11 @@ function TradePanel({ launch, quote, quoteMint, slot, threshold, raised, progres
               <div className="rows" style={{ marginTop: 12 }}>
                 <div className="row">
                   <span>You receive</span>
-                  <b className="mono">{fmt(out)} {side === 'buy' ? launch.symbol : quote}</b>
+                  <b className="mono">{fmt(out, outDecimals)} {side === 'buy' ? launch.symbol : quote}</b>
                 </div>
-                <div className="row"><span>Creator fee</span><span className="mono">{fmt(q.creatorFee)} {quote}</span></div>
+                <div className="row"><span>Creator fee</span><span className="mono">{fmt(q.creatorFee, quoteDecimals)} {quote}</span></div>
                 {side === 'buy' && q.snipeTax > 0n && (
-                  <div className="row"><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax)} {quote}</span></div>
+                  <div className="row"><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax, quoteDecimals)} {quote}</span></div>
                 )}
               </div>
             ) : (

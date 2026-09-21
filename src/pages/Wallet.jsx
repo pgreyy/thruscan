@@ -768,9 +768,9 @@ function LiveWallet({ wallet, mints }) {
           <div className="rows" style={{ marginTop: 12 }}>
             <div className="row"><span>Status</span><b>Live on alphanet</b></div>
             <div className="row">
-              <span>Fees</span>
+              <span>THRU</span>
               <b className="mono">
-                {wallet.native > 0n ? `${wallet.native.toString()} THRU` : 'unfunded, paying zero'}
+                {Number(wallet.native ?? 0n).toLocaleString()}
               </b>
             </div>
             <div className="row">

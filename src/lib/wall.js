@@ -232,3 +232,30 @@ export function outboxFor(wall, address) {
 export function toHex(bytes) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
+
+/**
+ * Read a POST instruction back: the message as it was sent, straight from the
+ * transaction. The inverse of buildPostInstruction. Returns null for anything
+ * that is not a post.
+ */
+export function decodePostInstruction(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? [])
+  if (b.length < 5 || b[0] !== 0x01) return null
+  const dec = new TextDecoder()
+  let o = 1
+  const take = () => {
+    const len = b[o++]
+    if (len === undefined || o + len > b.length) throw new Error('short')
+    const s = dec.decode(b.slice(o, o + len)); o += len; return s
+  }
+  try {
+    const name = take()
+    const handle = take()
+    const message = take()
+    const hasTo = b[o++] === 1
+    const to = hasTo && o + 32 <= b.length ? Pubkey.from(b.slice(o, o + 32)).toThruFmt() : null
+    return { name, handle, message, to }
+  } catch {
+    return null
+  }
+}
