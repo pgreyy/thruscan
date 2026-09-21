@@ -847,7 +847,7 @@ function MoveCard({ wallet }) {
   }
 
   const run = async () => {
-    const chosen = Object.keys(pick).filter((k) => pick[k])
+    const chosen = Object.keys(pick).filter((k) => pick[k] && status[k]?.state !== 'done')
     if (chosen.length === 0) return
     const ok = await confirm.ask({
       title: 'Move to the other wallet?',
@@ -860,7 +860,7 @@ function MoveCard({ wallet }) {
     setBusy(true); setError(null)
     for (const n of plan.names) {
       const id = `name:${n.name}`
-      if (!pick[id]) continue
+      if (!pick[id] || status[id]?.state === 'done') continue
       mark(id, { state: 'working' })
       try {
         await settle(await releaseName(n.account))
@@ -877,7 +877,7 @@ function MoveCard({ wallet }) {
     }
     for (const t of plan.tokens) {
       const id = `token:${t.mint}`
-      if (!pick[id]) continue
+      if (!pick[id] || status[id]?.state === 'done') continue
       mark(id, { state: 'working' })
       try {
         const sig = await transferToken(t.mint, dest, BigInt(t.amount))
@@ -887,7 +887,7 @@ function MoveCard({ wallet }) {
         mark(id, { state: 'failed', error: String(e?.message ?? e) })
       }
     }
-    if (pick.native) {
+    if (pick.native && status.native?.state !== 'done') {
       mark('native', { state: 'working' })
       try {
         const now = await nativeBalance(wallet.address)

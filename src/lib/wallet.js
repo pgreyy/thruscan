@@ -593,7 +593,15 @@ export async function transferToken(mint, to, amount) {
   const dest = await deriveTokenAccount(mint, to)
 
   if (!(await accountExists(dest))) {
-    await api('open', { owner: to, mint })
+    // Opening accounts is rate limited per visitor. Moving several tokens in a
+    // row hits that limit, so wait out the time the server names and retry.
+    for (let attempt = 0; ; attempt++) {
+      try { await api('open', { owner: to, mint }); break } catch (e) {
+        const wait = Number(String(e?.message ?? '').match(/again in (\d+) second/)?.[1])
+        if (!wait || attempt >= 3) throw e
+        await new Promise((r) => setTimeout(r, (wait + 1) * 1000))
+      }
+    }
     let live = false
     for (let i = 0; i < 10 && !live; i++) {
       await new Promise((r) => setTimeout(r, 1500))

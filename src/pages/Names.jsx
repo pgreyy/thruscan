@@ -345,8 +345,8 @@ function NameItem({ domain, account, wallet, onChanged }) {
         )}
 
         <div className="inline name-add">
-          <input className="field mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="key, e.g. x" />
-          <input className="field mono" value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" />
+          <input className="field mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="label, e.g. x or url" />
+          <input className="field mono" value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. @yourhandle" />
           <button className="btn ghost" onClick={() => add(key.trim(), value.trim())} disabled={busy || !key.trim() || !value.trim()}>
             {busy ? 'Signing' : 'Add'}
           </button>

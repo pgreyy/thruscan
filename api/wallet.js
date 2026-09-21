@@ -528,6 +528,15 @@ async function openTokenAccountFor({ c, mint, owner, seed }) {
  * that mints, which is what makes the supply fixed by construction rather than
  * by promise.
  */
+/** Wait until an account exists on chain, for up to about 15 seconds. */
+async function landed(c, address) {
+  for (let i = 0; i < 10; i++) {
+    if (await getAccount(c, address)) return true
+    await new Promise((r) => setTimeout(r, 1500))
+  }
+  return Boolean(await getAccount(c, address))
+}
+
 async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
   const ticker = String(symbol ?? '').trim().toUpperCase()
   if (!/^[A-Z0-9]{2,8}$/.test(ticker)) {
@@ -573,8 +582,18 @@ async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
     return { ok: false, error: 'The mint did not land. Try again in a moment.', mint, signature: mintSig }
   }
 
+  // One at a time, each confirmed on chain before the next. The sponsor reads
+  // its nonce from the chain, so two sends in a row share a nonce and the
+  // second is silently dropped. That is what left launches with a missing
+  // vault and failed them with error 3.
   const tokenVault = await openTokenAccountFor({ c, mint, owner: pad, seed: randomSeed() })
+  if (!(await landed(c, tokenVault.account))) {
+    return { ok: false, error: 'The token vault did not land. Try again in a moment.' }
+  }
   const quoteVault = await openTokenAccountFor({ c, mint: quoteMint || TUSD_MINT, owner: pad, seed: randomSeed() })
+  if (!(await landed(c, quoteVault.account))) {
+    return { ok: false, error: 'The quote vault did not land. Try again in a moment.' }
+  }
 
   return {
     ok: true,
@@ -681,7 +700,8 @@ async function status(c, { signature }) {
   const text = JSON.stringify(txn, (k, v) => (typeof v === 'bigint' ? v.toString() : v))
   const vmError = Number(text.match(/"vmError":(-?\d+)/)?.[1] ?? NaN)
   if (!Number.isFinite(vmError)) return { ok: true, status: { settled: false } }
-  const userError = Number(text.match(/"userErrorCode":(\d+)/)?.[1] ?? 0)
+  // The code arrives as a string once bigints are stringified, so allow quotes.
+  const userError = Number(text.match(/"userErrorCode":"?(\d+)/)?.[1] ?? 0)
   return {
     ok: true,
     status: { settled: true, succeeded: vmError === 0, vmError, userError },

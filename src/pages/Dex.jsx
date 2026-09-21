@@ -99,6 +99,7 @@ const fmtRaw = (units, decimals) => fmt(units, decimals ?? DECIMALS)
 function explainRevert(result) {
   const code = Number(result?.userError ?? 0)
   if (code === 4) return 'Not enough of that token in your account.'
+  if (code === 3) return 'An account this needs is not on chain yet. Try again in a moment.'
   if (code === 20) return 'That account already exists.'
   if (code !== 0) return `The program rejected it (error ${code}).`
   return 'The chain rejected it. The usual cause is not holding enough of the token you are spending, '
