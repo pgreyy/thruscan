@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ThruScan Wallet privacy policy</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+  :root { --canvas:#f1f0ed; --surface:#fff; --line:#e4e2dd; --ink:#16181d; --muted:#6f7178; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--canvas); color:var(--ink); font:16px/1.65 'Inter Tight',-apple-system,'Segoe UI',sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:56px 20px 80px; }
+  .mark { width:40px; height:40px; border-radius:11px; background:var(--ink); color:var(--canvas); display:grid; place-items:center; font:700 20px ui-monospace,monospace; margin-bottom:20px; }
+  h1 { font-size:34px; letter-spacing:-.03em; line-height:1.1; margin:0 0 6px; }
+  h2 { font-size:18px; margin:32px 0 6px; letter-spacing:-.01em; }
+  p, li { color:#33363d; } .muted { color:var(--muted); font-size:14px; }
+  section { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:6px 24px 22px; margin-top:24px; }
+  a { color:var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark">T</div>
+  <h1>ThruScan Wallet privacy policy</h1>
+  <p class="muted">Applies to the ThruScan Wallet browser extension. Last updated 21 September 2026.</p>
+
+  <section>
+    <h2>The short version</h2>
+    <p>ThruScan Wallet does not collect, store or share any personal data. There is no ThruScan account, no analytics, no tracking and no ThruScan server involved in using the wallet.</p>
+
+    <h2>What stays on your device</h2>
+    <ul>
+      <li>Your recovery phrase or private key, encrypted with your password (PBKDF2-SHA256 and AES-GCM) and kept in the browser's extension storage. The password itself is never stored.</li>
+      <li>Your settings (auto-lock time, network address) and the list of sites you have connected.</li>
+    </ul>
+    <p>None of this is ever sent to ThruScan or anyone else. Removing the extension, or choosing "Remove from this browser", deletes it.</p>
+
+    <h2>What goes to the Thru network</h2>
+    <p>To show balances and send transactions, the wallet talks directly to a Thru network node (by default <code>rpc.alphanet.thru.org</code>, or one you choose in Settings). It sends your public address and the transactions you approve. Transactions on a blockchain are public by design. The node's operator, not ThruScan, runs that service.</p>
+
+    <h2>Websites you connect</h2>
+    <p>A website only learns your public address after you approve its connection request, and can only get a signature after you approve that request. You can disconnect any site at any time.</p>
+
+    <h2>Links</h2>
+    <p>Links in the wallet open pages on thruscan.vercel.app, a public blockchain explorer. Opening them is an ordinary visit to a website.</p>
+
+    <h2>Contact</h2>
+    <p>Questions: open an issue at <a href="https://github.com/pgreyy/thruscan">github.com/pgreyy/thruscan</a>.</p>
+  </section>
+</main>
+</body>
+</html>

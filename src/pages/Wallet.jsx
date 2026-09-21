@@ -785,7 +785,6 @@ function LiveWallet({ wallet, mints }) {
 
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
-      {wallet.registered && <SendCard wallet={wallet} />}
       {wallet.registered && <MoveCard wallet={wallet} />}
       <BackupCard wallet={wallet} />
       <Danger wallet={wallet} />
@@ -826,7 +825,7 @@ function toUnitsBig(text, decimals) {
   return BigInt(w || '0') * 10n ** BigInt(decimals) + BigInt((f + '0'.repeat(decimals)).slice(0, decimals) || '0')
 }
 
-function SendCard({ wallet }) {
+function SendForm({ wallet }) {
   const confirm = useConfirm()
   const [asset, setAsset] = useState('THRU')
   const [amount, setAmount] = useState('')
@@ -896,11 +895,8 @@ function SendCard({ wallet }) {
   }
 
   return (
-    <section className="card">
+    <>
       {confirm.modal}
-      <details>
-        <summary className="h2 move-summary">Send</summary>
-
         <div className="stack" style={{ marginTop: 14 }}>
           <div className="inline send-asset">
             <select className="field" value={asset} onChange={(e) => { setAsset(e.target.value); setAmount('') }}>
@@ -941,8 +937,52 @@ function SendCard({ wallet }) {
 
         {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
         {done && <p className="notice" style={{ marginTop: 12 }}>Sent. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link></p>}
-      </details>
-    </section>
+    </>
+  )
+}
+
+/** A small centred window for Send and Receive. Escape or a click outside closes it. */
+function QuickModal({ title, onClose, children }) {
+  useEffect(() => {
+    const key = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [onClose])
+  return createPortal(
+    <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal-card quick-modal" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="quick-modal-head">
+          <h2 className="h2">{title}</h2>
+          <button className="quick-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+function ReceiveBody({ address }) {
+  return (
+    <div className="quick-receive">
+      <QRImage text={address} size={190} />
+      <p className="mono quick-addr">{address}</p>
+      <Copyable text={address} label="Copy address" />
+    </div>
+  )
+}
+
+const ICON = {
+  send: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />,
+  receive: <path d="M12 4v14M5 11l7 7 7-7M5 21h14" />,
+  activity: <path d="M3 12h4l3 8 4-16 3 8h4" />,
+}
+function QuickButton({ icon, label, onClick }) {
+  return (
+    <button className="quick-btn" onClick={onClick}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON[icon]}</svg>
+      <span>{label}</span>
+    </button>
   )
 }
 
@@ -1161,6 +1201,7 @@ function ActivityDrawer({ addresses, me, onClose }) {
 export function WalletPage() {
   const wallet = useWallet()
   const [showActivity, setShowActivity] = useState(false)
+  const [quick, setQuick] = useState(null)   // 'send' | 'receive' | null
   const [, bump] = useState(0)
   const mints = useMemo(() => {
     // tUSD and WTHRU always, since those are the two quote assets, then
@@ -1177,12 +1218,15 @@ export function WalletPage() {
       <div className="page-head">
         <h1 className="h1">Wallet</h1>
         {hasWallet() && wallet.address && (
-          <button className="btn ghost activity-open" onClick={() => setShowActivity(true)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
-            Activity
-          </button>
+          <div className="quick-row">
+            {wallet.unlocked && wallet.registered && <QuickButton icon="send" label="Send" onClick={() => setQuick('send')} />}
+            {wallet.unlocked && <QuickButton icon="receive" label="Receive" onClick={() => setQuick('receive')} />}
+            <QuickButton icon="activity" label="Activity" onClick={() => setShowActivity(true)} />
+          </div>
         )}
       </div>
+      {quick === 'send' && <QuickModal title="Send" onClose={() => setQuick(null)}><SendForm wallet={wallet} /></QuickModal>}
+      {quick === 'receive' && <QuickModal title="Receive" onClose={() => setQuick(null)}><ReceiveBody address={wallet.address} /></QuickModal>}
       <p className="lede">A browser wallet for Thru. Your key never leaves this device.</p>
       {showActivity && (
         <ActivityDrawer

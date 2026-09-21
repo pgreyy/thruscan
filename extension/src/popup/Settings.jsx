@@ -2,13 +2,10 @@
 //
 // Connected sites, backing up the wallet, auto-lock, network, and removal.
 
-import { useEffect, useState } from 'react'
-import { bg, go, Header, Notice, Copy, PasswordField, useAction, timeAgo } from './ui.jsx'
+import { useState } from 'react'
+import { bg, go, Header, Notice, Copy, PasswordField, useAction } from './ui.jsx'
 
 export function Settings({ state, onLock, reload }) {
-  const [sites, setSites] = useState(null)
-  const loadSites = () => bg('sites').then(setSites)
-  useEffect(() => { loadSites() }, [])
   const [minutes, setMinutes] = useState(String(state.settings.autoLockMinutes))
   const [rpc, setRpc] = useState(state.settings.rpc)
   const [saved, setSaved] = useState(null)
@@ -26,13 +23,7 @@ export function Settings({ state, onLock, reload }) {
       <div className="body stack">
         <section className="card">
           <h2>Connected sites</h2>
-          {sites && Object.keys(sites).length === 0 && <p className="fine">No site is connected.</p>}
-          {sites && Object.entries(sites).map(([origin, s]) => (
-            <div className="site" key={origin}>
-              <span className="row-main"><b>{origin.replace(/^https?:\/\//, '')}</b><span className="fine">connected {timeAgo(s.at)}</span></span>
-              <button className="btn ghost small" onClick={() => bg('revoke', { origin }).then(loadSites)}>Disconnect</button>
-            </div>
-          ))}
+          <button className="btn ghost" onClick={() => go('/sites')}>Manage connected sites</button>
         </section>
 
         <section className="card">

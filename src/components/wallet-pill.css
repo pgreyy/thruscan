@@ -1221,3 +1221,19 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 /* The small green "live" marker, also used outside the explorer pages. */
 .home-live { font-size: 12px; font-weight: 400; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
 .home-live i { width: 7px; height: 7px; border-radius: 50%; background: #1fa971; box-shadow: 0 0 0 3px rgba(31, 169, 113, .18); }
+
+/* Wallet page: Send, Receive and Activity as small tiles beside the title. */
+.quick-row { display: flex; gap: 10px; }
+.quick-btn {
+  width: 76px; height: 70px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; font-size: 12.5px; font-weight: 500; transition: border-color .12s, transform .12s;
+}
+.quick-btn:hover { border-color: var(--ink); transform: translateY(-1px); }
+.quick-modal { width: 420px; }
+.quick-modal-head { display: flex; align-items: center; justify-content: space-between; }
+.quick-close { border: 0; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--muted); padding: 2px 6px; border-radius: 8px; }
+.quick-close:hover { color: var(--ink); background: var(--canvas); }
+.quick-receive { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 14px; text-align: center; }
+.quick-addr { word-break: break-all; font-size: 12.5px; margin: 0; max-width: 320px; }
+@media (max-width: 560px) { .quick-btn { width: 64px; height: 60px; font-size: 11.5px; } }

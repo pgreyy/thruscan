@@ -28,7 +28,12 @@ window.addEventListener('message', (e) => {
   }
 })
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  // The wallet popup asking which site this tab is on.
+  if (msg?.from === 'thruscan-wallet-popup' && msg.ask === 'origin') {
+    if (sender.id === chrome.runtime.id) reply({ origin: window.location.origin })
+    return
+  }
   if (msg?.from !== 'thruscan-wallet') return
   if (msg.origin && msg.origin !== window.location.origin) return
   window.postMessage({ target: TO_PAGE, event: msg.event, data: msg.data ?? null }, window.location.origin)

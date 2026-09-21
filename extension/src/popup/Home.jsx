@@ -31,11 +31,49 @@ function assetsOf(data) {
   ]
 }
 
+const ICONS = {
+  send: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />,
+  receive: <path d="M12 4v14M5 11l7 7 7-7M5 21h14" />,
+  faucet: <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />,
+  activity: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  sites: <><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M8 21h8M12 18v3" /></>,
+  explorer: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>,
+  lock: <><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
+  copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+  key: <><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.8-9.8M16 7l3 3M19 4l2 2" /></>,
+}
+export function Icon({ name, size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
+  )
+}
+
+/** The site in the active tab, and whether it is connected. */
+function useCurrentSite() {
+  const [site, setSite] = useState(null)
+  const load = useCallback(async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!tab?.id) return
+      // The page's bridge says where it is; no "tabs" permission needed.
+      const r = await chrome.tabs.sendMessage(tab.id, { from: 'thruscan-wallet-popup', ask: 'origin' }).catch(() => null)
+      if (!r?.origin) return setSite(null)
+      const all = await bg('sites')
+      setSite({ origin: r.origin, connected: Boolean(all[r.origin]) })
+    } catch { setSite(null) }
+  }, [])
+  useEffect(() => { load() }, [load])
+  return { site, reload: load }
+}
+
 export function Home({ account, onLock }) {
   const { data, error, reload } = useOverview()
-  const [tab, setTab] = useState('tokens')
+  const { site, reload: reloadSite } = useCurrentSite()
   const act = useAction()
   const [note, setNote] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   const activate = () => act.run(async () => { await bg('activate'); setNote('Your account is on chain.'); reload() })
   const faucet = () => act.run(async () => {
@@ -46,72 +84,122 @@ export function Home({ account, onLock }) {
     if (r.settled && !r.ok) act.setError(`The faucet refused (error ${r.userError || r.vmError}). It may be empty or rate limited; try again later.`)
     reload()
   })
+  const copy = () => { navigator.clipboard.writeText(account.address); setCopied(true); setTimeout(() => setCopied(false), 1400) }
 
   const assets = assetsOf(data)
+  const tokens = assets.slice(1)
+  const live = data?.exists
+
+  const tiles = [
+    { icon: 'send', label: 'Send', onClick: () => go('/send'), off: !live },
+    { icon: 'receive', label: 'Receive', onClick: () => go('/receive') },
+    { icon: 'faucet', label: act.busy ? 'Claiming…' : 'Faucet', onClick: faucet, off: !live || act.busy },
+    { icon: 'activity', label: 'Activity', onClick: () => go('/activity') },
+    { icon: 'sites', label: 'Connected', onClick: () => go('/sites') },
+    { icon: 'explorer', label: 'Explorer', href: `${EXPLORER}/account/${account.address}` },
+  ]
 
   return (
     <div className="screen">
-      <header className="bar">
-        <span className="mark">T</span>
-        <div className="acct">
+      <header className="top">
+        <button className="acct-chip" onClick={copy} title="Copy address">
+          <Icon name="key" size={16} />
           <b>Account 1</b>
-          <span className="mono muted">{short(account.address)}</span>
-        </div>
-        <div className="bar-right">
-          <Copy value={account.address} label="Copy" className="icon-btn text" />
-          <button className="icon-btn" aria-label="Settings" onClick={() => go('/settings')}>⚙</button>
+          <span className="mono">{short(account.address, 5)}</span>
+          <span className="chip-copy">{copied ? 'Copied' : <Icon name="copy" size={14} />}</span>
+        </button>
+        <div className="top-right">
+          <button className="icon-btn" aria-label="Lock" title="Lock" onClick={onLock}><Icon name="lock" size={18} /></button>
+          <button className="icon-btn" aria-label="Settings" title="Settings" onClick={() => go('/settings')}><Icon name="settings" size={18} /></button>
         </div>
       </header>
 
-      <div className="body">
-        <section className="balance">
-          <span className="muted">THRU</span>
-          <b>{data ? fmtUnits(data.thru) : '…'}</b>
-          <span className="net">Thru alphanet</span>
+      <div className="body home">
+        <section className="hero">
+          <div className="hero-top">
+            <span>THRU balance</span>
+            <span className="hero-net"><i />Alphanet</span>
+          </div>
+          <b className="hero-amount">{data ? fmtUnits(data.thru) : '…'}</b>
+          <div className="hero-chips">
+            {tokens.slice(0, 4).map((t) => <span key={t.key}>{t.ticker}</span>)}
+            {tokens.length > 4 && <span>+{tokens.length - 4}</span>}
+            {data && data.tokens !== null && tokens.length === 0 && <span className="dim">No tokens yet</span>}
+          </div>
         </section>
 
-        {data && !data.exists && (
+        {data && !live && (
           <section className="card callout">
             <b>Activate this address</b>
-            <p className="fine">A new Thru address has to be written on chain once before it can hold anything. It is free and signed by you.</p>
+            <p className="fine">A new Thru address is written on chain once before it can hold anything. Free, and signed by you.</p>
             <button className="btn small" disabled={act.busy} onClick={activate}>{act.busy ? 'Activating…' : 'Activate'}</button>
           </section>
         )}
 
-        <div className="actions">
-          <button className="act" onClick={() => go('/send')} disabled={!data?.exists}><span>↑</span>Send</button>
-          <button className="act" onClick={() => go('/receive')}><span>↓</span>Receive</button>
-          <button className="act" onClick={faucet} disabled={!data?.exists || act.busy}><span>+</span>Faucet</button>
-          <a className="act" href={`${EXPLORER}/account/${account.address}`} target="_blank" rel="noreferrer"><span>↗</span>Explorer</a>
-        </div>
+        <nav className="grid">
+          {tiles.map((t) => t.href
+            ? <a key={t.label} className="tile" href={t.href} target="_blank" rel="noreferrer"><Icon name={t.icon} size={22} /><span>{t.label}</span></a>
+            : <button key={t.label} className="tile" onClick={t.onClick} disabled={t.off}><Icon name={t.icon} size={22} /><span>{t.label}</span></button>)}
+        </nav>
 
         <Notice kind="good">{note}</Notice>
         <Notice>{act.error || error}</Notice>
 
-        <div className="seg tabs">
-          <button className={tab === 'tokens' ? 'on' : ''} onClick={() => setTab('tokens')}>Tokens</button>
-          <button className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>Activity</button>
-        </div>
-
-        {tab === 'tokens' && (
-          <div className="list">
-            {!data && <p className="fine pad">Reading the chain…</p>}
-            {assets.map((a) => (
-              <a key={a.key} className="row" target="_blank" rel="noreferrer"
-                href={a.mint ? `${EXPLORER}/token/${a.mint}` : `${EXPLORER}/account/${account.address}`}>
-                <span className="coin">{a.ticker.slice(0, 1)}</span>
-                <span className="row-main"><b>{a.ticker}</b>{a.mint && <span className="fine mono">{short(a.mint, 4)}</span>}</span>
-                <span className="mono">{fmtUnits(a.amount, a.decimals)}</span>
-              </a>
-            ))}
-          </div>
+        {site && (
+          <section className="site-bar">
+            <span className="favicon">{site.origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
+            <span className="row-main">
+              <b>{site.origin.replace(/^https?:\/\//, '')}</b>
+              <span className={`fine ${site.connected ? 'on' : ''}`}>{site.connected ? 'Connected' : 'Not connected'}</span>
+            </span>
+            {site.connected && <button className="btn ghost small" onClick={() => bg('revoke', { origin: site.origin }).then(reloadSite)}>Disconnect</button>}
+          </section>
         )}
-        {tab === 'activity' && <Activity address={account.address} />}
-      </div>
 
-      <footer className="foot">
-        <button className="link" onClick={onLock}>Lock</button>
-      </footer>
+        <h2 className="list-head">Tokens</h2>
+        <div className="list">
+          {!data && <p className="fine pad">Reading the chain…</p>}
+          {assets.map((a) => (
+            <a key={a.key} className="row" target="_blank" rel="noreferrer"
+              href={a.mint ? `${EXPLORER}/token/${a.mint}` : `${EXPLORER}/account/${account.address}`}>
+              <span className="coin">{a.ticker.slice(0, 1)}</span>
+              <span className="row-main"><b>{a.ticker}</b>{a.mint && <span className="fine mono">{short(a.mint, 4)}</span>}</span>
+              <span className="mono">{fmtUnits(a.amount, a.decimals)}</span>
+            </a>
+          ))}
+          {data && data.tokens === null && <p className="fine pad">Looking for tokens…</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function ActivityScreen({ account }) {
+  return (
+    <div className="screen">
+      <Header title="Activity" back="/" />
+      <div className="body"><Activity address={account.address} /></div>
+    </div>
+  )
+}
+
+export function Sites() {
+  const [sites, setSites] = useState(null)
+  const load = () => bg('sites').then(setSites)
+  useEffect(() => { load() }, [])
+  return (
+    <div className="screen">
+      <Header title="Connected sites" back="/" />
+      <div className="body stack">
+        {sites && Object.keys(sites).length === 0 && <p className="fine">No site is connected. A site asks when it wants to connect, and you decide.</p>}
+        {sites && Object.entries(sites).map(([origin, s]) => (
+          <div className="site-bar" key={origin}>
+            <span className="favicon">{origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
+            <span className="row-main"><b>{origin.replace(/^https?:\/\//, '')}</b><span className="fine">connected {timeAgo(s.at)}</span></span>
+            <button className="btn ghost small" onClick={() => bg('revoke', { origin }).then(load)}>Disconnect</button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
