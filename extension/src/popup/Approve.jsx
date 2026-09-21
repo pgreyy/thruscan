@@ -15,6 +15,8 @@ const PROGRAM_NAMES = {
   taanfNIPSm5OA3LDWSLFFAgo3iszZ1rOVsdJPYp4dzDfTg: 'ThruSwap',
   taX1wTP2Zmfddk6T3VAbncDzeDRXtc9HUCwUamm6d8rmPu: 'ThruPad',
   'taX-QuhkQ4-7zGh4emeIn3JMAy05aZnQwC7WWyuyUoDRCI': 'ThruScan wall',
+  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ: 'Thru multicall',
+  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH: 'Wrapped THRU (WTHRU)',
 }
 
 /** What we can say for sure about the instruction, from its bytes alone. */
@@ -23,6 +25,14 @@ function explain(program, dataHex) {
   const dv = new DataView(b.buffer)
   if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' && b.length >= 12 && dv.getUint32(0, true) === 1) {
     return `Sends ${dv.getBigUint64(4, true).toLocaleString()} THRU from this wallet`
+  }
+  // Wrapping: multicall of [EOA transfer to the WTHRU vault, WTHRU deposit].
+  if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ' && b.length >= 28 && dv.getUint16(0, true) === 2) {
+    const size = Number(dv.getBigUint64(4, true))
+    if (size === 16 && dv.getUint32(12, true) === 1) return `Wraps ${dv.getBigUint64(16, true).toLocaleString()} THRU into WTHRU`
+  }
+  if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH' && b.length >= 24 && dv.getUint32(0, true) === 2) {
+    return `Unwraps ${dv.getBigUint64(16, true).toLocaleString()} WTHRU base units back to THRU`
   }
   if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq') {
     if (b[0] === 2 && b.length >= 13) return `Moves ${dv.getBigUint64(5, true).toLocaleString()} base units of a token`

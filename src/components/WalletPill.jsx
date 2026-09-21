@@ -189,6 +189,17 @@ function Panel({ wallet, onClose }) {
 
       <Link className="pill-row" to="/profile" onClick={onClose}><span>Profile</span><span>→</span></Link>
       <Link className="pill-row" to="/wallet" onClick={onClose}><span>Wallet</span><span>→</span></Link>
+      {!isExternal() && (hasProvider()
+        ? (
+          <button className="pill-row" onClick={() => connectExternal().then(onClose).catch(() => {})}>
+            <span>Use ThruScan Wallet</span><span className="fine">extension</span>
+          </button>
+        )
+        : (
+          <a className="pill-row" href={EXTENSION_URL} target="_blank" rel="noreferrer">
+            <span>Get ThruScan Wallet</span><span>↗</span>
+          </a>
+        ))}
 
       <div className="pill-divider" />
 

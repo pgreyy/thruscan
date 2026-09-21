@@ -850,6 +850,7 @@ function LiveWallet({ wallet, mints }) {
         {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
       </section>
 
+      {!isExternal() && <ConnectCard title="Use ThruScan Wallet instead" />}
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
       {/* Backing up, moving and forgetting belong to the wallet that holds the
@@ -1269,7 +1270,7 @@ function ActivityDrawer({ addresses, me, onClose }) {
 
 /** Use a wallet you already have: the ThruScan Wallet extension, or any wallet
     that provides window.thru. */
-export function ConnectCard({ compact = false }) {
+export function ConnectCard({ compact = false, title = 'Connect a wallet' }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const found = hasProvider()
@@ -1281,7 +1282,7 @@ export function ConnectCard({ compact = false }) {
     <section className={compact ? '' : 'card'}>
       <div className="card-head">
         <div>
-          <h2 className="h2">Connect a wallet</h2>
+          <h2 className="h2">{title}</h2>
           <p className="sub">{found ? 'Use the Thru wallet in this browser. It keeps your keys and asks before signing.' : 'Use ThruScan Wallet, the Chrome extension. Your keys stay in the extension.'}</p>
         </div>
         {found
@@ -1354,11 +1355,11 @@ export function WalletPage() {
           </div>
           <div className="row">
             <span>Paid for by ThruScan</span>
-            <span className="fine">Registering, and opening token accounts</span>
+            <span className="fine">Registering the wallet, .id names, the tUSD faucet</span>
           </div>
           <div className="row">
             <span>Paid for and signed by you</span>
-            <span className="fine">Every swap, buy, sell and launch</span>
+            <span className="fine">Token accounts, swaps, buys, sells, launches</span>
           </div>
           <div className="row">
             <span>When mainnet comes</span>

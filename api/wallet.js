@@ -716,6 +716,15 @@ async function status(c, { signature }) {
   }
 }
 
+/** A creation state proof for an address that does not exist yet. The browser
+ *  cannot ask the node for one itself (no CORS), so this reads it and nothing
+ *  else: the wallet builds, signs and pays for the transaction that uses it. */
+async function proofFor(c, { address }) {
+  if (await getAccount(c, address)) return { ok: false, error: 'That account already exists.' }
+  const proof = await proofs.generateStateProof(c.ctx, { address, proofType: PROOF_CREATING })
+  return { ok: true, proof: Buffer.from(proof.proof).toString('base64') }
+}
+
 /* ---------- entry ---------- */
 
 export default async function handler(req, res) {
@@ -772,6 +781,7 @@ export default async function handler(req, res) {
       case 'pad-accounts':  return json(res, 200, await padAccounts(c, body))
       case 'name-check':    return json(res, 200, await nameCheck(c, body))
       case 'name-register': return json(res, 200, await nameRegister(c, body))
+      case 'proof':    return json(res, 200, await proofFor(c, body))
       case 'submit':   return json(res, 200, await submit(c, body))
       case 'status':   return json(res, 200, await status(c, body))
       default:         return json(res, 400, { ok: false, error: `Unknown action "${action}".` })

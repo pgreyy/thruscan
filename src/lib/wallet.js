@@ -51,6 +51,7 @@ import {
 } from '@thru/sdk'
 import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
 import { isExternal, externalAddress, externalSend } from './external.js'
+import { buildWrap, buildUnwrap, WTHRU_MINT_ADDRESS } from './wthru.js'
 
 const STORE_KEY = 'thruscan.wallet.v1'
 const ENDPOINT = '/api/wallet'
@@ -422,10 +423,52 @@ export async function registerAndFund(onStep = () => {}) {
 /** Token accounts hold balances; the wallet address itself holds none. The
  *  sponsor opens them because creating an account needs a state proof, and
  *  ownership is recorded in the account rather than proved by a signature. */
-export async function openTokenAccount(mint) {
+export async function openTokenAccount(mint, owner = null, seed = new Uint8Array(32)) {
   const { address } = requireSession()
-  return api('open', { owner: address, mint })
+  return openTokenAccountPaidByMe({ payer: address, mint, owner: owner ?? address, seed })
 }
+
+/**
+ * Open a token account, paid for and signed by this wallet.
+ *
+ * ThruScan used to pay for these. Now the wallet does, so what it holds is set
+ * up by it alone and ThruScan is only the page it happened on. Creating an
+ * account needs a state proof, which the browser cannot fetch from the node
+ * itself (no CORS), so /api/wallet reads the proof and nothing else; the
+ * transaction is built and signed here.
+ *
+ *   [0x01][account u16][mint u16][owner u16][seed 32][proof]
+ *   read-write: the new account; read-only: the mint, and the owner when the
+ *   owner is not the payer (the payer is always index 0).
+ */
+async function openTokenAccountPaidByMe({ payer, mint, owner, seed }) {
+  const account = await deriveTokenAccount(mint, owner, seed)
+  if (await accountExists(account)) return { ok: true, already: true, account }
+  if (!(await accountExists(payer))) throw new Error('Your wallet is not on chain yet. Register it first.')
+
+  const { proof } = await api('proof', { address: account })
+  const readOnly = owner === payer ? [mint] : sortAddresses([mint, owner])
+  const at = (a) => (a === payer ? 0 : a === account ? 2 : 3 + readOnly.indexOf(a))
+
+  const head = new Uint8Array(39)
+  const dv = new DataView(head.buffer)
+  head[0] = 0x01
+  dv.setUint16(1, at(account), true)
+  dv.setUint16(3, at(mint), true)
+  dv.setUint16(5, at(owner), true)
+  head.set(seed, 7)
+
+  const signature = await signAndSend({
+    program: TOKEN_PROGRAM, readWrite: [account], readOnly,
+    data: concat(head, b64.decode(proof)),
+  })
+  const r = await waitForResult(signature)
+  if (r.settled && !r.succeeded) throw new Error(`Could not open the token account (error ${r.userError || r.vmError}).`)
+  for (let i = 0; i < 8 && !(await accountExists(account)); i++) await new Promise((res) => setTimeout(res, 1000))
+  return { ok: true, already: false, account, signature }
+}
+
+function randomSeed() { return crypto.getRandomValues(new Uint8Array(32)) }
 
 /**
  * Balances for a list of mints.
@@ -532,6 +575,22 @@ async function sendWithConnectedWallet(args) {
     }
   })()
   return { signature, settled }
+}
+
+/* ---------- THRU <-> WTHRU ----------
+   One native THRU unit wraps to one WTHRU base unit (WTHRU shows 8 decimals). */
+
+/** Wrap `amount` native THRU into this wallet's WTHRU account. Returns the signature. */
+export async function wrapThru(amount) {
+  const { account } = await openTokenAccount(WTHRU_MINT_ADDRESS)
+  return signAndSend(buildWrap({ dest: account, amount: BigInt(amount) }))
+}
+
+/** Unwrap `amount` WTHRU base units back to native THRU. Returns the signature. */
+export async function unwrapThru(amount) {
+  const { address } = requireSession()
+  const source = await deriveTokenAccount(WTHRU_MINT_ADDRESS, address)
+  return signAndSend(buildUnwrap({ source, amount: BigInt(amount) }))
 }
 
 /**
@@ -649,21 +708,10 @@ export async function transferToken(mint, to, amount) {
   const dest = await deriveTokenAccount(mint, to)
 
   if (!(await accountExists(dest))) {
-    // Opening accounts is rate limited per visitor. Moving several tokens in a
-    // row hits that limit, so wait out the time the server names and retry.
-    for (let attempt = 0; ; attempt++) {
-      try { await api('open', { owner: to, mint }); break } catch (e) {
-        const wait = Number(String(e?.message ?? '').match(/again in (\d+) second/)?.[1])
-        if (!wait || attempt >= 3) throw e
-        await new Promise((r) => setTimeout(r, (wait + 1) * 1000))
-      }
-    }
-    let live = false
-    for (let i = 0; i < 10 && !live; i++) {
-      await new Promise((r) => setTimeout(r, 1500))
-      live = await accountExists(dest)
-    }
-    if (!live) throw new Error('The new wallet\'s token account did not appear. Try again.')
+    // The receiver has never held this token: the sender opens their account
+    // for it, paying for it the way the sender pays for the transfer.
+    await openTokenAccountPaidByMe({ payer: address, mint, owner: to, seed: new Uint8Array(32) })
+    if (!(await accountExists(dest))) throw new Error('The receiver\'s token account did not appear. Try again.')
   }
 
   const readWrite = sortAddresses([source, dest])
@@ -734,9 +782,53 @@ export async function returnNativeThru(amount) {
  * because thrupad records the launch transaction's fee payer as the creator and
  * pays the fees to them.
  */
+/**
+ * Everything a launch needs before the launch itself, all paid for and signed
+ * by the launching wallet: the new token's mint (with the launchpad as its
+ * mint authority), and the two vaults the launchpad holds (the new token, and
+ * the asset it is priced in).
+ *
+ *   INITIALIZE_MINT [0x00][mint u16][decimals u8][creator 32][mint authority 32]
+ *                   [freeze authority 32][has_freeze u8][ticker_len u8][ticker 8][seed 32][proof]
+ *   The creator must be the payer; the mint's address comes from (creator, seed).
+ */
 export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
   const { address } = requireSession()
-  return api('pad-accounts', { owner: address, symbol, quoteMint, padProgram })
+  const ticker = String(symbol ?? '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{2,8}$/.test(ticker)) return { ok: false, error: 'A ticker is 2 to 8 letters or digits.' }
+  if (!padProgram) return { ok: false, error: 'No launchpad program configured.' }
+  if (!(await accountExists(address))) return { ok: false, error: 'Register your wallet on chain first.' }
+
+  const mintSeed = randomSeed()
+  const mint = deriveProgramAddress({
+    programAddress: TOKEN_PROGRAM,
+    seed: await sha256(concat(toBytes(address), mintSeed)),
+  }).address
+
+  const { proof } = await api('proof', { address: mint })
+  const head = new Uint8Array(1 + 2 + 1 + 32 + 32 + 32 + 1 + 1 + 8 + 32)
+  const dv = new DataView(head.buffer)
+  let o = 0
+  head[o] = 0x00; o += 1
+  dv.setUint16(o, 2, true); o += 2                // the mint, the only read-write account
+  head[o] = 6; o += 1                             // decimals
+  head.set(toBytes(address), o); o += 32          // creator: the payer
+  head.set(toBytes(padProgram), o); o += 32       // mint authority: the launchpad
+  o += 32                                         // freeze authority: none
+  head[o] = 0; o += 1
+  head[o] = ticker.length; o += 1
+  head.set(new TextEncoder().encode(ticker), o); o += 8
+  head.set(mintSeed, o)
+
+  const mintSig = await signAndSend({ program: TOKEN_PROGRAM, readWrite: [mint], data: concat(head, b64.decode(proof)) })
+  const r = await waitForResult(mintSig)
+  if (r.settled && !r.succeeded) return { ok: false, error: `The token could not be created (error ${r.userError || r.vmError}).` }
+  for (let i = 0; i < 10 && !(await accountExists(mint)); i++) await new Promise((res) => setTimeout(res, 1500))
+  if (!(await accountExists(mint))) return { ok: false, error: 'The token did not land. Try again in a moment.' }
+
+  const tokenVault = await openTokenAccountPaidByMe({ payer: address, mint, owner: padProgram, seed: randomSeed() })
+  const quoteVault = await openTokenAccountPaidByMe({ payer: address, mint: quoteMint, owner: padProgram, seed: randomSeed() })
+  return { ok: true, mint, tokenVault: tokenVault.account, quoteVault: quoteVault.account, signature: mintSig }
 }
 
 /* ---------- names ----------

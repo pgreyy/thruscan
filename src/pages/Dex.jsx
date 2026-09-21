@@ -34,7 +34,7 @@ import { useWallet, sendBuilt, TopUpCard, AddressChip, AddToken } from './Wallet
 import { customMints, customMeta, onCustomMintsChange } from '../lib/customTokens.js'
 import {
   deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
-  burnToken, returnNativeThru,
+  burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances,
 } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { Tabs } from '../components/Tabs.jsx'
@@ -50,6 +50,10 @@ import {
 } from '../lib/addresses.js'
 
 const DECIMALS = 6
+/** Stands in for native THRU in the swap pickers; it is not a mint. */
+const THRU = 'THRU'
+/** THRU kept back when selling THRU, for the fees of the trade itself. */
+const THRU_KEEP = 5n
 
 /* ---------- shared helpers ---------- */
 
@@ -650,7 +654,7 @@ function TokenPicker({ tokens, value, onChange, exclude, label, onAdded }) {
             >
               <span className="picker-item-name">
                 <b>{t.ticker}</b>
-                <span className="fine mono">{short(t.mint)}</span>
+                <span className="fine mono">{t.native ? 'native coin' : short(t.mint)}</span>
               </span>
               <span className="mono fine">{fmt(t.balance, t.decimals)}</span>
             </button>
@@ -706,8 +710,14 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
         })
       }
     }
-    return [...seen.values()]
-  }, [pools, tickers, wallet.balances, wallet.tickers, custom])
+    // THRU itself, the chain's coin. Pools hold WTHRU, its token form, so a
+    // THRU trade wraps or unwraps on the way through.
+    const thru = {
+      mint: THRU, ticker: 'THRU', decimals: 0,
+      balance: wallet.native ?? 0n, known: true, native: true,
+    }
+    return [thru, ...seen.values()]
+  }, [pools, tickers, wallet.balances, wallet.tickers, wallet.native, custom])
 
   const [fromMint, setFromMint] = useState(null)
   const [toMint, setToMint] = useState(null)
@@ -730,14 +740,19 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const from = tokens.find((t) => t.mint === fromMint)
   const to = tokens.find((t) => t.mint === toMint)
 
-  const pool = useMemo(() => {
-    if (!fromMint || !toMint) return null
-    return pools.find(
-      (p) => (p.mintA === fromMint && p.mintB === toMint) || (p.mintB === fromMint && p.mintA === toMint),
-    ) ?? null
-  }, [pools, fromMint, toMint])
+  // THRU trades through the WTHRU pools; THRU <-> WTHRU is a plain wrap.
+  const poolFrom = fromMint === THRU ? WTHRU_MINT : fromMint
+  const poolTo = toMint === THRU ? WTHRU_MINT : toMint
+  const wrapOnly = (fromMint === THRU && toMint === WTHRU_MINT) || (fromMint === WTHRU_MINT && toMint === THRU)
 
-  const flipped = pool ? pool.mintA !== fromMint : false
+  const pool = useMemo(() => {
+    if (!poolFrom || !poolTo || wrapOnly) return null
+    return pools.find(
+      (p) => (p.mintA === poolFrom && p.mintB === poolTo) || (p.mintB === poolFrom && p.mintA === poolTo),
+    ) ?? null
+  }, [pools, poolFrom, poolTo, wrapOnly])
+
+  const flipped = pool ? pool.mintA !== poolFrom : false
   const vaultIn = pool ? (flipped ? pool.vaultB : pool.vaultA) : null
   const vaultOut = pool ? (flipped ? pool.vaultA : pool.vaultB) : null
   const reserveIn = pool ? (balances[vaultIn] ?? 0n) : 0n
@@ -745,25 +760,34 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
 
   const amountIn = toUnits(amount, from?.decimals ?? DECIMALS)
   const quote = useMemo(
-    () => (pool ? quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps }) : null),
-    [pool, reserveIn, reserveOut, amountIn],
+    () => (wrapOnly
+      ? { amountOut: amountIn, priceImpactBps: 0n }
+      : pool ? quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps }) : null),
+    [pool, reserveIn, reserveOut, amountIn, wrapOnly],
   )
 
   const impactBps = quote?.priceImpactBps ?? 0n
-  const shortOfFunds = from && amountIn > from.balance
+  // Spending THRU has to leave a little for the fees of the trade itself.
+  const spendable = from?.native ? (from.balance > THRU_KEEP ? from.balance - THRU_KEEP : 0n) : from?.balance ?? 0n
+  const shortOfFunds = from && amountIn > spendable
 
   /* Everything that should stop a trade before it is sent, in the order a
      person would notice them. The chain reports every one of these as the same
      bare revert, so saying which it is has to happen here. */
   const blocker = (() => {
     if (!from || !to) return 'Pick two tokens.'
+    if (wrapOnly) {
+      if (amountIn <= 0n) return null
+      if (shortOfFunds) return `You have ${fmt(spendable, from.decimals)} ${from.ticker} to use.`
+      return null
+    }
     if (!pool) return `There is no ${from.ticker} / ${to.ticker} pool yet.`
     if (reserveIn === 0n || reserveOut === 0n) return 'This pool has no liquidity yet.'
     if (amountIn <= 0n) return null
     if (shortOfFunds) {
-      return from.balance === 0n
-        ? `You have no ${from.ticker}. Get some first, then come back.`
-        : `You only have ${fmt(from.balance, from.decimals)} ${from.ticker}.`
+      return spendable === 0n
+        ? `You have no ${from.ticker}${from.native ? ' to spare after fees' : ''}. Get some first, then come back.`
+        : `You have ${fmt(spendable, from.decimals)} ${from.ticker} to use.`
     }
     if (!quote || quote.amountOut <= 0n) {
       return quote?.reason ? `Cannot quote: ${quote.reason}.` : 'Cannot quote that.'
@@ -786,16 +810,43 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       return
     }
 
+    const landed = async (sig, what) => {
+      const r = await waitForResult(sig)
+      if (r.settled && !r.succeeded) throw new Error(`${what} failed (error ${r.userError || r.vmError}).`)
+      return sig
+    }
+
     try {
+      // THRU <-> WTHRU needs no pool: it is a wrap or an unwrap.
+      if (wrapOnly) {
+        setStep(fromMint === THRU ? 'wrapping' : 'unwrapping')
+        const sig = fromMint === THRU ? await wrapThru(amountIn) : await unwrapThru(amountIn)
+        await landed(sig, fromMint === THRU ? 'Wrapping' : 'Unwrapping')
+        setDone(sig); setAmount('')
+        await wallet.refresh([WTHRU_MINT])
+        return
+      }
+
       setStep('opening')
       const accounts = {}
-      for (const [key, mint] of [['userIn', fromMint], ['userOut', toMint]]) {
+      for (const [key, mint] of [['userIn', poolFrom], ['userOut', poolTo]]) {
         const known = wallet.balances[mint]
         if (known?.exists) { accounts[key] = known.account; continue }
         const made = await openTokenAccount(mint)
-        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
         accounts[key] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
       }
+
+      // Selling THRU: wrap it first, then trade the WTHRU.
+      if (fromMint === THRU) {
+        setStep('wrapping')
+        await landed(await wrapThru(amountIn), 'Wrapping THRU')
+      }
+
+      // Buying THRU: note the WTHRU held now, so exactly what the trade brings
+      // in is unwrapped afterwards and nothing already held is touched.
+      const wthruBefore = toMint === THRU
+        ? BigInt((await tokenBalances([WTHRU_MINT], wallet.address))[0]?.amount ?? 0)
+        : 0n
 
       setStep('signing')
       const built = buildSwapInstruction({
@@ -806,9 +857,20 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       const result = await sendBuilt(SWAP_PROGRAM, built)
 
       if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
+
+      if (toMint === THRU) {
+        setStep('unwrapping')
+        let got = 0n
+        for (let i = 0; i < 8 && got <= 0n; i++) {
+          const now = BigInt((await tokenBalances([WTHRU_MINT], wallet.address))[0]?.amount ?? 0)
+          got = now - wthruBefore
+          if (got <= 0n) await new Promise((r) => setTimeout(r, 1000))
+        }
+        if (got > 0n) await landed(await unwrapThru(got), 'Unwrapping to THRU')
+      }
       setDone(result.signature)
       setAmount('')
-      await wallet.refresh(tokens.map((t) => t.mint))
+      await wallet.refresh(tokens.filter((t) => !t.native).map((t) => t.mint))
       reload()
     } catch (e) {
       setError(String(e?.message ?? e))
@@ -832,7 +894,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
               {from.balance > 0n && (
                 <button
                   className="linkish"
-                  onClick={() => setAmount(String(Number(from.balance) / 10 ** from.decimals))}
+                  onClick={() => setAmount(String(Number(spendable) / 10 ** from.decimals))}
                 >MAX</button>
               )}
             </span>
@@ -905,6 +967,8 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
         disabled={!!blocker || amountIn <= 0n || step !== null}
       >
         {step === 'opening' ? 'Opening your token account…'
+          : step === 'wrapping' ? 'Wrapping THRU…'
+          : step === 'unwrapping' ? 'Unwrapping to THRU…'
           : step === 'signing' ? 'Signing…'
           : !hasWallet() ? 'Connect a wallet to swap'
           : from && to ? `Swap ${from.ticker} for ${to.ticker}`

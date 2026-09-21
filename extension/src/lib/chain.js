@@ -143,6 +143,10 @@ export function describe(item, me) {
       return { label: ({ 0: 'Created a token', 1: 'Opened a token account', 2: byMe ? 'Sent tokens' : 'Received tokens', 3: 'Minted tokens', 4: 'Burned tokens' })[d[0]] ?? 'Token program' }
     case PROGRAMS.NAME_SERVICE:
       return { label: ({ 1: 'Registered a name', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[dv?.getUint32(0, true)] ?? 'Name service' }
+    case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ':
+      return { label: 'Wrapped THRU' }
+    case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH':
+      return { label: 'Unwrapped WTHRU' }
     default:
       // The runtime's account-creation program ends in ...MD and takes no data.
       return { label: item.program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMD' ? 'Account created' : 'App transaction' }
