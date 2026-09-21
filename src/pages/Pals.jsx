@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useWallet, ConnectCard } from './Wallet.jsx'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
+import { hasProvider, connectExternal } from '../lib/external.js'
 import {
   hasWallet, signAndSend, waitForResult, wrapThru, nativeBalance, tokenBalances,
   requestProof, palsAllow, palsAdvance, accountExists,
@@ -150,6 +151,16 @@ function MintCard({ info, pals, wallet, reload, open }) {
   const already = info?.mine?.minted
   const mineId = already ? pals.findIndex((_, id) => info.minters[id] === wallet.address) : -1
 
+  // Like any mint page: the button is always there. With no wallet yet,
+  // it connects the browser's Thru wallet first, or shows how to get one.
+  const [needWallet, setNeedWallet] = useState(false)
+  const connectThenMint = async () => {
+    setError(null)
+    if (!hasProvider()) { setNeedWallet(true); return }
+    try { await connectExternal() } catch (e) { setError(String(e?.message ?? e)); return }
+    if (hasWallet()) mint()
+  }
+
   const mint = async () => {
     setError(null)
     try { await gate.ensure() } catch (e) { if (!isDismissal(e)) setError(String(e?.message ?? e)); return }
@@ -237,15 +248,14 @@ function MintCard({ info, pals, wallet, reload, open }) {
         {info && !live && <p className="notice" style={{ marginTop: 14 }}>Opening soon.</p>}
         {soldOut && <p className="notice" style={{ marginTop: 14 }}>Sold out.</p>}
 
-        {live && !soldOut && !hasWallet() && (
+        {info?.live !== false && !soldOut && !already && (
+          <button className="btn full" style={{ marginTop: 16 }} onClick={hasWallet() ? mint : connectThenMint} disabled={step !== null}>{label}</button>
+        )}
+        {needWallet && !hasWallet() && (
           <div style={{ marginTop: 14 }}>
             <ConnectCard compact title="Connect a wallet to mint" />
             <p className="fine" style={{ marginTop: 8 }}>No extension? <Link to="/wallet">Make a wallet on ThruScan</Link>.</p>
           </div>
-        )}
-
-        {live && !soldOut && hasWallet() && !already && (
-          <button className="btn full" style={{ marginTop: 16 }} onClick={mint} disabled={step !== null}>{label}</button>
         )}
 
         {shownId !== null && (
