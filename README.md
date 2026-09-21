@@ -20,6 +20,8 @@ Not affiliated with Unto Labs. Alphanet tokens have no value, and every balance 
 | **Games** | Wordle and 2048, with scores recorded on chain. |
 | **Builders** | The programs behind all of this, and what building on Thru taught us. |
 
+Plus **ThruScan Wallet**, a Chrome extension wallet in [`extension/`](extension/README.md): self-custody, 12 words or a private key, and a `window.thru` provider so any Thru app can connect to it.
+
 ## How it fits together
 
 ```
@@ -71,10 +73,10 @@ src/components/  shared pieces: wallet pill, tabs, activity list, dialogs
 src/lib/         chain decoders and builders: wallet, swap, pad, names, wall, activity
 api/             serverless functions (rpc.js, wallet.js, and the smaller ones)
 programs/        the on-chain C programs, with a build recipe in programs/README.md
+extension/       ThruScan Wallet, the Chrome extension (npm run build:extension)
 tools/           diagnostic scripts used while building
 ```
 
 ## Building the programs
 
 See [`programs/README.md`](programs/README.md). Short version: the Thru toolchain runs on Linux or WSL2, not Windows.
-
