@@ -31,7 +31,7 @@
 import dns from 'node:dns'
 import { createThruClient, Pubkey, Signature, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
-import { decodeConfig, PALS_CONFIG, PALS_NFT_MINT, PALS_SITE } from '../src/lib/pals/chain.js'
+import { decodeConfig, decodeMarket, PALS_CONFIG, PALS_MARKET, PALS_NFT_MINT, PALS_PROGRAM, PALS_SITE } from '../src/lib/pals/chain.js'
 import { allPals, toSvg } from '../src/lib/pals/art.js'
 
 export const config = { runtime: 'nodejs', maxDuration: 30 }
@@ -420,6 +420,7 @@ function json(res, status, body, { cacheSeconds = 0 } = {}) {
    seconds per warm instance; the art is a pure function of that state. */
 
 let palsCache = null
+let marketCache = null
 
 async function palsState(client) {
   if (palsCache && Date.now() - palsCache.at < 4000) return palsCache.cfg
@@ -432,6 +433,44 @@ async function palsState(client) {
   }
   palsCache = { at: Date.now(), cfg }
   return cfg
+}
+
+/* The market account: every live listing and the last 64 sales. Missing
+   until the admin creates it, in which case the market is simply closed. */
+async function marketState(client) {
+  if (marketCache && Date.now() - marketCache.at < 4000) return marketCache.m
+  let m = null
+  try {
+    const a = await withTimeout(client.accounts.get(PALS_MARKET), CALL_TIMEOUT_MS)
+    m = decodeMarket(a?.data?.data)
+  } catch (err) {
+    if (!/not ?found|invalid/i.test(String(err?.message ?? err))) throw err
+  }
+  marketCache = { at: Date.now(), m }
+  return m
+}
+
+async function marketSummary(client, cfg, m) {
+  const holders = new Set(cfg.owners.filter((o) => o !== PALS_PROGRAM))
+  // A listing counts only while the program really holds that Pal.
+  const listings = m ? [...m.listings.values()].filter((l) => cfg.owners[l.id] === PALS_PROGRAM) : []
+  listings.sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : a.id - b.id))
+  const recent = m ? m.recent : []
+  // Times for the newest sales only, and never allowed to hold up the page.
+  const slots = [...new Set(recent.slice(0, 16).map((r) => r.slot.toString()))]
+  const times = slots.length ? await withTimeout(blockTimes(client, slots), 3000).catch(() => ({})) : {}
+  if (!m) return { live: false, holders: holders.size, listings: [], recent: [] }
+  return {
+    live: true,
+    feeBps: m.feeBps,
+    listed: listings.length,
+    floor: listings.length ? listings[0].price.toString() : null,
+    sales: m.sales,
+    volume: m.volume.toString(),
+    holders: holders.size,
+    listings: listings.map((l) => ({ id: l.id, seller: l.seller, payout: l.payout, price: l.price.toString(), slot: l.slot.toString() })),
+    recent: recent.map((r) => ({ id: r.id, price: r.price.toString(), buyer: r.buyer, seller: r.seller, slot: r.slot.toString(), time: times[r.slot.toString()] ?? null })),
+  }
 }
 
 function palMeta(id, pal) {
@@ -613,7 +652,9 @@ export default async function handler(req, res) {
       }
 
       case 'pals': {
-        const cfg = await palsState(client)
+        // Both accounts at once: the node can be slow, and one after the
+        // other doubles the wait.
+        const [cfg, mkt] = await Promise.all([palsState(client), marketState(client).catch(() => null)])
         if (!cfg) return json(res, 200, { ok: true, live: false, supply: 2026, minted: 0, price: '1000' }, { cacheSeconds: 5 })
         const wallet = typeof params.wallet === 'string' && /^ta[A-Za-z0-9_-]{44}$/.test(params.wallet) ? params.wallet : null
         let mine = null
@@ -626,21 +667,27 @@ export default async function handler(req, res) {
             ? holding.filter((id) => cfg.prize(id) > 0n && !cfg.claimed(id)).map((id) => ({ id, amount: cfg.prize(id).toString() }))
             : []
           mine = {
+            listed: [],
             minted: cfg.minters.includes(wallet),
             allowed: cfg.allowed().some((r) => r.wallet === wallet),
             holding,
             prizes,
           }
         }
+        const market = await marketSummary(client, cfg, mkt)
+        if (mine) mine.listed = market.listings.filter((l) => l.seller === wallet).map((l) => l.id)
+        // lite=1: counts only, for the home page banner and the mint button.
+        const lite = params.lite === '1'
+        if (lite) { delete market.listings; delete market.recent }
         return json(res, 200, {
-          ok: true, live: true,
+          ok: true, live: true, market, owners: lite ? undefined : cfg.owners,
           supply: cfg.supply, minted: cfg.minted, price: cfg.price.toString(),
           nextReserved: cfg.minted < cfg.supply && cfg.reserved(cfg.minted),
           // Numbers already set aside for the team wallet but not reached yet.
           // They are taken, so the page counts them with the minted ones.
           reservedAhead: (() => { let n = 0; for (let i = cfg.minted; i < cfg.supply; i++) if (cfg.reserved(i)) n++; return n })(),
           treasury: cfg.treasury, nftMint: PALS_NFT_MINT, prizeVault: cfg.prizeVault,
-          minters: cfg.minters, mine,
+          minters: lite ? undefined : cfg.minters, mine,
         }, { cacheSeconds: wallet ? 0 : 3 })
       }
 

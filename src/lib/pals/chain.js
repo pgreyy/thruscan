@@ -21,6 +21,8 @@ const env = (() => {
 export const PALS_PROGRAM = env.VITE_PALS_PROGRAM || 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M'
 /** Its one state account (seed palcfg7Q2 under the program). */
 export const PALS_CONFIG = env.VITE_PALS_CONFIG || 'tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa'
+/** The market: listings and recent sales (seed palmkt7Q1 under the program). */
+export const PALS_MARKET = env.VITE_PALS_MARKET || 'taRnEmml22MOTV8UN6Y4w3Qp8G_cHRF_ShM9xT7DcCSlyW'
 /** The collection, a mint of Thru's NFT program (seed palsmint7Q1), whose authority is PALS_PROGRAM. */
 export const PALS_NFT_MINT = env.VITE_PALS_NFT_MINT || 'ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv'
 
@@ -124,6 +126,45 @@ export function decodeConfig(bytes) {
       }
       return out
     },
+  }
+}
+
+export const MKT_HDR_SZ = 56
+export const LISTING_SZ = 80
+export const SALE_SZ = 84
+export const SALES_RING = 64
+
+/** Decode the market account: fee, totals, every live listing and the recent sales. */
+export function decodeMarket(bytes) {
+  if (!bytes || bytes.length < MKT_HDR_SZ || bytes[0] !== 0x4d) return null
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const key = (o) => bytes.slice(o, o + 32)
+  const supply = dv.getUint32(36, true)
+  const salesCnt = dv.getUint32(44, true)
+  const listings = new Map()
+  for (let id = 0; id < supply; id++) {
+    const o = MKT_HDR_SZ + id * LISTING_SZ
+    const price = dv.getBigUint64(o + 64, true)
+    if (price === 0n) continue
+    listings.set(id, { id, seller: addr(key(o)), payout: addr(key(o + 32)), price, slot: dv.getBigUint64(o + 72, true) })
+  }
+  const offSales = MKT_HDR_SZ + supply * LISTING_SZ
+  const sales = []
+  const live = Math.min(salesCnt, SALES_RING)
+  for (let k = 0; k < live; k++) {
+    const n = salesCnt - 1 - k
+    const o = offSales + (n % SALES_RING) * SALE_SZ
+    sales.push({ n, id: dv.getUint32(o, true), price: dv.getBigUint64(o + 4, true), buyer: addr(key(o + 12)), seller: addr(key(o + 44)), slot: dv.getBigUint64(o + 76, true) })
+  }
+  return {
+    feeBps: dv.getUint16(2, true),
+    config: addr(key(4)),
+    supply,
+    listed: dv.getUint32(40, true),
+    sales: salesCnt,
+    volume: dv.getBigUint64(48, true),
+    listings,
+    recent: sales,
   }
 }
 
@@ -257,6 +298,81 @@ export function buildAllow({ payer, wallet, tag }) {
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
 }
 
+/**
+ * LIST Pal `id` for `price` WTHRU base units (1 THRU each). The Pal moves into
+ * the program's keeping until it sells or is delisted. Listing a Pal that is
+ * already listed by the same wallet changes its price.
+ *   [0x0D][cfg][market][nft_prog][nft_mint][nft_acct][escrow][payout][id u32][price u64]
+ */
+export async function buildList({ payer, id, price }) {
+  const nft = await nftAccountFor(id)
+  const payout = await tokenAccountFor(WTHRU_MINT, payer)
+  const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_MARKET, nft], [NFT_PROGRAM, PALS_NFT_MINT, payout])
+  const data = new Uint8Array(27)
+  const dv = new DataView(data.buffer)
+  data[0] = 0x0d
+  dv.setUint16(1, at(PALS_CONFIG), true)
+  dv.setUint16(3, at(PALS_MARKET), true)
+  dv.setUint16(5, at(NFT_PROGRAM), true)
+  dv.setUint16(7, at(PALS_NFT_MINT), true)
+  dv.setUint16(9, at(nft), true)
+  dv.setUint16(11, 1, true) // the program itself holds listed Pals
+  dv.setUint16(13, at(payout), true)
+  dv.setUint32(15, id, true)
+  dv.setBigUint64(19, BigInt(price), true)
+  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
+}
+
+/** DELIST: the Pal comes back to the seller. [0x0E][cfg][market][nft_prog][nft_mint][nft_acct][id u32] */
+export async function buildDelist({ payer, id }) {
+  const nft = await nftAccountFor(id)
+  const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_MARKET, nft], [NFT_PROGRAM, PALS_NFT_MINT])
+  const data = new Uint8Array(15)
+  const dv = new DataView(data.buffer)
+  data[0] = 0x0e
+  dv.setUint16(1, at(PALS_CONFIG), true)
+  dv.setUint16(3, at(PALS_MARKET), true)
+  dv.setUint16(5, at(NFT_PROGRAM), true)
+  dv.setUint16(7, at(PALS_NFT_MINT), true)
+  dv.setUint16(9, at(nft), true)
+  dv.setUint32(11, id, true)
+  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
+}
+
+/**
+ * BUY one or more listed Pals (a sweep) in one transaction, all or nothing.
+ * `items` are listings as decodeMarket returns them; each price is also the
+ * most this buyer agrees to pay, so a seller raising it first makes it fail.
+ *   [0x0F][cfg][market][nft_prog][nft_mint][token_prog][pay_from][fee_to][count u8]
+ *   then count x { nft_acct u16, payout u16, id u32, max_price u64 }
+ */
+export async function buildBuy({ payer, items, treasury }) {
+  if (!items.length || items.length > 8) throw new Error('Pick between 1 and 8 Pals.')
+  const payFrom = await tokenAccountFor(WTHRU_MINT, payer)
+  const nfts = await Promise.all(items.map((it) => nftAccountFor(it.id)))
+  const payouts = items.map((it) => it.payout)
+  const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_MARKET, payFrom, treasury, ...nfts, ...payouts], [NFT_PROGRAM, PALS_NFT_MINT, TOKEN_PROGRAM])
+  const data = new Uint8Array(16 + items.length * 16)
+  const dv = new DataView(data.buffer)
+  data[0] = 0x0f
+  dv.setUint16(1, at(PALS_CONFIG), true)
+  dv.setUint16(3, at(PALS_MARKET), true)
+  dv.setUint16(5, at(NFT_PROGRAM), true)
+  dv.setUint16(7, at(PALS_NFT_MINT), true)
+  dv.setUint16(9, at(TOKEN_PROGRAM), true)
+  dv.setUint16(11, at(payFrom), true)
+  dv.setUint16(13, at(treasury), true)
+  data[15] = items.length
+  items.forEach((it, i) => {
+    const o = 16 + i * 16
+    dv.setUint16(o, at(nfts[i]), true)
+    dv.setUint16(o + 2, at(it.payout), true)
+    dv.setUint32(o + 4, it.id, true)
+    dv.setBigUint64(o + 8, BigInt(it.price), true)
+  })
+  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
+}
+
 /** What a transaction's user error code means, in words. */
 export function palsError(code) {
   const c = Number(code)
@@ -271,6 +387,9 @@ export function palsError(code) {
     23: 'Someone minted at the same moment. Try again.',
     25: 'Pick a different wallet to send to.',
     28: 'That number is reserved. Trying the next one.',
+    30: 'That Pal is no longer for sale.',
+    31: 'The price went up before your purchase landed. Nothing was charged.',
+    32: 'The market is not set up yet.',
   }
   if (words[c]) return words[c]
   if ((c & 0xff00) === 0x0300) return 'The payment did not go through. Check your WTHRU balance.'

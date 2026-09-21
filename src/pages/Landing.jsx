@@ -13,6 +13,7 @@ import { decodePadRegistry } from '../lib/pad.js'
 import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY, TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
 import { palFor, toSvg, GENESIS } from '../lib/pals/art.js'
 import { Search } from './Home.jsx'
+import { useMint } from '../lib/pals/useMint.js'
 import './landing.css'
 
 const REFRESH_MS = 5000
@@ -42,7 +43,9 @@ function price(v) {
 
 /* ---------- data ---------- */
 
-function usePoll(fn, ms) {
+function usePoll(fn, ms) { return usePollReload(fn, ms).data }
+
+function usePollReload(fn, ms) {
   const [data, setData] = useState(null)
   const load = useCallback(async (attempt = 0) => {
     // Keep the last good value on a failure; on a first load, try again soon
@@ -54,7 +57,7 @@ function usePoll(fn, ms) {
     const id = setInterval(() => { if (!document.hidden) load() }, ms)
     return () => clearInterval(id)
   }, [load, ms])
-  return data
+  return { data, reload: load }
 }
 
 async function readOverview() {
@@ -65,7 +68,7 @@ async function readOverview() {
 }
 
 async function readPals() {
-  const r = await fetch('/api/rpc?action=pals')
+  const r = await fetch('/api/rpc?action=pals&lite=1')
   const j = await r.json()
   if (!j.ok) throw new Error(j.error)
   return j
@@ -161,25 +164,38 @@ const BANNER = [
   { id: GENESIS.id, wallet: GENESIS.wallet, size: 156 },
 ]
 
-function Banner({ pals }) {
+function Banner({ pals, reload }) {
+  const m = useMint({ onMinted: reload })
+  const taken = pals ? pals.minted + (pals.reservedAhead ?? 0) : 0
+  const open = pals ? taken < pals.supply : true
+  const floor = pals?.market?.floor
   return (
-    <Link to="/pals" className="lp-banner">
-      <div className="lp-banner-art" aria-hidden="true">
+    <section className="lp-banner">
+      {m.modal}
+      <Link to="/pals" className="lp-banner-art" aria-label="Pixel Pals collection">
         {BANNER.map((p) => <PalArt key={p.id} {...p} />)}
-      </div>
+      </Link>
       <div className="lp-banner-text">
-        <h2>Pixel Pals</h2>
-        <p>2,026 on Thru · {pals && pals.minted + (pals.reservedAhead ?? 0) < pals.supply ? 'minting now' : pals ? 'sold out' : 'collection'}</p>
+        <h2><Link to="/pals">Pixel Pals</Link></h2>
+        <p>2,026 on Thru · {pals ? (open ? 'minting now' : 'sold out') : 'collection'}</p>
         <div className="lp-banner-row">
           <dl className="lp-banner-stats">
             <div><dt>Price</dt><dd>{pals ? num(pals.price) : '–'} THRU</dd></div>
-            <div><dt>Minted</dt><dd>{pals ? `${num(pals.minted + (pals.reservedAhead ?? 0))} / ${num(pals.supply)}` : '–'}</dd></div>
-            <div><dt>Limit</dt><dd>1 per wallet</dd></div>
+            <div><dt>Minted</dt><dd>{pals ? `${num(taken)} / ${num(pals.supply)}` : '–'}</dd></div>
+            {floor ? <div><dt>Floor</dt><dd>{num(floor)} THRU</dd></div> : <div><dt>Limit</dt><dd>1 per wallet</dd></div>}
           </dl>
-          <span className="lp-banner-btn">Mint</span>
+          <div className="lp-banner-actions">
+            {open
+              ? <button className="lp-banner-btn" onClick={m.mint} disabled={m.busy || m.minted !== null}>{m.minted !== null ? 'Minted' : m.label ?? 'Mint'}</button>
+              : <Link className="lp-banner-btn" to="/pals">Buy one</Link>}
+            <Link className="lp-banner-ghost" to="/pals">{open ? 'View collection' : 'Collection'}</Link>
+          </div>
         </div>
+        {m.minted !== null && <p className="lp-banner-note">Minted. <Link to={`/pals?id=${m.minted}`}>Pixel Pal #{m.minted}</Link> is yours.</p>}
+        {m.needWallet && <p className="lp-banner-note">You need a Thru wallet to mint. <Link to="/wallet">Get one here</Link>, it takes a minute.</p>}
+        {m.error && <p className="lp-banner-note bad">{m.error}</p>}
       </div>
-    </Link>
+    </section>
   )
 }
 
@@ -237,7 +253,7 @@ export function LandingPage() {
     else if (q.get('tab')) navigate(`/explorer?tab=${q.get('tab')}`, { replace: true })
   }, [navigate])
   const overview = usePoll(readOverview, REFRESH_MS)
-  const pals = usePoll(readPals, 15000)
+  const { data: pals, reload: reloadPals } = usePollReload(readPals, 15000)
   const markets = usePoll(readMarkets, 30000)
   const blocks = overview?.blocks ?? []
   const txs = overview?.transactions ?? []
@@ -250,7 +266,7 @@ export function LandingPage() {
 
       <div className="lp-grid">
         <div className="lp-main">
-          <Banner pals={pals} />
+          <Banner pals={pals} reload={() => reloadPals()} />
 
           <Tokens tokens={markets ? series : null} />
 

@@ -13,12 +13,15 @@
  *   - each mint pays `price` of the payment token (WTHRU, one base unit per
  *     native THRU) straight to the treasury account fixed at INIT; this
  *     program never holds mint money, so nobody can withdraw it from here
- *   - a Pal moves only when the wallet holding it signs (SEND)
+ *   - a Pal moves only when the wallet holding it signs (SEND, LIST, DELIST)
+ *     or when someone buys it at the price its seller listed it for (BUY);
+ *     the seller is paid in the same transaction, less the market fee, which
+ *     goes to the treasury
  *   - a Pal's prize, if it has one, is paid only to the wallet holding it,
  *     signing for itself (CLAIM), once
  *
  * Current holders are tracked here, not read from NFT accounts passed in: every
- * transfer goes through SEND, so this program's own record is authoritative and
+ * transfer goes through this program, so this program's own record is authoritative and
  * a forged account can never impersonate a holder.
  *
  * The admin (the INIT fee payer) can add wallets to the allowlist, name a
@@ -85,6 +88,23 @@
  *           wallet fixed at INIT, only when its number is reserved. MINT
  *           refuses a reserved number, so the public can never buy one.
  *
+ *
+ *   MARKET  [0x0B][seed 32][cfg u16][fee_bps u16][proof]         admin only
+ *           Creates the market account (index 2, the only read-write one).
+ *   FEE     [0x0C][market u16][cfg u16][fee_bps u16]             admin only
+ *   LIST    [0x0D][cfg u16][market u16][nft_prog u16][nft_mint u16][nft_acct u16]
+ *           [escrow u16][payout u16][id u32][price u64]          holder only
+ *           Moves the Pal into this program's keeping until it sells or is
+ *           delisted. Listing a Pal that is already listed by the same
+ *           seller changes its price.
+ *   DELIST  [0x0E][cfg u16][market u16][nft_prog u16][nft_mint u16][nft_acct u16]
+ *           [id u32]                                             seller only
+ *   BUY     [0x0F][cfg u16][market u16][nft_prog u16][nft_mint u16][token_prog u16]
+ *           [pay_from u16][fee_to u16][count u8] then count x
+ *           { nft_acct u16, payout u16, id u32, max_price u64 }
+ *           Pays each seller (less the fee, which goes to the treasury) and
+ *           moves each Pal to the buyer. All or nothing.
+ *
  * Thru NFT program instructions used (from its on-chain ABI, checked live):
  *   mint_to   [u32 1][mint u16][nft u16][owner u16][flags u64][uri 256][proof]
  *   transfer  [u32 2][nft u16][new_owner u16][mint u16]
@@ -107,6 +127,11 @@
 #define OP_RESERVE (0x08)
 #define OP_UNRESERVE (0x09)
 #define OP_GIFT    (0x0A)
+#define OP_MARKET  (0x0B)
+#define OP_FEE     (0x0C)
+#define OP_LIST    (0x0D)
+#define OP_DELIST  (0x0E)
+#define OP_BUY     (0x0F)
 
 #define CFG_VERSION  ((uchar)2)
 
@@ -152,6 +177,9 @@ static uchar const NFT_PROGRAM[ 32 ] = {
 #define ERR_BAD_FORWARD    (27UL)  /* the forwarded mint_to is not the right one */
 #define ERR_RESERVED       (28UL)  /* the next number is reserved; GIFT it first */
 #define ERR_NOT_RESERVED   (29UL)  /* GIFT only mints reserved numbers */
+#define ERR_NOT_LISTED     (30UL)  /* that Pal is not for sale */
+#define ERR_PRICE          (31UL)  /* the price is above what the buyer agreed to */
+#define ERR_BAD_MARKET     (32UL)  /* not this collection's market account */
 #define ERR_PAYMENT        (0x0300UL)  /* | low byte of the token CPI's code */
 #define ERR_NFT_CPI        (0x0400UL)  /* | low byte of the NFT CPI's code   */
 
@@ -200,6 +228,62 @@ static inline ulong off_reserved( ulong n ) { return HDR_SZ + n * 72UL + ( n + 7
 static inline ulong off_allow  ( ulong n )  { return HDR_SZ + n * 72UL + 2UL * ( ( n + 7UL ) / 8UL ); }
 static inline ulong cfg_size   ( ulong n, ulong a ) { return off_allow( n ) + a * ALLOW_SZ; }
 
+/* The market: one account per collection, owned by this program.
+
+     header (struct mkt_hdr)
+     listings [supply] { seller[32], payout[32], price u64, slot u64 }
+     sales    [SALES_RING] { id u32, price u64, buyer[32], seller[32], slot u64 }
+
+   A listed Pal is held by this program (its NFT account's owner and the
+   config's owners[] both say so), so it cannot be sent, claimed against or
+   sold twice while listed, and a listing can never outlive the seller's
+   ownership. */
+
+#define MKT_VERSION  ((uchar)0x4D)   /* 'M': never equal to CFG_VERSION */
+#define SALES_RING   (64UL)
+#define FEE_BPS_MAX  (1000U)         /* 10% */
+#define PRICE_MAX    (1000000000000000UL)
+#define BUY_MAX      (16U)
+
+struct __attribute__(( packed )) mkt_hdr {
+  uchar       version;
+  uchar       pad;
+  ushort      fee_bps;
+  tn_pubkey_t cfg;
+  uint        supply;
+  uint        listed;
+  uint        sales;
+  ulong       volume;
+};
+typedef struct mkt_hdr mkt_hdr_t;
+
+struct __attribute__(( packed )) listing {
+  tn_pubkey_t seller;
+  tn_pubkey_t payout;
+  ulong       price;
+  ulong       slot;
+};
+typedef struct listing listing_t;
+
+struct __attribute__(( packed )) sale_rec {
+  uint        id;
+  ulong       price;
+  tn_pubkey_t buyer;
+  tn_pubkey_t seller;
+  ulong       slot;
+};
+typedef struct sale_rec sale_rec_t;
+
+#define MKT_HDR_SZ (sizeof( mkt_hdr_t ))
+#define LISTING_SZ (sizeof( listing_t ))
+#define SALE_SZ    (sizeof( sale_rec_t ))
+FD_STATIC_ASSERT( MKT_HDR_SZ == 56UL, mkt_hdr_size );
+FD_STATIC_ASSERT( LISTING_SZ == 80UL, listing_size );
+FD_STATIC_ASSERT( SALE_SZ    == 84UL, sale_size );
+
+static inline ulong mkt_off_sales( ulong n ) { return MKT_HDR_SZ + n * LISTING_SZ; }
+static inline ulong mkt_size     ( ulong n ) { return mkt_off_sales( n ) + SALES_RING * SALE_SZ; }
+
 /* ---------------------------------------------------------- account helpers */
 
 static tn_pubkey_t const *
@@ -244,7 +328,8 @@ is_zero( uchar const * p ) {
 }
 
 /* Opens the config for writing and returns its base, checking that it is
-   ours, initialised, and exactly the size its header says. */
+   ours, initialised, and exactly the size its header says. Only call this
+   when the data will change (see open_mkt). */
 static uchar *
 open_cfg( ushort idx, cfg_hdr_t * hdr ) {
   if( !tsdk_is_account_idx_valid( idx ) ) tsdk_revert( ERR_BAD_IDX );
@@ -260,6 +345,49 @@ open_cfg( ushort idx, cfg_hdr_t * hdr ) {
     tsdk_revert( ERR_NOT_READY );
   }
   return base;
+}
+
+/* Reads the config without asking to write it. */
+static uchar const *
+read_cfg( ushort idx, cfg_hdr_t * hdr ) {
+  if( !tsdk_is_account_idx_valid( idx ) ) tsdk_revert( ERR_BAD_IDX );
+  if( !tsdk_account_exists( idx ) )       tsdk_revert( ERR_NOT_READY );
+  if( !tsdk_is_account_owned_by_current_program( idx ) ) tsdk_revert( ERR_NOT_OURS );
+  uchar const * base = (uchar const *)tsdk_get_account_data_ptr( idx );
+  tsdk_account_meta_t const * meta = tsdk_get_account_meta( idx );
+  if( (ulong)meta->data_sz < HDR_SZ ) tsdk_revert( ERR_NOT_READY );
+  memcpy( hdr, base, HDR_SZ );
+  if( hdr->version != CFG_VERSION ) tsdk_revert( ERR_NOT_READY );
+  if( (ulong)meta->data_sz != cfg_size( (ulong)hdr->supply, (ulong)hdr->max_allow ) ) tsdk_revert( ERR_NOT_READY );
+  return base;
+}
+
+/* Checks the market without asking to write it: ours, a market (not a
+   config), made for this config, and exactly the size its supply says. */
+static uchar const *
+check_mkt( ushort idx, ushort cfg_idx, cfg_hdr_t const * hdr, mkt_hdr_t * m ) {
+  if( !tsdk_is_account_idx_valid( idx ) ) tsdk_revert( ERR_BAD_IDX );
+  if( !tsdk_account_exists( idx ) )       tsdk_revert( ERR_BAD_MARKET );
+  if( !tsdk_is_account_owned_by_current_program( idx ) ) tsdk_revert( ERR_BAD_MARKET );
+  uchar const * base = (uchar const *)tsdk_get_account_data_ptr( idx );
+  tsdk_account_meta_t const * meta = tsdk_get_account_meta( idx );
+  if( (ulong)meta->data_sz < MKT_HDR_SZ ) tsdk_revert( ERR_BAD_MARKET );
+  memcpy( m, base, MKT_HDR_SZ );
+  if( m->version != MKT_VERSION ) tsdk_revert( ERR_BAD_MARKET );
+  if( m->supply != hdr->supply )  tsdk_revert( ERR_BAD_MARKET );
+  if( (ulong)meta->data_sz != mkt_size( (ulong)m->supply ) ) tsdk_revert( ERR_BAD_MARKET );
+  if( !same( &m->cfg, account_addr( cfg_idx ) ) ) tsdk_revert( ERR_BAD_MARKET );
+  return base;
+}
+
+/* Opens the market for writing. Only call this when the data will change:
+   an account marked writable and left as it was fails the RPC node's
+   consistency check until its next real write. */
+static uchar *
+open_mkt( ushort idx, ushort cfg_idx, cfg_hdr_t const * hdr, mkt_hdr_t * m ) {
+  (void)check_mkt( idx, cfg_idx, hdr, m );
+  if( tsys_set_account_data_writable( idx ) != TSDK_SUCCESS ) tsdk_revert( ERR_WRITE_DENIED );
+  return (uchar *)tsdk_get_account_data_ptr( idx );
 }
 
 static void
@@ -430,20 +558,25 @@ do_allow( uchar const * data, ulong data_sz ) {
   struct allow_args a;
   memcpy( &a, data, sizeof( a ) );
 
+  /* Look first, write only if something changes. Marking an account
+     writable and leaving its data as it was makes the RPC node's copy fail
+     its own consistency check until the next real write (seen on alphanet),
+     so a repeated ALLOW must not touch the account at all. */
   cfg_hdr_t hdr;
-  uchar * base = open_cfg( a.cfg_idx, &hdr );
+  uchar const * ro = read_cfg( a.cfg_idx, &hdr );
   tn_pubkey_t const * payer = account_addr( 0 );
   if( !same( payer, &hdr.admin ) && !same( payer, &hdr.allower ) ) tsdk_revert( ERR_NOT_ADMIN );
 
   tn_pubkey_t const * w = account_addr( a.wallet_idx );
   if( is_zero( w->key ) ) tsdk_revert( ERR_WRONG_ACCOUNT );
-  uchar * list = base + off_allow( (ulong)hdr.supply );
   uint live = hdr.allow_cnt < hdr.max_allow ? hdr.allow_cnt : hdr.max_allow;
   for( uint i=0U; i<live; i++ ) {
-    if( memcmp( list + (ulong)i * ALLOW_SZ, w->key, 32UL ) == 0 ) return;   /* already allowed */
+    if( memcmp( ro + off_allow( (ulong)hdr.supply ) + (ulong)i * ALLOW_SZ, w->key, 32UL ) == 0 ) return;   /* already allowed */
   }
   if( hdr.allow_cnt == 0xFFFFFFFFU ) tsdk_revert( ERR_RANGE );
 
+  uchar * base = open_cfg( a.cfg_idx, &hdr );
+  uchar * list = base + off_allow( (ulong)hdr.supply );
   allow_rec_t r;
   memcpy( r.wallet.key, w->key, 32UL );
   r.tag  = a.tag;
@@ -604,6 +737,31 @@ struct __attribute__(( packed )) nft_transfer_ix {
   ushort dest_idx;
   ushort mint_idx;
 };
+
+/* Moves Pal `id` to the account at `dest_idx`, checking that the NFT account
+   is the NFT program's, of this collection, with that number, and that it
+   really moved. This program is the collection's authority, so the NFT
+   program accepts the call. */
+static void
+move_pal( cfg_hdr_t const * hdr, ushort nft_prog_idx, ushort nft_mint_idx, ushort nft_acct_idx,
+          ushort dest_idx, uint id ) {
+  require_nft_program( nft_prog_idx );
+  require_addr( nft_mint_idx, &hdr->nft_mint );
+  require_owned_by( nft_acct_idx, NFT_PROGRAM );
+  if( (ulong)tsdk_get_account_meta( nft_acct_idx )->data_sz != NFT_ACCT_SZ ) tsdk_revert( ERR_WRONG_ACCOUNT );
+  uchar const * nd = (uchar const *)tsdk_get_account_data_ptr( nft_acct_idx );
+  ulong nid = 0UL;
+  memcpy( &nid, nd + 64, 8UL );
+  if( nid != (ulong)id || memcmp( nd, hdr->nft_mint.key, 32UL ) != 0 ) tsdk_revert( ERR_WRONG_ACCOUNT );
+
+  struct nft_transfer_ix ix;
+  ix.op       = NFT_OP_TRANSFER;
+  ix.nft_idx  = nft_acct_idx;
+  ix.dest_idx = dest_idx;
+  ix.mint_idx = nft_mint_idx;
+  nft_invoke( &ix, sizeof( ix ), nft_prog_idx );
+  if( memcmp( nd + 32, account_addr( dest_idx )->key, 32UL ) != 0 ) tsdk_revert( ERR_NFT_CPI );
+}
 
 static void
 do_send( uchar const * data, ulong data_sz ) {
@@ -776,9 +934,19 @@ do_reserve( uchar const * data, ulong data_sz, int set ) {
   if( data_sz < sizeof( a ) + (ulong)a.count * 4UL ) tsdk_revert( ERR_BAD_INSTR );
 
   cfg_hdr_t hdr;
-  uchar * base = open_cfg( a.cfg_idx, &hdr );
+  uchar const * ro = read_cfg( a.cfg_idx, &hdr );
   require_admin( &hdr );
   ulong n = (ulong)hdr.supply;
+  int changes = 0;
+  for( ulong i=0UL; i<(ulong)a.count; i++ ) {
+    uint id = 0U;
+    memcpy( &id, data + sizeof( a ) + i * 4UL, 4UL );
+    if( id >= hdr.supply || id < hdr.minted ) tsdk_revert( ERR_RANGE );
+    int was = ( ro[ off_reserved( n ) + ( id >> 3 ) ] >> ( id & 7U ) ) & 1;
+    if( was != set ) changes = 1;
+  }
+  if( !changes ) return;                               /* nothing to change */
+  uchar * base = open_cfg( a.cfg_idx, &hdr );
   uchar * bits = base + off_reserved( n );
   for( ulong i=0UL; i<(ulong)a.count; i++ ) {
     uint id = 0U;
@@ -840,6 +1008,253 @@ do_gift( uchar const * data, ulong data_sz ) {
   memcpy( base, &hdr, HDR_SZ );
 }
 
+/* ----------------------------------------------------------------- MARKET */
+
+struct __attribute__(( packed )) market_args {
+  uchar  op;
+  uchar  seed[ 32 ];
+  ushort cfg_idx;
+  ushort fee_bps;
+};
+
+#define MKT_INIT_IDX ((ushort)2)
+
+static void
+do_market( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct market_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct market_args a;
+  memcpy( &a, data, sizeof( a ) );
+  uchar const * proof    = data + sizeof( a );
+  ulong         proof_sz = data_sz - sizeof( a );
+
+  cfg_hdr_t hdr;
+  (void)read_cfg( a.cfg_idx, &hdr );
+  require_admin( &hdr );
+  if( a.fee_bps > FEE_BPS_MAX ) tsdk_revert( ERR_RANGE );
+
+  if( !tsdk_is_account_idx_valid( MKT_INIT_IDX ) ) tsdk_revert( ERR_NO_ACCOUNT );
+  if( tsdk_account_exists( MKT_INIT_IDX ) ) tsdk_revert( ERR_WRONG_ACCOUNT );
+  if( tsys_account_create( MKT_INIT_IDX, a.seed, proof, proof_sz ) != TSDK_SUCCESS ) tsdk_revert( ERR_CREATE_FAILED );
+  if( !tsdk_is_account_owned_by_current_program( MKT_INIT_IDX ) ) tsdk_revert( ERR_NOT_OURS );
+  if( tsys_set_account_data_writable( MKT_INIT_IDX ) != TSDK_SUCCESS ) tsdk_revert( ERR_WRITE_DENIED );
+  ulong want = mkt_size( (ulong)hdr.supply );
+  ulong rc = tsys_account_resize( MKT_INIT_IDX, want );
+  if( rc != TSDK_SUCCESS ) tsdk_revert( 0x8000UL | ( rc & 0xFFUL ) );
+
+  uchar * base = (uchar *)tsdk_get_account_data_ptr( MKT_INIT_IDX );
+  memset( base, 0, want );
+  mkt_hdr_t m;
+  memset( &m, 0, sizeof( m ) );
+  m.version = MKT_VERSION;
+  m.fee_bps = a.fee_bps;
+  m.supply  = hdr.supply;
+  memcpy( m.cfg.key, account_addr( a.cfg_idx )->key, 32UL );
+  memcpy( base, &m, MKT_HDR_SZ );
+}
+
+/* -------------------------------------------------------------------- FEE */
+
+struct __attribute__(( packed )) fee_args {
+  uchar  op;
+  ushort mkt_idx;
+  ushort cfg_idx;
+  ushort fee_bps;
+};
+
+static void
+do_fee( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct fee_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct fee_args a;
+  memcpy( &a, data, sizeof( a ) );
+  cfg_hdr_t hdr;
+  (void)read_cfg( a.cfg_idx, &hdr );
+  require_admin( &hdr );
+  if( a.fee_bps > FEE_BPS_MAX ) tsdk_revert( ERR_RANGE );
+  mkt_hdr_t m;
+  (void)check_mkt( a.mkt_idx, a.cfg_idx, &hdr, &m );
+  if( m.fee_bps == a.fee_bps ) return;                 /* nothing to change */
+  uchar * mb = open_mkt( a.mkt_idx, a.cfg_idx, &hdr, &m );
+  m.fee_bps = a.fee_bps;
+  memcpy( mb, &m, MKT_HDR_SZ );
+}
+
+/* ------------------------------------------------------------------- LIST */
+
+struct __attribute__(( packed )) list_args {
+  uchar  op;
+  ushort cfg_idx;
+  ushort mkt_idx;
+  ushort nft_prog_idx;
+  ushort nft_mint_idx;
+  ushort nft_acct_idx;
+  ushort escrow_idx;
+  ushort payout_idx;
+  uint   id;
+  ulong  price;
+};
+
+static void
+do_list( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct list_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct list_args a;
+  memcpy( &a, data, sizeof( a ) );
+  if( a.price == 0UL || a.price > PRICE_MAX ) tsdk_revert( ERR_RANGE );
+
+  /* The config changes only for a new listing (its holder becomes this
+     program); a price change touches the market alone. See open_mkt. */
+  cfg_hdr_t hdr;
+  uchar const * ro = read_cfg( a.cfg_idx, &hdr );
+  mkt_hdr_t m;
+  uchar * mb = open_mkt( a.mkt_idx, a.cfg_idx, &hdr, &m );
+  if( a.id >= hdr.minted ) tsdk_revert( ERR_RANGE );
+
+  tn_pubkey_t const * me   = account_addr( 0 );
+  tn_pubkey_t const * self = tsdk_get_current_program_acc_addr();
+  ulong own_off = off_owners() + (ulong)a.id * 32UL;
+  listing_t * l = (listing_t *)( mb + MKT_HDR_SZ + (ulong)a.id * LISTING_SZ );
+  require_token_acc( a.payout_idx, &hdr.pay_mint, me );
+
+  if( memcmp( ro + own_off, me->key, 32UL ) == 0 ) {
+    /* A new listing: the Pal goes into this program's keeping. */
+    if( !same( account_addr( a.escrow_idx ), self ) ) tsdk_revert( ERR_WRONG_ACCOUNT );
+    uchar * base = open_cfg( a.cfg_idx, &hdr );
+    move_pal( &hdr, a.nft_prog_idx, a.nft_mint_idx, a.nft_acct_idx, a.escrow_idx, a.id );
+    memcpy( base + own_off, self->key, 32UL );
+    m.listed += 1U;
+  } else if( memcmp( ro + own_off, self->key, 32UL ) != 0 || !same( &l->seller, me ) ) {
+    tsdk_revert( ERR_NOT_HOLDER );
+  }
+  /* else: already listed by this seller, so this is a new price. */
+
+  listing_t nl;
+  memcpy( nl.seller.key, me->key, 32UL );
+  memcpy( nl.payout.key, account_addr( a.payout_idx )->key, 32UL );
+  nl.price = a.price;
+  nl.slot  = tsdk_get_current_block_ctx()->slot;
+  memcpy( l, &nl, LISTING_SZ );
+  memcpy( mb, &m, MKT_HDR_SZ );
+}
+
+/* ----------------------------------------------------------------- DELIST */
+
+struct __attribute__(( packed )) delist_args {
+  uchar  op;
+  ushort cfg_idx;
+  ushort mkt_idx;
+  ushort nft_prog_idx;
+  ushort nft_mint_idx;
+  ushort nft_acct_idx;
+  uint   id;
+};
+
+static void
+do_delist( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct delist_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct delist_args a;
+  memcpy( &a, data, sizeof( a ) );
+
+  cfg_hdr_t hdr;
+  uchar * base = open_cfg( a.cfg_idx, &hdr );
+  mkt_hdr_t m;
+  uchar * mb = open_mkt( a.mkt_idx, a.cfg_idx, &hdr, &m );
+  if( a.id >= hdr.minted ) tsdk_revert( ERR_RANGE );
+
+  tn_pubkey_t const * me = account_addr( 0 );
+  uchar * owner = base + off_owners() + (ulong)a.id * 32UL;
+  listing_t * l = (listing_t *)( mb + MKT_HDR_SZ + (ulong)a.id * LISTING_SZ );
+  if( memcmp( owner, tsdk_get_current_program_acc_addr()->key, 32UL ) != 0 ) tsdk_revert( ERR_NOT_LISTED );
+  if( !same( &l->seller, me ) ) tsdk_revert( ERR_NOT_HOLDER );
+
+  move_pal( &hdr, a.nft_prog_idx, a.nft_mint_idx, a.nft_acct_idx, (ushort)0, a.id );
+  memcpy( owner, me->key, 32UL );
+  memset( l, 0, LISTING_SZ );
+  m.listed -= 1U;
+  memcpy( mb, &m, MKT_HDR_SZ );
+}
+
+/* -------------------------------------------------------------------- BUY */
+
+struct __attribute__(( packed )) buy_args {
+  uchar  op;
+  ushort cfg_idx;
+  ushort mkt_idx;
+  ushort nft_prog_idx;
+  ushort nft_mint_idx;
+  ushort token_prog_idx;
+  ushort pay_from_idx;
+  ushort fee_to_idx;
+  uchar  count;
+};
+
+struct __attribute__(( packed )) buy_item {
+  ushort nft_acct_idx;
+  ushort payout_idx;
+  uint   id;
+  ulong  max_price;
+};
+
+static void
+pay( ushort token_prog_idx, ushort from_idx, ushort to_idx, ulong amount ) {
+  if( amount == 0UL ) return;
+  ulong rc = tn_token_transfer( token_prog_idx, from_idx, to_idx, amount, (tsdk_invoke_auth_t const *)0 );
+  if( rc != 0UL ) tsdk_revert( ERR_PAYMENT | ( rc & 0xFFUL ) );
+}
+
+static void
+do_buy( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct buy_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct buy_args a;
+  memcpy( &a, data, sizeof( a ) );
+  if( a.count == 0U || a.count > BUY_MAX ) tsdk_revert( ERR_RANGE );
+  if( data_sz < sizeof( a ) + (ulong)a.count * sizeof( struct buy_item ) ) tsdk_revert( ERR_BAD_INSTR );
+  require_token_program( a.token_prog_idx );
+
+  cfg_hdr_t hdr;
+  uchar * base = open_cfg( a.cfg_idx, &hdr );
+  mkt_hdr_t m;
+  uchar * mb = open_mkt( a.mkt_idx, a.cfg_idx, &hdr, &m );
+
+  tn_pubkey_t const * me   = account_addr( 0 );
+  tn_pubkey_t const * self = tsdk_get_current_program_acc_addr();
+  require_token_acc( a.pay_from_idx, &hdr.pay_mint, me );
+  require_addr( a.fee_to_idx, &hdr.treasury );
+
+  for( ulong i=0UL; i<(ulong)a.count; i++ ) {
+    struct buy_item it;
+    memcpy( &it, data + sizeof( a ) + i * sizeof( it ), sizeof( it ) );
+    if( it.id >= hdr.minted ) tsdk_revert( ERR_RANGE );
+    uchar * owner = base + off_owners() + (ulong)it.id * 32UL;
+    listing_t * l = (listing_t *)( mb + MKT_HDR_SZ + (ulong)it.id * LISTING_SZ );
+    if( memcmp( owner, self->key, 32UL ) != 0 || is_zero( l->seller.key ) ) tsdk_revert( ERR_NOT_LISTED );
+    if( same( &l->seller, me ) ) tsdk_revert( ERR_SELF );
+    if( l->price > it.max_price ) tsdk_revert( ERR_PRICE );
+    require_addr( it.payout_idx, &l->payout );
+    require_token_acc( it.payout_idx, &hdr.pay_mint, &l->seller );
+
+    ulong price = l->price;
+    ulong fee   = price * (ulong)m.fee_bps / 10000UL;   /* price <= PRICE_MAX, no overflow */
+    pay( a.token_prog_idx, a.pay_from_idx, it.payout_idx, price - fee );
+    pay( a.token_prog_idx, a.pay_from_idx, a.fee_to_idx, fee );
+
+    move_pal( &hdr, a.nft_prog_idx, a.nft_mint_idx, it.nft_acct_idx, (ushort)0, it.id );
+    memcpy( owner, me->key, 32UL );
+
+    sale_rec_t r;
+    r.id    = it.id;
+    r.price = price;
+    memcpy( r.buyer.key,  me->key,        32UL );
+    memcpy( r.seller.key, l->seller.key,  32UL );
+    r.slot  = tsdk_get_current_block_ctx()->slot;
+    memcpy( mb + mkt_off_sales( (ulong)m.supply ) + ( (ulong)m.sales % SALES_RING ) * SALE_SZ, &r, SALE_SZ );
+
+    memset( l, 0, LISTING_SZ );
+    m.listed -= 1U;
+    m.sales  += 1U;
+    m.volume += price;
+  }
+  memcpy( mb, &m, MKT_HDR_SZ );
+}
+
 /* ------------------------------------------------------------- entrypoint */
 
 TSDK_ENTRYPOINT_FN void
@@ -860,6 +1275,11 @@ start( void const * instruction_data,
     case OP_RESERVE:   do_reserve( data, instruction_data_sz, 1 ); break;
     case OP_UNRESERVE: do_reserve( data, instruction_data_sz, 0 ); break;
     case OP_GIFT:      do_gift   ( data, instruction_data_sz ); break;
+    case OP_MARKET:    do_market ( data, instruction_data_sz ); break;
+    case OP_FEE:       do_fee    ( data, instruction_data_sz ); break;
+    case OP_LIST:      do_list   ( data, instruction_data_sz ); break;
+    case OP_DELIST:    do_delist ( data, instruction_data_sz ); break;
+    case OP_BUY:       do_buy    ( data, instruction_data_sz ); break;
     default:         tsdk_revert( ERR_BAD_OPCODE );
   }
 

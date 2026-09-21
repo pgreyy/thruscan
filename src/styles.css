@@ -19,11 +19,57 @@
   --r-lg: 18px;
 
   --rail: 236px;
-  --shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 8px 24px rgba(22, 24, 29, 0.05);
+  --shadow: 0 1px 2px var(--hover), 0 8px 24px var(--hover);
+
+  --hover: var(--hover);
+  --soft: var(--soft);
+  --glass: rgba(241, 240, 237, 0.92);
+  --ink-2: #494b52;
+  --dark: #16181d;          /* panels that stay dark in both themes */
+  --on-dark: #f1f0ed;
+  --good: #1d6b45;
+  --bad: #b42318;
+  --bad-line: #f0c8c0;
+  color-scheme: light;
 
   --sans: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
+
+/* Dark theme. Chosen in the top bar (light, dark, or follow the system);
+   index.html sets data-theme before the first paint so nothing flashes. */
+:root[data-theme='dark'] {
+  --canvas: #0e1013;
+  --surface: #16191e;
+  --line: #262a31;
+  --ink: #ecebe7;
+  --muted: #979aa2;
+  --signal: #7b93ff;
+  --signal-soft: #182040;
+  --signal-line: #2d3b73;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --hover: rgba(255, 255, 255, 0.06);
+  --soft: #1c1f25;
+  --glass: rgba(14, 16, 19, 0.88);
+  --ink-2: #c4c5c9;
+  --dark: #1b1e24;
+  --on-dark: #f1f0ed;
+  --good: #4cc38a;
+  --bad: #ff7a6b;
+  --bad-line: #5a2a25;
+  color-scheme: dark;
+}
+:root[data-theme='dark'] .hero, :root[data-theme='dark'] .codeblock, :root[data-theme='dark'] .toast,
+:root[data-theme='dark'] .lp-banner { box-shadow: inset 0 0 0 1px var(--line); }
+:root[data-theme='dark'] .grid2048 { background: #22252b; }
+:root[data-theme='dark'] .cell2048 { background: #2b2f36; }
+:root[data-theme='dark'] .cell2048[data-v='2'] { background: #3a3e46; }
+:root[data-theme='dark'] .cell2048[data-v='4'] { background: #474c55; }
+:root[data-theme='dark'] .cell2048[data-v='8'] { background: #5a5f69; }
+:root[data-theme='dark'] .cell2048[data-v='128'] { background: #f1f0ed; color: #16181d; }
+:root[data-theme='dark'] .tile.absent, :root[data-theme='dark'] .key.absent { background: #2e3138; border-color: #2e3138; color: #8a8d95; }
+:root[data-theme='dark'] .tile.filled { border-color: #4a4e57; }
+:root[data-theme='dark'] .key:hover { background: #22252b; }
 
 * { box-sizing: border-box; }
 
@@ -127,7 +173,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   flex-shrink: 0;
 }
 
-.nav-toggle:hover { background: rgba(22, 24, 29, 0.06); color: var(--ink); }
+.nav-toggle:hover { background: var(--hover); color: var(--ink); }
 
 .rail-link {
   display: flex;
@@ -144,7 +190,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .rail-link svg { flex-shrink: 0; }
-.rail-link:hover { color: var(--ink); background: rgba(22, 24, 29, 0.05); }
+.rail-link:hover { color: var(--ink); background: var(--hover); }
 
 .rail-link[aria-current='page'] {
   background: var(--surface);
@@ -172,6 +218,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 /* ---------- mobile chrome ---------- */
 
+.topbar .theme-switch { margin-left: 6px; }
+.topbar .theme-menu { left: 0; right: auto; }
 .topbar {
   position: sticky;
   top: 0;
@@ -181,7 +229,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  background: rgba(241, 240, 237, 0.9);
+  background: var(--glass);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
 }
@@ -336,8 +384,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .pill.on { background: var(--signal-soft); color: var(--signal); }
-.pill.off { background: rgba(22, 24, 29, 0.05); color: var(--muted); }
-.pill.tag { background: rgba(22, 24, 29, 0.05); color: var(--ink); font-weight: 500; }
+.pill.off { background: var(--hover); color: var(--muted); }
+.pill.tag { background: var(--hover); color: var(--ink); font-weight: 500; }
 .pill.new { background: var(--ink); color: var(--canvas); }
 
 /* ---------- controls ---------- */
@@ -413,7 +461,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   padding: 11px 13px;
   border-radius: var(--r-sm);
   font-size: 13px;
-  background: rgba(22, 24, 29, 0.04);
+  background: var(--hover);
   color: var(--ink);
 }
 
@@ -494,8 +542,8 @@ textarea.field { resize: vertical; min-height: 84px; }
 /* Guide prose is instructions people follow while typing, not incidental
    small print, so it gets more size and contrast than .fine does elsewhere. */
 .step-body .fine,
-.step-body p { font-size: 13.5px; line-height: 1.75; color: #494b52; }
-.step-body .caption { font-size: 12.5px; color: #5c5e66; margin: 12px 0 2px; }
+.step-body p { font-size: 13.5px; line-height: 1.75; color: var(--ink-2); }
+.step-body .caption { font-size: 12.5px; color: var(--muted); margin: 12px 0 2px; }
 
 /* ---------- code ---------- */
 
@@ -504,7 +552,7 @@ textarea.field { resize: vertical; min-height: 84px; }
    region is a button most people never find. */
 .codeblock {
   border-radius: var(--r-sm);
-  background: var(--ink);
+  background: var(--dark);
   margin: 8px 0;
   overflow: hidden;
 }
@@ -894,8 +942,8 @@ textarea.field { resize: vertical; min-height: 84px; }
    with the detail underneath, so a name service lookup or a token now has an
    answer rather than just data. */
 .hero {
-  background: var(--ink);
-  color: var(--canvas);
+  background: var(--dark);
+  color: var(--on-dark);
   border-radius: var(--r-md);
   padding: 18px 20px;
   margin: 0 0 14px;
@@ -965,8 +1013,8 @@ textarea.field { resize: vertical; min-height: 84px; }
    for, so it gets stated at size instead of hiding among its own metadata. */
 .hero {
   position: relative;
-  background: var(--ink);
-  color: var(--canvas);
+  background: var(--dark);
+  color: var(--on-dark);
   border-radius: var(--r-md);
   padding: 18px 20px;
   margin-bottom: 16px;
@@ -1051,8 +1099,8 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 .toast {
   pointer-events: auto;
-  background: var(--ink);
-  color: var(--canvas);
+  background: var(--dark);
+  color: var(--on-dark);
   border-radius: var(--r-md);
   padding: 12px 14px;
   box-shadow: 0 6px 24px rgba(22, 24, 29, 0.28);
@@ -1400,7 +1448,7 @@ textarea.field { resize: vertical; min-height: 84px; }
     position: sticky; top: 0; z-index: 50;
     display: flex; align-items: center; gap: 22px;
     height: 64px; padding: 0 200px 0 28px; box-sizing: border-box;
-    background: rgba(241, 240, 237, 0.92); backdrop-filter: blur(10px);
+    background: var(--glass); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
   }
   .deskbar .brand { flex: 0 0 auto; }
@@ -1414,7 +1462,7 @@ textarea.field { resize: vertical; min-height: 84px; }
     text-decoration: none; white-space: nowrap; cursor: pointer; list-style: none;
   }
   .deskbar-more summary::-webkit-details-marker { display: none; }
-  .deskbar-nav > a:hover, .deskbar-more summary:hover { color: var(--ink); background: rgba(22, 24, 29, 0.05); }
+  .deskbar-nav > a:hover, .deskbar-more summary:hover { color: var(--ink); background: var(--hover); }
   .deskbar-nav > a[aria-current='page'] { color: var(--ink); }
   .deskbar-more { position: relative; }
   .deskbar-menu {
@@ -1423,12 +1471,32 @@ textarea.field { resize: vertical; min-height: 84px; }
     display: flex; flex-direction: column;
   }
   .deskbar-menu a { padding: 9px 10px; border-radius: 8px; font-size: 14px; color: var(--ink); text-decoration: none; }
-  .deskbar-menu a:hover { background: #f7f6f3; }
-  .deskbar-right { margin-left: auto; flex: 0 0 auto; }
+  .deskbar-menu a:hover { background: var(--soft); }
+  .deskbar-right { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
   .deskbar-right .status { font-family: var(--mono); font-size: 12px; }
+  @media (max-width: 1380px) { .deskbar-right .status { display: none; } }
 }
 @media (min-width: 900px) and (max-width: 1180px) {
   .deskbar { gap: 12px; }
   .deskbar-search { flex-basis: 260px; }
   .deskbar-right { display: none; }
 }
+
+/* ---------- theme switch ---------- */
+.theme-switch { position: relative; flex: 0 0 auto; }
+.theme-btn {
+  width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.theme-btn:hover { border-color: var(--muted); }
+.theme-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 70; min-width: 140px; padding: 5px;
+  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+.theme-menu button {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--ink); font-size: 14px; text-align: left; cursor: pointer;
+}
+.theme-menu button:hover { background: var(--hover); }
+.theme-menu button.on { font-weight: 600; background: var(--soft); }

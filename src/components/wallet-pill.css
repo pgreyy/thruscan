@@ -119,14 +119,12 @@
 .balance-row { align-items: flex-start; gap: 12px; }
 .balance-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
 
-@media (prefers-color-scheme: dark) {
-  .wallet-pill { background: rgba(22, 22, 24, 0.86); border-color: rgba(255, 255, 255, 0.14); }
-  .wallet-pill:hover { border-color: rgba(255, 255, 255, 0.26); }
-  .pill-panel { background: rgba(22, 22, 24, 0.97); border-color: rgba(255, 255, 255, 0.14); }
-  .pill-row:hover { background: rgba(255, 255, 255, 0.08); }
-  .addr-chip { border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.06); }
-  .addr-chip:hover { border-color: rgba(255, 255, 255, 0.34); }
-}
+:root[data-theme='dark'] .wallet-pill { background: rgba(22, 22, 24, 0.86); border-color: rgba(255, 255, 255, 0.14); }
+:root[data-theme='dark'] .wallet-pill:hover { border-color: rgba(255, 255, 255, 0.26); }
+:root[data-theme='dark'] .pill-panel { background: rgba(22, 22, 24, 0.97); border-color: rgba(255, 255, 255, 0.14); }
+:root[data-theme='dark'] .pill-row:hover { background: rgba(255, 255, 255, 0.08); }
+:root[data-theme='dark'] .addr-chip { border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.06); }
+:root[data-theme='dark'] .addr-chip:hover { border-color: rgba(255, 255, 255, 0.34); }
 
 /* ---------------------------------------------------------------------------
    Phones.
@@ -206,9 +204,7 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
 }
 
-@media (prefers-color-scheme: dark) {
-  .modal-card { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
-}
+:root[data-theme='dark'] .modal-card { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
 
 /* ===========================================================================
    The swap panel.
@@ -299,9 +295,7 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 
 .flip-btn:hover { border-color: rgba(128, 128, 128, 0.5); }
 
-@media (prefers-color-scheme: dark) {
-  .flip-btn { background: #17171a; border-color: rgba(255, 255, 255, 0.16); }
-}
+:root[data-theme='dark'] .flip-btn { background: #17171a; border-color: rgba(255, 255, 255, 0.16); }
 
 .picker { position: relative; flex: 0 0 auto; }
 
@@ -359,11 +353,9 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 .picker-item:hover { background: rgba(128, 128, 128, 0.1); }
 .picker-item-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
-@media (prefers-color-scheme: dark) {
-  .picker-trigger { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.16); }
-  .picker-menu { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
-  .picker-item:hover { background: rgba(255, 255, 255, 0.08); }
-}
+:root[data-theme='dark'] .picker-trigger { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.16); }
+:root[data-theme='dark'] .picker-menu { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
+:root[data-theme='dark'] .picker-item:hover { background: rgba(255, 255, 255, 0.08); }
 
 .linkish {
   margin-left: 8px;
@@ -503,9 +495,7 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   -webkit-backdrop-filter: blur(10px);
 }
 
-@media (prefers-color-scheme: dark) {
-  .tabstrip-wrap { background: rgba(14, 14, 16, 0.86); }
-}
+:root[data-theme='dark'] .tabstrip-wrap { background: rgba(14, 14, 16, 0.86); }
 
 .tabstrip {
   display: flex;
@@ -577,13 +567,11 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   background: rgba(200, 60, 60, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  .btn.danger { color: #ff8a80; border-color: rgba(255, 138, 128, 0.36); }
-  .btn.danger:hover:not(:disabled) {
+:root[data-theme='dark'] .btn.danger { color: #ff8a80; border-color: rgba(255, 138, 128, 0.36); }
+:root[data-theme='dark'] .btn.danger:hover:not(:disabled) {
     border-color: rgba(255, 138, 128, 0.7);
     background: rgba(255, 138, 128, 0.1);
   }
-}
 
 /* The little uppercase word above every page title ("TRADE", "BUILDERS",
    "GAMES", "COMMUNITY EXPLORER"). It repeated the nav item you had just

@@ -80,6 +80,14 @@ meta account" and leaves the old binary live, which then reads downstream as a
 code bug. Use `thru program upgrade` to replace code at an existing address, or
 a fresh seed during iteration.
 
+**Never mark an account writable unless you are about to change it.** On
+alphanet, an account marked writable with `tsys_set_account_data_writable`
+and then left byte for byte as it was fails the RPC node's own consistency
+check ("seq mismatch for page 0") until its next real write, so every read of
+it errors in the meantime. Transactions still execute; only reads break. Check
+first with a read-only pointer, return early when nothing changes, and only
+then ask to write (thrupals `read_cfg` / `check_mkt`).
+
 **Check the address of every program you call.** A program that takes the
 token program's index from its caller and then trusts the transfer can be
 handed a program of the caller's own that accepts the call and does nothing,
@@ -108,6 +116,7 @@ any other shape silently reads nothing.
 | Pixel Pals state | `palcfg7Q2` | `tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa` |
 | Pixel Pals collection (NFT mint) | `palsmint7Q1` | `ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv` |
 | Pixel Pals treasury (fuck.id's WTHRU account) | | `tastNK-OKQV3FgRH1Q0DX5vV8MOS_b2P08LxSKQ2w_kbvz` |
+| Pixel Pals market (listings, sales) | `palmkt7Q1` | `taRnEmml22MOTV8UN6Y4w3Qp8G_cHRF_ShM9xT7DcCSlyW` |
 | thruswap (upgraded 21 Sep 2026) | `thruswapA2` | `taanfNIPSm5OA3LDWSLFFAgo3iszZ1rOVsdJPYp4dzDfTg` |
 | thrupad2 (upgraded 21 Sep 2026) | `thrupad2A1` | `taX1wTP2Zmfddk6T3VAbncDzeDRXtc9HUCwUamm6d8rmPu` |
 

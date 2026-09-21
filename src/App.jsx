@@ -1,3 +1,4 @@
+import ThemeSwitch from './components/ThemeSwitch.jsx'
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
@@ -15,6 +16,7 @@ import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
 import { GetWalletPage } from './pages/GetWallet.jsx'
 import { PalsPage } from './pages/Pals.jsx'
+import { NftsPage } from './pages/Nfts.jsx'
 import { LandingPage } from './pages/Landing.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
@@ -59,7 +61,7 @@ const NAV = [
   { to: '/explorer', label: 'Explorer', icon: 'search' },
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
-  { to: '/pals', label: 'Pixel Pals', icon: 'pal' },
+  { to: '/nfts', label: 'NFTs', icon: 'pal' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/builders', label: 'Builders', icon: 'book' },
@@ -71,7 +73,7 @@ const TOP_NAV = [
   { to: '/explorer', label: 'Explore' },
   { to: '/swap', label: 'Swap' },
   { to: '/launch', label: 'Launchpad' },
-  { to: '/pals', label: 'NFTs' },
+  { to: '/nfts', label: 'NFTs', also: ['/pals'] },
   { to: '/names', label: 'Names' },
   { to: '/games', label: 'Games' },
 ]
@@ -686,7 +688,7 @@ function Shell({ children }) {
         <div className="deskbar-search"><Search compact /></div>
         <nav className="deskbar-nav">
           {TOP_NAV.map((l) => (
-            <Link key={l.to} to={l.to} aria-current={pathname === l.to || pathname.startsWith(l.to + '/') ? 'page' : undefined}>{l.label}</Link>
+            <Link key={l.to} to={l.to} aria-current={[l.to, ...(l.also ?? [])].some((t) => pathname === t || pathname.startsWith(t + '/')) ? 'page' : undefined}>{l.label}</Link>
           ))}
           <details className="deskbar-more">
             <summary>More</summary>
@@ -695,7 +697,7 @@ function Shell({ children }) {
             </div>
           </details>
         </nav>
-        <div className="deskbar-right"><NetworkStatus /></div>
+        <div className="deskbar-right"><ThemeSwitch /><NetworkStatus /></div>
       </header>
 
       <header className="topbar">
@@ -707,8 +709,8 @@ function Shell({ children }) {
             <span className="brand-mark">T</span>
             <span className="brand-name">ThruScan</span>
           </Link>
+          <ThemeSwitch />
         </div>
-        <NetworkStatus />
       </header>
 
       <main className="main" data-nav={open}>{children}</main>
@@ -3167,6 +3169,7 @@ export default function App() {
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/get-wallet" element={<GetWalletPage />} />
           <Route path="/pals" element={<PalsPage />} />
+          <Route path="/nfts" element={<NftsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
           <Route path="/builders" element={<Tabs tabs={[
