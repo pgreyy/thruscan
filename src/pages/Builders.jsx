@@ -54,7 +54,10 @@ export function BuildersPage() {
       </section>
 
       <section className="card">
-        <h2 className="h2">Undocumented, confirmed on chain</h2>
+        <details>
+          <summary className="h2 move-summary">
+            <span>Undocumented, confirmed on chain <span className="fine" style={{ fontWeight: 400 }}>{FINDINGS.length} findings</span></span>
+          </summary>
         <div className="findings" style={{ marginTop: 12 }}>
           {FINDINGS.map(([title, body]) => (
             <div className="finding" key={title}>
@@ -63,6 +66,7 @@ export function BuildersPage() {
             </div>
           ))}
         </div>
+        </details>
       </section>
     </div>
   )

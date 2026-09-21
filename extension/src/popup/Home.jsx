@@ -94,10 +94,10 @@ export function Home({ account, onLock }) {
     { icon: 'send', label: 'Send', onClick: () => go('/send'), off: !live },
     { icon: 'receive', label: 'Receive', onClick: () => go('/receive') },
     { icon: 'faucet', label: act.busy ? 'Claiming…' : 'Faucet', onClick: faucet, off: !live || act.busy },
-    { icon: 'activity', label: 'Activity', onClick: () => go('/activity') },
-    { icon: 'sites', label: 'Connected', onClick: () => go('/sites') },
     { icon: 'explorer', label: 'Explorer', href: `${EXPLORER}/account/${account.address}` },
   ]
+  const [tab, setTab] = useState(() => sessionStorage.getItem('home-tab') || 'tokens')
+  const pickTab = (t) => { setTab(t); try { sessionStorage.setItem('home-tab', t) } catch { /* ignore */ } }
 
   return (
     <div className="screen">
@@ -145,19 +145,15 @@ export function Home({ account, onLock }) {
         <Notice kind="good">{note}</Notice>
         <Notice>{act.error || error}</Notice>
 
-        {site && (
-          <section className="site-bar">
-            <span className="favicon">{site.origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
-            <span className="row-main">
-              <b>{site.origin.replace(/^https?:\/\//, '')}</b>
-              <span className={`fine ${site.connected ? 'on' : ''}`}>{site.connected ? 'Connected' : 'Not connected'}</span>
-            </span>
-            {site.connected && <button className="btn ghost small" onClick={() => bg('revoke', { origin: site.origin }).then(reloadSite)}>Disconnect</button>}
-          </section>
-        )}
+        <div className="seg tabs">
+          <button className={tab === 'tokens' ? 'on' : ''} onClick={() => pickTab('tokens')}>Tokens</button>
+          <button className={tab === 'nfts' ? 'on' : ''} onClick={() => pickTab('nfts')}>NFTs</button>
+          <button className={tab === 'activity' ? 'on' : ''} onClick={() => pickTab('activity')}>Activity</button>
+        </div>
 
-        <h2 className="list-head">Tokens</h2>
-        <div className="list">
+        {tab === 'nfts' && <NftGrid />}
+        {tab === 'activity' && <Activity address={account.address} />}
+        {tab === 'tokens' && <div className="list">
           {!data && <p className="fine pad">Reading the chain…</p>}
           {assets.map((a) => (
             <a key={a.key} className="row" target="_blank" rel="noreferrer"
@@ -168,7 +164,111 @@ export function Home({ account, onLock }) {
             </a>
           ))}
           {data && data.tokens === null && <p className="fine pad">Looking for tokens…</p>}
+        </div>}
+
+        {site && (
+          <section className="site-bar bottom">
+            <span className="favicon">{site.origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
+            <span className="row-main">
+              <b>{site.origin.replace(/^https?:\/\//, '')}</b>
+              <span className={`fine ${site.connected ? 'on' : ''}`}>{site.connected ? 'Connected' : 'Not connected'}</span>
+            </span>
+            {site.connected && <button className="btn ghost small" onClick={() => bg('revoke', { origin: site.origin }).then(reloadSite)}>Disconnect</button>}
+          </section>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- NFTs ---------- */
+
+let nftCache = null   // survives switching tabs while the popup is open
+
+function NftGrid() {
+  const [items, setItems] = useState(nftCache)
+  const [error, setError] = useState(null)
+  useEffect(() => {
+    bg('nfts').then((n) => { nftCache = n; setItems(n) }).catch((e) => setError(e.message))
+  }, [])
+  return (
+    <div className="nft-wrap">
+      <Notice>{error}</Notice>
+      {items === null && !error && <p className="fine pad">Reading the chain…</p>}
+      {items?.length === 0 && <p className="fine pad">No NFTs yet. Ones you mint or receive show up here.</p>}
+      {items?.length > 0 && (
+        <div className="nft-grid">
+          {items.map((n) => (
+            <button key={n.account} className="nft-card" onClick={() => go(`/nft/${n.account}`)}>
+              <NftImage src={n.image} id={n.id} />
+              <span className="nft-name">{n.name || `#${n.id}`}</span>
+              {n.collection && <span className="fine">{n.collection}</span>}
+            </button>
+          ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+function NftImage({ src, id, big = false }) {
+  const [broken, setBroken] = useState(false)
+  return (
+    <span className={`nft-img ${big ? 'big' : ''}`}>
+      {src && !broken ? <img src={src} alt="" onError={() => setBroken(true)} /> : <b>#{id}</b>}
+    </span>
+  )
+}
+
+export function NftScreen({ account: nftAccount, me }) {
+  const n = (nftCache ?? []).find((x) => x.account === nftAccount)
+  const [to, setTo] = useState('')
+  const [result, setResult] = useState(null)
+  const act = useAction()
+  if (!n) {
+    return (
+      <div className="screen">
+        <Header title="NFT" back="/" />
+        <div className="body"><p className="fine">Open it again from the NFTs tab.</p></div>
+      </div>
+    )
+  }
+  const send = () => act.run(async () => {
+    const sig = await bg('sendNft', { account: nftAccount, to: to.trim() })
+    const r = await bg('waitFor', { signature: sig })
+    if (r.settled && !r.ok) throw new Error(`The chain rejected it (error ${r.userError || r.vmError}).`)
+    nftCache = null
+    setResult(sig)
+  })
+  return (
+    <div className="screen">
+      <Header title={n.name || `#${n.id}`} back="/" />
+      <div className="body stack">
+        <NftImage src={n.image} id={n.id} big />
+        <div className="card kv">
+          {n.collection && <div><span>Collection</span><b>{n.collection}</b></div>}
+          <div><span>Number</span><b>#{n.id}</b></div>
+          <div><span>Mint</span><a className="mono" href={`${EXPLORER}/account/${n.mint}`} target="_blank" rel="noreferrer">{short(n.mint)}</a></div>
+        </div>
+        {n.authority !== me && !result && (
+          <p className="fine">Transfers for this collection go through its own program, so send it from the collection's site.</p>
+        )}
+        {n.authority !== me ? null : !result ? (
+          <>
+            <label className="field">
+              <span>Send to</span>
+              <input value={to} placeholder="Address (ta…) or name.id" spellCheck={false} autoComplete="off" onChange={(e) => setTo(e.target.value)} />
+            </label>
+            <Notice>{act.error}</Notice>
+            <button className="btn" disabled={!to.trim() || act.busy} onClick={send}>{act.busy ? 'Sending…' : 'Send NFT'}</button>
+          </>
+        ) : (
+          <>
+            <p className="notice good">Sent.</p>
+            <a className="btn ghost" href={`${EXPLORER}/tx/${result}`} target="_blank" rel="noreferrer">View on ThruScan</a>
+            <button className="btn" onClick={() => go('/')}>Done</button>
+          </>
+        )}
       </div>
     </div>
   )

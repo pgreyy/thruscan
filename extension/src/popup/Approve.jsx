@@ -17,6 +17,7 @@ const PROGRAM_NAMES = {
   'taX-QuhkQ4-7zGh4emeIn3JMAy05aZnQwC7WWyuyUoDRCI': 'ThruScan wall',
   taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ: 'Thru multicall',
   taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH: 'Wrapped THRU (WTHRU)',
+  taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03: 'Thru NFT program',
 }
 
 /** What we can say for sure about the instruction, from its bytes alone. */
@@ -33,6 +34,9 @@ function explain(program, dataHex) {
   }
   if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH' && b.length >= 24 && dv.getUint32(0, true) === 2) {
     return `Unwraps ${dv.getBigUint64(16, true).toLocaleString()} WTHRU base units back to THRU`
+  }
+  if (program === 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03' && b.length >= 4) {
+    return ({ 1: 'Mints an NFT', 2: 'Sends an NFT from this wallet', 3: 'Burns an NFT' })[dv.getUint32(0, true)] ?? null
   }
   if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq') {
     if (b[0] === 2 && b.length >= 13) return `Moves ${dv.getBigUint64(5, true).toLocaleString()} base units of a token`

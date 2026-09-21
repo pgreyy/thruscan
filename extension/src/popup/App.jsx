@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { bg, go, useRoute } from './ui.jsx'
 import { Welcome, Create, Import, Ready, Unlock, Forgot } from './Onboard.jsx'
-import { Home, Send, Receive, ActivityScreen, Sites } from './Home.jsx'
+import { Home, Send, Receive, ActivityScreen, Sites, NftScreen } from './Home.jsx'
 import { Settings, Reveal, Remove } from './Settings.jsx'
 import { Approve } from './Approve.jsx'
 
@@ -45,6 +45,9 @@ export default function App() {
     if (route === '/forgot') return <Forgot onGone={gone} />
     return <Unlock onUnlocked={() => { go('/'); reload() }} />
   }
+
+  const nft = route.match(/^\/nft\/(.+)$/)
+  if (nft) return <NftScreen account={nft[1]} me={state.account.address} />
 
   switch (route) {
     case '/send': return <Send />

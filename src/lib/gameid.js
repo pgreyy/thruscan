@@ -36,17 +36,48 @@
 // becomes several.
 
 import { exportPrivateKey, isUnlocked, currentAddress, isExternal } from './wallet.js'
+import { provider } from './external.js'
 
 const ID_KEY = 'thruscan_player_id'
 const TAG = 'thruscan.games.playercode.v1'
 
 const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 
+const externalKey = (address) => `thruscan.playercode.${address}`
+
+/**
+ * A connected wallet never shows this site its key, so its code comes from a
+ * signature instead: the wallet signs a fixed message, and ed25519 signatures
+ * are deterministic, so the same wallet always gets the same code on any
+ * device, and nobody without the key can produce it. Asks once, then the code
+ * is remembered in this browser like any player code.
+ */
+async function externalPlayerCode({ ask }) {
+  const address = currentAddress()
+  if (!address) return null
+  const cached = localStorage.getItem(externalKey(address))
+  if (cached || !ask) return cached
+  const p = provider()
+  if (!p) throw new Error('Your wallet extension is not available.')
+  let sigB64
+  try {
+    sigB64 = await p.signMessage(`${TAG}\nSign to play ThruScan games as this wallet. This costs nothing.`)
+  } catch (e) {
+    if (e?.code === 4001) throw new Error('You cancelled it in your wallet.')
+    throw e
+  }
+  const sig = Uint8Array.from(atob(sigB64), (c) => c.charCodeAt(0))
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array([...new TextEncoder().encode(`${TAG}:`), ...sig])))
+  let code = hex(digest.subarray(0, 8))
+  if (code === '0000000000000000') code = hex(digest.subarray(8, 16))
+  localStorage.setItem(externalKey(address), code)
+  return code
+}
+
 /** The code this wallet always produces. Requires the wallet to be unlocked. */
-export async function playerCodeForWallet() {
-  // A connected wallet never shows this site its key, so games stay on the
-  // guest code for it.
-  if (!isUnlocked() || isExternal()) return null
+export async function playerCodeForWallet({ ask = false } = {}) {
+  if (!isUnlocked()) return null
+  if (isExternal()) return externalPlayerCode({ ask })
   const priv = exportPrivateKey()
   const material = new TextEncoder().encode(`${TAG}:${priv}`)
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', material))
@@ -67,7 +98,7 @@ export const currentPlayerCode = () => localStorage.getItem(ID_KEY)
  * refresh on every render.
  */
 export async function usePlayerCodeFromWallet() {
-  const code = await playerCodeForWallet()
+  const code = await playerCodeForWallet({ ask: true })
   if (!code) return { changed: false, code: null }
   const before = currentPlayerCode()
   if (before === code) return { changed: false, code }

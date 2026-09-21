@@ -19,6 +19,10 @@ export const PROGRAMS = {
   TOKEN: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq',
   NAME_SERVICE: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF',
   FAUCET: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6',
+  // Thru's own NFT program. Its ABI is published on chain through the ABI
+  // manager; the layouts below were read from it and checked by minting and
+  // transferring on alphanet.
+  NFT: 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03',
 }
 const FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
 const FAUCET_MAX = 10_000n
@@ -145,12 +149,89 @@ export function describe(item, me) {
       return { label: ({ 1: 'Registered a name', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[dv?.getUint32(0, true)] ?? 'Name service' }
     case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ':
       return { label: 'Wrapped THRU' }
+    case PROGRAMS.NFT:
+      return { label: ({ 0: 'Created an NFT collection', 1: 'Minted an NFT', 2: byMe ? 'Sent an NFT' : 'Received an NFT', 3: 'Burned an NFT' })[dv?.getUint32(0, true)] ?? 'NFT program' }
     case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH':
       return { label: 'Unwrapped WTHRU' }
     default:
       // The runtime's account-creation program ends in ...MD and takes no data.
       return { label: item.program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMD' ? 'Account created' : 'App transaction' }
   }
+}
+
+/**
+ * An NFT account: [mint 32][owner 32][id u64][flags u64][metadata uri 256].
+ * Its address is derived from its mint and id, so the pair is its identity.
+ */
+export function decodeNft(b) {
+  if (!b || b.length !== 336) return null
+  const uri = new TextDecoder().decode(b.slice(80, 336)).replace(/\0+$/, '')
+  return {
+    mint: Pubkey.from(b.slice(0, 32)).toThruFmt(),
+    owner: Pubkey.from(b.slice(32, 64)).toThruFmt(),
+    id: readU64(b, 64).toString(),
+    uri,
+  }
+}
+
+/** Read an NFT's metadata JSON, if its link is a web address. */
+async function nftMetadata(uri) {
+  if (!/^https:\/\//.test(uri)) return {}
+  try {
+    const r = await fetch(uri, { signal: AbortSignal.timeout(5000) })
+    if (!r.ok) return {}
+    const j = await r.json()
+    const image = typeof j.image === 'string' ? j.image.replace(/^ipfs:\/\//, 'https://ipfs.io/ipfs/') : null
+    return { name: typeof j.name === 'string' ? j.name.slice(0, 80) : null, image: image && /^https:\/\//.test(image) ? image : null, collection: typeof j.collection === 'string' ? j.collection.slice(0, 60) : null }
+  } catch { return {} }
+}
+
+/** The NFTs this address holds, found the same way as its tokens. */
+export async function nfts(url, address) {
+  const candidates = new Set()
+  let page = null
+  for (let i = 0; i < 3; i++) {
+    try {
+      const h = await history(url, address, page, { times: false })
+      for (const it of h.items) for (const a of [...it.rw, ...it.ro]) candidates.add(a)
+      page = h.next
+      if (!page) break
+    } catch { break }
+  }
+  const infos = await Promise.all([...candidates].map(async (a) => [a, await accountInfo(url, a)]))
+  const held = infos
+    .filter(([, info]) => info.owner === PROGRAMS.NFT)
+    .map(([account, info]) => ({ account, ...decodeNft(info.data) }))
+    .filter((n) => n.owner === address)
+  // Each collection's mint records its authority. On Thru's NFT program that
+  // authority, not the holder, is what can move an NFT (checked on alphanet),
+  // so it decides who can send it: the holder directly only when the holder is
+  // also the authority, otherwise through the collection's own program.
+  const mints = [...new Set(held.map((n) => n.mint))]
+  const authority = Object.fromEntries(await Promise.all(mints.map(async (m) => {
+    const d = (await accountInfo(url, m)).data
+    return [m, d.length === 48 ? Pubkey.from(d.slice(0, 32)).toThruFmt() : null]
+  })))
+  return Promise.all(held.map(async (n) => ({ ...n, authority: authority[n.mint], ...(await nftMetadata(n.uri)) })))
+}
+
+/** TRANSFER: [u32 2][nft u16][new owner u16][mint u16]. The current owner signs. */
+export async function sendNft(url, signer, nftAccount, to) {
+  const n = decodeNft((await accountInfo(url, nftAccount)).data)
+  if (!n || n.owner !== signer.address) throw new Error('This wallet does not hold that NFT.')
+  const m = (await accountInfo(url, n.mint)).data
+  if (m.length !== 48 || Pubkey.from(m.slice(0, 32)).toThruFmt() !== signer.address) {
+    throw new Error('This collection moves its NFTs through its own program. Send it from the collection\'s site.')
+  }
+  const readOnly = sortAddresses([to, n.mint])
+  const at = (a) => (a === nftAccount ? 2 : 3 + readOnly.indexOf(a))
+  const data = new Uint8Array(10)
+  const dv = new DataView(data.buffer)
+  dv.setUint32(0, 2, true)
+  dv.setUint16(4, at(nftAccount), true)
+  dv.setUint16(6, at(to), true)
+  dv.setUint16(8, at(n.mint), true)
+  return sendInstruction(url, signer, { program: PROGRAMS.NFT, readWrite: [nftAccount], readOnly, data })
 }
 
 /**

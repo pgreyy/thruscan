@@ -59,6 +59,7 @@ export function GameIdentity({ registry, onChanged }) {
     try {
       const { code: next } = await usePlayerCodeFromWallet()
       if (!next) throw new Error('Unlock your wallet first.')
+      setWalletCode(next)
       setCode(next)
       setDone('Scores now follow this wallet.')
       onChanged?.()

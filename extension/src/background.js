@@ -271,6 +271,17 @@ async function fromPopup(msg) {
       const info = await chain.accountInfo(url, account.address)
       return { address: account.address, exists: info.exists, thru: info.balance.toString(), tokens: null }
     }
+    case 'nfts': {
+      const account = await local.get('account')
+      if (!account) return []
+      return chain.nfts(url, account.address)
+    }
+    case 'sendNft': {
+      const s = await signer()
+      const to = chain.isAddress(msg.to) ? msg.to : (await chain.resolveName(url, msg.to)).address
+      if (to === s.address) throw new Error('That is this wallet.')
+      return serial(() => chain.sendNft(url, s, msg.account, to))
+    }
     case 'history': {
       const account = await local.get('account')
       if (!account) return { items: [], next: null }
