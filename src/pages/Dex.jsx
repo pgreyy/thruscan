@@ -30,7 +30,8 @@ import {
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
-import { useWallet, sendBuilt, TopUpCard, AddressChip } from './Wallet.jsx'
+import { useWallet, sendBuilt, TopUpCard, AddressChip, AddToken } from './Wallet.jsx'
+import { customMints, customMeta, onCustomMintsChange } from '../lib/customTokens.js'
 import {
   deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
   burnToken, returnNativeThru,
@@ -618,7 +619,7 @@ function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
  *   It picks the pool. Either orientation, whichever holds both mints.
  */
 
-function TokenPicker({ tokens, value, onChange, exclude, label }) {
+function TokenPicker({ tokens, value, onChange, exclude, label, onAdded }) {
   const [open, setOpen] = useState(false)
   const boxRef = useRef(null)
 
@@ -657,6 +658,10 @@ function TokenPicker({ tokens, value, onChange, exclude, label }) {
           {tokens.filter((t) => t.mint !== exclude).length === 0 && (
             <p className="fine" style={{ padding: 10 }}>Nothing to pick yet.</p>
           )}
+          <div className="picker-add">
+            <AddToken compact known={tokens.map((t) => t.mint)}
+              onAdded={(mint) => { onAdded?.(mint); onChange(mint); setOpen(false) }} />
+          </div>
         </div>
       )}
     </div>
@@ -672,24 +677,28 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
      nothing was asking here, so a mint that had never been fetched read as
      undefined and was rendered as zero. That is how a wallet holding 76 TCAT
      came to display "Balance 0" after every hard refresh. */
-  const mintKey = pools.flatMap((p) => [p.mintA, p.mintB]).join(',')
+  // Tokens added by address, which may have no pool yet but are still yours.
+  const [custom, setCustom] = useState(() => customMints())
+  useEffect(() => onCustomMintsChange(() => setCustom(customMints())), [])
+
+  const mintKey = pools.flatMap((p) => [p.mintA, p.mintB]).concat(custom).join(',')
   useEffect(() => {
-    if (!pools.length || !wallet.address) return
-    wallet.refresh([...new Set(pools.flatMap((p) => [p.mintA, p.mintB]))])
+    if (!wallet.address) return
+    wallet.refresh([...new Set([...pools.flatMap((p) => [p.mintA, p.mintB]), ...custom])])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mintKey, wallet.address])
 
   // Every mint that any pool touches, with whatever this wallet holds of it.
   const tokens = useMemo(() => {
     const seen = new Map()
-    for (const p of pools) {
-      for (const mint of [p.mintA, p.mintB]) {
+    for (const mint of [...pools.flatMap((p) => [p.mintA, p.mintB]), ...custom]) {
+      {
         if (seen.has(mint)) continue
         const row = wallet.balances?.[mint]
         seen.set(mint, {
           mint,
-          ticker: tickers?.[mint] || short(mint),
-          decimals: decimalsOf(mint),
+          ticker: tickers?.[mint] || wallet.tickers?.[mint] || customMeta()[mint]?.ticker || short(mint),
+          decimals: tickers?.[mint] ? decimalsOf(mint) : (wallet.decimals?.[mint] ?? customMeta()[mint]?.decimals ?? decimalsOf(mint)),
           balance: row?.amount ?? 0n,
           // Zero and "not looked up yet" are different answers and the second
           // one must not be shown as the first.
@@ -698,7 +707,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       }
     }
     return [...seen.values()]
-  }, [pools, tickers, wallet.balances])
+  }, [pools, tickers, wallet.balances, wallet.tickers, custom])
 
   const [fromMint, setFromMint] = useState(null)
   const [toMint, setToMint] = useState(null)

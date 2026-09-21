@@ -26,7 +26,7 @@ import { locked, unlock } from '../lib/wallet.js'
 import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
-import { ownedNames } from '../lib/holdings.js'
+import { ownedNames, knownMints } from '../lib/holdings.js'
 
 const DECIMALS = 6
 
@@ -233,7 +233,13 @@ export function WalletPill() {
     }
   }, [open])
 
-  useEffect(() => { if (wallet.unlocked) wallet.refresh() }, [wallet.unlocked])
+  // Every token ThruScan knows (pools, launches, ones added by address), so a
+  // launchpad token shows here before it has a pool.
+  useEffect(() => {
+    if (!wallet.unlocked) return
+    wallet.refresh()
+    knownMints().then((all) => wallet.refresh(all)).catch(() => {})
+  }, [wallet.unlocked])
 
   if (!mounted) return null
 

@@ -34,6 +34,7 @@ import {
   transferToken, releaseName, claimNameFor, sendNativeThru, checkName,
 } from '../lib/wallet.js'
 import { knownMints, ownedNames } from '../lib/holdings.js'
+import { customMints, addCustomMint, removeCustomMint, lookupToken, onCustomMintsChange } from '../lib/customTokens.js'
 import { Activity } from '../components/Activity.jsx'
 import { useConfirm } from '../components/Confirm.jsx'
 import { withSuffix, decodeDomain, ROOT_SUFFIX } from '../lib/names.js'
@@ -83,7 +84,8 @@ export function useWallet() {
     const address = currentAddress()
     if (!address) return
 
-    const wanted = Array.from(new Set([TUSD_MINT, ...mints, ...Object.keys(state.balances)]))
+    // Tokens the user added by address are always checked, wherever the refresh came from.
+    const wanted = Array.from(new Set([TUSD_MINT, ...customMints(), ...mints, ...Object.keys(state.balances)]))
     try {
       const [registered, native, rows] = await Promise.all([
         accountExists(address),
@@ -575,13 +577,58 @@ function Balances({ wallet, mints }) {
                     {busy === mint ? 'Opening' : 'Open account'}
                   </button>
                 )}
+              {customMints().includes(mint) && (
+                <button className="token-remove" title="Remove from this list" aria-label="Remove from this list"
+                  onClick={() => removeCustomMint(mint)}>×</button>
+              )}
             </div>
           )
         })}
       </div>
 
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
+      <AddToken onAdded={(mint) => wallet.refresh([mint])} known={mints.map((m) => m.mint)} />
     </section>
+  )
+}
+
+/** Paste a mint address to track a token ThruScan does not list on its own. */
+export function AddToken({ onAdded, known = [], compact = false }) {
+  const [text, setText] = useState('')
+  const [found, setFound] = useState(null)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setFound(null); setError(null)
+    const v = text.trim()
+    if (!v) return
+    let alive = true
+    const t = setTimeout(() => {
+      setBusy(true)
+      lookupToken(v)
+        .then((r) => { if (alive) setFound(r) })
+        .catch((e) => { if (alive) setError(String(e?.message ?? e)) })
+        .finally(() => { if (alive) setBusy(false) })
+    }, 350)
+    return () => { alive = false; clearTimeout(t) }
+  }, [text])
+
+  const already = found && known.includes(found.mint)
+  const add = () => { addCustomMint(found.mint, found); onAdded?.(found.mint); setText(''); setFound(null) }
+
+  return (
+    <div className={`add-token ${compact ? 'compact' : ''}`}>
+      {!compact && <p className="fine" style={{ margin: '0 0 6px' }}>Token missing? Paste its mint address.</p>}
+      <div className="add-token-row">
+        <input className="field mono" value={text} placeholder="Token mint address (ta…)" spellCheck={false} autoComplete="off"
+          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && found && !already) add() }} />
+        <button className="btn ghost" disabled={!found || already} onClick={add}>{already ? 'Listed' : 'Add'}</button>
+      </div>
+      {busy && <p className="fine" style={{ margin: '6px 0 0' }}>Looking it up</p>}
+      {found && <p className="fine" style={{ margin: '6px 0 0' }}><b>{found.ticker || 'Unnamed token'}</b>, {found.decimals} decimals{already ? ', already in your list' : ''}</p>}
+      {error && <p className="fine bad-text" style={{ margin: '6px 0 0' }}>{error}</p>}
+    </div>
   )
 }
 
@@ -1203,6 +1250,8 @@ export function WalletPage() {
   const [showActivity, setShowActivity] = useState(false)
   const [quick, setQuick] = useState(null)   // 'send' | 'receive' | null
   const [, bump] = useState(0)
+  const [customKey, setCustomKey] = useState(() => customMints().join(','))
+  useEffect(() => onCustomMintsChange(() => setCustomKey(customMints().join(','))), [])
   const mints = useMemo(() => {
     // tUSD and WTHRU always, since those are the two quote assets, then
     // whatever else this wallet has touched.
@@ -1210,8 +1259,11 @@ export function WalletPage() {
     for (const [mint, b] of Object.entries(wallet.balances)) {
       if (b?.exists && !known.some((k) => k.mint === mint)) known.push({ mint })
     }
+    for (const mint of customKey ? customKey.split(',') : []) {
+      if (!known.some((k) => k.mint === mint)) known.push({ mint })
+    }
     return known
-  }, [wallet.balances])
+  }, [wallet.balances, customKey])
 
   return (
     <div className="wrap">
