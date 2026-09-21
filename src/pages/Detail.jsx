@@ -211,7 +211,7 @@ export function AccountPage() {
 
             {token?.kindLabel === 'mint' && (
               <>
-                <Field k="Ticker"><b>{token.ticker || 'Unnamed'}</b></Field>
+                <Field k="Ticker"><b>{token.ticker || 'Unnamed'}</b><Link className="fine" to={`/token/${account.address ?? id}`}>token page, price and trades</Link></Field>
                 <Field k="Supply"><span>{token.supplyDisplay}</span><span className="fine detail-after">{token.decimals} decimals</span></Field>
                 <Field k="Mint authority"><Addr value={token.mintAuthority} /></Field>
                 <Field k="Creator"><Addr value={token.creator} /></Field>

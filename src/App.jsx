@@ -12,6 +12,7 @@ import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
 import { HomePage } from './pages/Home.jsx'
 import { TxPage, AccountPage } from './pages/Detail.jsx'
+import { TokenPage } from './pages/Token.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -3112,6 +3113,7 @@ export default function App() {
           ]} />} />          <Route path="/wall" element={<WallV2 />} />
           <Route path="/tx/:id" element={<TxPage />} />
           <Route path="/account/:id" element={<AccountPage />} />
+          <Route path="/token/:mint" element={<TokenPage />} />
           <Route path="/swap" element={<SwapPage />} />
           <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/launch/:id" element={<LaunchDetailPage />} />

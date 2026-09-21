@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import {
   createWallet, importWallet, unlock, locked, forgetWallet,
   hasWallet, storedWallet, isUnlocked, currentAddress,
@@ -30,12 +31,12 @@ import {
   deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
   claimNativeThru, claimTusd, nativeBalance,
   importPhrase, exportPhrase, hasPhrase,
-  transferToken, releaseName, claimNameFor, sendNativeThru,
+  transferToken, releaseName, claimNameFor, sendNativeThru, checkName,
 } from '../lib/wallet.js'
 import { knownMints, ownedNames } from '../lib/holdings.js'
 import { Activity } from '../components/Activity.jsx'
 import { useConfirm } from '../components/Confirm.jsx'
-import { withSuffix } from '../lib/names.js'
+import { withSuffix, decodeDomain, ROOT_SUFFIX } from '../lib/names.js'
 import { phraseProblem, phraseWords } from '../lib/seed.js'
 import { QRImage, QRScanner, canScan } from '../components/QR.jsx'
 import { TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
@@ -561,7 +562,7 @@ function Balances({ wallet, mints }) {
           return (
             <div className="row balance-row" key={mint}>
               <span className="balance-name">
-                <b>{ticker || short(mint)}</b>
+                <Link className="plain-link" to={`/token/${mint}`}><b>{ticker || short(mint)}</b></Link>
                 <span className="addr-group">
                   <AddressChip address={mint} label={`${ticker || 'token'} mint`} />
                   {row?.account && <AddressChip address={row.account} label="your token account" />}
@@ -784,6 +785,7 @@ function LiveWallet({ wallet, mints }) {
 
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
+      {wallet.registered && <SendCard wallet={wallet} />}
       {wallet.registered && <MoveCard wallet={wallet} />}
       <BackupCard wallet={wallet} />
       <Danger wallet={wallet} />
@@ -791,6 +793,158 @@ function LiveWallet({ wallet, mints }) {
   )
 }
 
+
+/* ---------- sending ----------
+   Any token, or THRU, to an address or a .id name. A name resolves to its
+   `addr` record when it has one, since that is where its owner asked to be
+   paid, and to its owner otherwise. */
+
+function bytesFromB64(b64) {
+  if (!b64) return null
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+async function resolveRecipient(input) {
+  const v = input.trim()
+  if (!v) return null
+  if (v.startsWith('ta') && v.length >= 40) return { address: v, label: null }
+  const name = v.toLowerCase().replace(new RegExp(`\\.${ROOT_SUFFIX}$`), '')
+  const r = await checkName(name)
+  if (!r.ok || !r.taken) throw new Error(`${withSuffix(name)} is not registered.`)
+  const d = decodeDomain(bytesFromB64(r.data))
+  const addr = d.records.find((x) => x.key === 'addr')?.value
+  return { address: addr || d.owner, label: withSuffix(name) }
+}
+
+function toUnitsBig(text, decimals) {
+  const [w, f = ''] = String(text).trim().split('.')
+  if (!/^\d*$/.test(w) || !/^\d*$/.test(f) || (w === '' && f === '')) return null
+  if (f.length > decimals) return null
+  return BigInt(w || '0') * 10n ** BigInt(decimals) + BigInt((f + '0'.repeat(decimals)).slice(0, decimals) || '0')
+}
+
+function SendCard({ wallet }) {
+  const confirm = useConfirm()
+  const [asset, setAsset] = useState('THRU')
+  const [amount, setAmount] = useState('')
+  const [to, setTo] = useState('')
+  const [target, setTarget] = useState(null)   // { address, label } | { error }
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [done, setDone] = useState(null)
+
+  const held = Object.entries(wallet.balances)
+    .filter(([, b]) => b?.exists && b.amount > 0n)
+    .map(([mint, b]) => ({ mint, amount: b.amount, ticker: wallet.tickers?.[mint] || short(mint), decimals: wallet.decimals?.[mint] ?? DECIMALS }))
+  const choice = asset === 'THRU'
+    ? { mint: null, amount: wallet.native ?? 0n, ticker: 'THRU', decimals: 0 }
+    : held.find((h) => h.mint === asset) ?? { mint: asset, amount: 0n, ticker: short(asset), decimals: DECIMALS }
+
+  // Resolve the recipient a moment after typing stops.
+  useEffect(() => {
+    setTarget(null)
+    if (!to.trim()) return
+    let alive = true
+    const t = setTimeout(() => {
+      resolveRecipient(to)
+        .then((r) => { if (alive) setTarget(r) })
+        .catch((e) => { if (alive) setTarget({ error: String(e?.message ?? e) }) })
+    }, 400)
+    return () => { alive = false; clearTimeout(t) }
+  }, [to])
+
+  const units = toUnitsBig(amount, choice.decimals)
+  // Keep a little THRU back so the send itself can pay its fee.
+  const spendable = asset === 'THRU' ? (choice.amount > 2n ? choice.amount - 2n : 0n) : choice.amount
+  const problem = !amount ? null
+    : units === null ? `Up to ${choice.decimals} decimal places.`
+    : units <= 0n ? 'Enter an amount above zero.'
+    : units > spendable ? `You have ${fmt(spendable, choice.decimals)} ${choice.ticker} to send.`
+    : null
+
+  const send = async () => {
+    if (!target?.address || !units || problem) return
+    if (target.address === wallet.address) { setError('That is this wallet.'); return }
+    const ok = await confirm.ask({
+      title: `Send ${choice.ticker}?`,
+      body: 'Transfers on chain cannot be reversed.',
+      detail: [
+        { label: 'Amount', value: `${fmt(units, choice.decimals)} ${choice.ticker}` },
+        { label: 'To', value: target.label ? `${target.label} (${short(target.address)})` : short(target.address) },
+      ],
+      confirmLabel: 'Send it',
+    })
+    if (!ok) return
+    setBusy(true); setError(null); setDone(null)
+    try {
+      if (!(await accountExists(target.address))) throw new Error('No wallet at that address on chain yet.')
+      const sig = asset === 'THRU'
+        ? await sendNativeThru(target.address, units)
+        : await transferToken(choice.mint, target.address, units)
+      const r = await waitForResult(sig)
+      if (r.settled && !r.succeeded) throw new Error(r.userError === 4 ? 'Not enough of that token.' : `The chain rejected it (error ${r.userError || r.vmError}).`)
+      setDone(sig); setAmount('')
+      wallet.refresh(Object.keys(wallet.balances))
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card">
+      {confirm.modal}
+      <details>
+        <summary className="h2 move-summary">Send</summary>
+
+        <div className="stack" style={{ marginTop: 14 }}>
+          <div className="inline send-asset">
+            <select className="field" value={asset} onChange={(e) => { setAsset(e.target.value); setAmount('') }}>
+              <option value="THRU">THRU</option>
+              {held.map((h) => <option key={h.mint} value={h.mint}>{h.ticker}</option>)}
+            </select>
+            <input
+              className="field mono"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+              placeholder="0"
+              inputMode="decimal"
+            />
+            <button className="btn ghost" onClick={() => setAmount(fmt(spendable, choice.decimals).replace(/,/g, '').replace('<', ''))} disabled={spendable === 0n}>Max</button>
+          </div>
+          <p className="fine" style={{ margin: 0 }}>Balance {fmt(choice.amount, choice.decimals)} {choice.ticker}</p>
+
+          <input
+            className="field mono"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder={`Address or name.${ROOT_SUFFIX}`}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {target?.address && (
+            <p className="fine" style={{ margin: 0 }}>
+              Goes to <span className="mono">{short(target.address)}</span>{target.label ? `, ${target.label}` : ''}
+            </p>
+          )}
+          {target?.error && <p className="fine bad-text" style={{ margin: 0 }}>{target.error}</p>}
+          {problem && <p className="fine bad-text" style={{ margin: 0 }}>{problem}</p>}
+
+          <button className="btn" onClick={send} disabled={busy || !units || !!problem || !target?.address}>
+            {busy ? 'Sending' : `Send ${choice.ticker}`}
+          </button>
+        </div>
+
+        {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+        {done && <p className="notice" style={{ marginTop: 12 }}>Sent. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link></p>}
+      </details>
+    </section>
+  )
+}
 
 /* ---------- moving to another wallet ----------
    Names, tokens and THRU, in that order, each its own signed transaction. THRU
