@@ -283,3 +283,35 @@ textarea { resize: none; }
 .nft-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .nft-img.big { width: 100%; border-radius: 14px; }
 .nft-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- accounts, pinned site bar, collections (0.4) ---------- */
+
+.acct-chip { padding: 0 4px 0 0; gap: 0; }
+.acct-open {
+  display: flex; align-items: center; gap: 7px; min-width: 0; height: 34px; padding: 0 8px 0 11px;
+  border: 0; background: none; font: inherit; color: inherit; cursor: pointer;
+}
+.acct-open b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.acct-open .chev { color: var(--muted); font-size: 10px; }
+.chip-copy { border: 0; background: none; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; }
+.chip-copy:hover { background: var(--soft); color: var(--ink); }
+
+.site-bar.pinned { flex: 0 0 auto; margin: 0 12px 12px; }
+html.tab .site-bar.pinned { position: sticky; bottom: 12px; }
+
+.nft-col .chev, .nft-row .chev, .acct-row .chev { color: var(--muted); font-size: 18px; }
+.row.nft-col, .row.nft-row, .row.acct-row { width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.nft-stack { display: flex; align-items: center; flex: 0 0 auto; }
+.nft-stack .nft-img { width: 40px; height: 40px; border: 2px solid var(--canvas); border-radius: 9px; }
+.nft-stack .nft-img + .nft-img { margin-left: -12px; }
+.nft-stack .nft-img b { font-size: 10px; }
+.nft-more {
+  margin-left: -10px; height: 40px; min-width: 40px; padding: 0 6px; display: grid; place-items: center;
+  border: 2px solid var(--canvas); border-radius: 9px; background: var(--ink); color: var(--canvas); font-size: 12px; font-weight: 700;
+}
+.nft-row .nft-img { width: 44px; height: 44px; flex: 0 0 auto; }
+
+.acct-row .acct-dot { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--soft); }
+.acct-row.on .acct-dot { background: var(--ink); color: var(--canvas); }
+.acct-row .tick { color: var(--good); font-weight: 700; }
+.acct-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }

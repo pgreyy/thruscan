@@ -105,12 +105,15 @@ export function Home({ account, onLock }) {
   return (
     <div className="screen">
       <header className="top">
-        <button className="acct-chip" onClick={copy} title="Copy address">
-          <Icon name="key" size={16} />
-          <b>Account 1</b>
-          <span className="mono">{short(account.address, 5)}</span>
-          <span className="chip-copy">{copied ? 'Copied' : <Icon name="copy" size={14} />}</span>
-        </button>
+        <div className="acct-chip">
+          <button className="acct-open" onClick={() => go('/accounts')} title="Switch account">
+            <Icon name="key" size={16} />
+            <b>{account.name ?? 'Account 1'}</b>
+            <span className="mono">{short(account.address, 5)}</span>
+            <span className="chev">▾</span>
+          </button>
+          <button className="chip-copy" onClick={copy} title="Copy address" aria-label="Copy address">{copied ? 'Copied' : <Icon name="copy" size={14} />}</button>
+        </div>
         <div className="top-right">
           <button className="icon-btn" aria-label="Lock" title="Lock" onClick={onLock}><Icon name="lock" size={18} /></button>
           <button className="icon-btn" aria-label="Settings" title="Settings" onClick={() => go('/settings')}><Icon name="settings" size={18} /></button>
@@ -154,7 +157,7 @@ export function Home({ account, onLock }) {
           <button className={tab === 'activity' ? 'on' : ''} onClick={() => pickTab('activity')}>Activity</button>
         </div>
 
-        {tab === 'nfts' && <NftGrid />}
+        {tab === 'nfts' && <NftGrid address={account.address} />}
         {tab === 'activity' && <Activity address={account.address} />}
         {tab === 'tokens' && <div className="list">
           {!data && <p className="fine pad">Reading the chain…</p>}
@@ -169,8 +172,9 @@ export function Home({ account, onLock }) {
           {data && data.tokens === null && <p className="fine pad">Looking for tokens…</p>}
         </div>}
 
+      </div>
         {site && (
-          <section className="site-bar bottom">
+          <section className="site-bar pinned">
             <span className="favicon">{site.origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
             <span className="row-main">
               <b>{site.origin.replace(/^https?:\/\//, '')}</b>
@@ -179,7 +183,6 @@ export function Home({ account, onLock }) {
             {site.connected && <button className="btn ghost small" onClick={() => bg('revoke', { origin: site.origin }).then(reloadSite)}>Disconnect</button>}
           </section>
         )}
-      </div>
     </div>
   )
 }
@@ -187,29 +190,77 @@ export function Home({ account, onLock }) {
 /* ---------- NFTs ---------- */
 
 let nftCache = null   // survives switching tabs while the popup is open
+let nftCacheFor = null
 
-function NftGrid() {
+function useNfts(address) {
+  if (nftCacheFor !== address) { nftCache = null; nftCacheFor = address }
   const [items, setItems] = useState(nftCache)
   const [error, setError] = useState(null)
   useEffect(() => {
-    bg('nfts').then((n) => { nftCache = n; setItems(n) }).catch((e) => setError(e.message))
-  }, [])
+    bg('nfts').then((n) => { nftCache = n; nftCacheFor = address; setItems(n) }).catch((e) => setError(e.message))
+  }, [address])
+  return { items, error }
+}
+
+/** NFTs grouped into one row per collection, in the order first seen. */
+function groups(items) {
+  const by = new Map()
+  for (const n of items ?? []) {
+    if (!by.has(n.mint)) by.set(n.mint, { mint: n.mint, name: n.collection || (n.name ? n.name.replace(/\s*#\d+$/, '') : null) || short(n.mint, 5), items: [] })
+    by.get(n.mint).items.push(n)
+  }
+  for (const g of by.values()) g.items.sort((a, b) => Number(a.id) - Number(b.id))
+  return [...by.values()]
+}
+
+function NftGrid({ address }) {
+  const { items, error } = useNfts(address)
+  const cols = groups(items)
   return (
     <div className="nft-wrap">
       <Notice>{error}</Notice>
       {items === null && !error && <p className="fine pad">Reading the chain…</p>}
       {items?.length === 0 && <p className="fine pad">No NFTs yet. Ones you mint or receive show up here.</p>}
-      {items?.length > 0 && (
-        <div className="nft-grid">
-          {items.map((n) => (
-            <button key={n.account} className="nft-card" onClick={() => go(`/nft/${n.account}`)}>
-              <NftImage src={n.image} id={n.id} />
-              <span className="nft-name">{n.name || `#${n.id}`}</span>
-              {n.collection && <span className="fine">{n.collection}</span>}
+      {cols.length > 0 && (
+        <div className="list">
+          {cols.map((c) => (
+            <button key={c.mint} className="row nft-col" onClick={() => go(c.items.length === 1 ? `/nft/${c.items[0].account}` : `/nfts/${c.mint}`)}>
+              <span className="nft-stack">
+                {c.items.slice(0, 3).map((n) => <NftImage key={n.account} src={n.image} id={n.id} />)}
+                {c.items.length > 3 && <span className="nft-more">+{c.items.length - 3}</span>}
+              </span>
+              <span className="row-main"><b>{c.name}</b><span className="fine">{c.items.length === 1 ? (c.items[0].name || `#${c.items[0].id}`) : `${c.items.length} items`}</span></span>
+              <span className="chev">›</span>
             </button>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Every NFT of one collection this wallet holds. */
+export function NftCollection({ mint, me }) {
+  const { items, error } = useNfts(me)
+  const g = groups(items).find((x) => x.mint === mint)
+  return (
+    <div className="screen">
+      <Header title={g?.name ?? 'Collection'} back="/" />
+      <div className="body">
+        <Notice>{error}</Notice>
+        {items === null && !error && <p className="fine pad">Reading the chain…</p>}
+        {g && (
+          <div className="list">
+            {g.items.map((n) => (
+              <button key={n.account} className="row nft-row" onClick={() => go(`/nft/${n.account}`)}>
+                <NftImage src={n.image} id={n.id} />
+                <span className="row-main"><b>{n.name || `#${n.id}`}</b></span>
+                <span className="chev">›</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

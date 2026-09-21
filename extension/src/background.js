@@ -13,7 +13,7 @@
 //                           readable by content scripts.
 
 import { Pubkey, keys } from '@thru/sdk'
-import { seal, open, b64, hex } from './lib/vault.js'
+import { open, openForEdit, resealWith, sealForEdit, b64, hex } from './lib/vault.js'
 import { newPhrase, accountFromPhrase, phraseProblem, phraseWords } from './lib/seed.js'
 import * as chain from './lib/chain.js'
 
@@ -34,15 +34,48 @@ async function settings() {
   return { ...DEFAULT_SETTINGS, ...((await local.get('settings')) ?? {}) }
 }
 
-/* ---------- keys ---------- */
+/* ---------- keys and accounts ----------
+ *
+ * The vault holds every secret in one encrypted object:
+ *
+ *   { v: 2,
+ *     seeds:    [{ id, phrase }],                  recovery phrases
+ *     keys:     [{ id, privateKey }],              imported single keys
+ *     accounts: [{ id, name, kind: 'phrase', seed, index }
+ *              | { id, name, kind: 'key', key }] }
+ *
+ * An account from a phrase is that phrase's key at an index (m/44'/.../index'),
+ * so one phrase can hold many accounts, as in MetaMask. More phrases or plain
+ * keys can be added beside it. Which account is in use is not secret, so it
+ * lives outside the vault, as does the list of names and addresses, which the
+ * popup shows even while locked.
+ *
+ * Version 1 vaults held one secret ({ kind, phrase, index } or { kind, key });
+ * they are converted the first time they are unlocked.
+ */
 
-/** Turn a stored secret into a signer. */
-async function signerFrom(secret) {
+const rid = () => crypto.randomUUID().slice(0, 8)
+
+function upgrade(secret) {
+  if (secret?.v === 2) return secret
+  const acc = { id: rid(), name: 'Account 1' }
   if (secret.kind === 'phrase') {
-    const a = accountFromPhrase(secret.phrase, secret.index ?? 0)
+    const seed = { id: rid(), phrase: secret.phrase }
+    return { v: 2, seeds: [seed], keys: [], accounts: [{ ...acc, kind: 'phrase', seed: seed.id, index: secret.index ?? 0 }] }
+  }
+  const key = { id: rid(), privateKey: secret.privateKey }
+  return { v: 2, seeds: [], keys: [key], accounts: [{ ...acc, kind: 'key', key: key.id }] }
+}
+
+/** The keypair for one account of the vault. */
+async function signerFor(secret, acc) {
+  if (acc.kind === 'phrase') {
+    const seed = secret.seeds.find((x) => x.id === acc.seed)
+    const a = accountFromPhrase(seed.phrase, acc.index ?? 0)
     return { address: a.address, publicKey: a.publicKey, privateKey: a.privateKey }
   }
-  const privateKey = hex.decode(secret.privateKey)
+  const k = secret.keys.find((x) => x.id === acc.key)
+  const privateKey = hex.decode(k.privateKey)
   const publicKey = await keys.fromPrivateKey(privateKey)
   return { address: Pubkey.from(publicKey).toThruFmt(), publicKey, privateKey }
 }
@@ -51,11 +84,16 @@ async function unlockedSecret() {
   return session.get('secret')
 }
 
+async function activeAccount(secret) {
+  const id = await local.get('active')
+  return secret.accounts.find((a) => a.id === id) ?? secret.accounts[0]
+}
+
 async function signer() {
   const secret = await unlockedSecret()
   if (!secret) throw new Error('The wallet is locked.')
   await touch()
-  return signerFrom(secret)
+  return signerFor(secret, await activeAccount(secret))
 }
 
 /** Restart the auto-lock countdown. */
@@ -72,14 +110,63 @@ async function lock() {
   broadcast('lock')
 }
 
+/** Write the public side: every account's name and address, and the one in use. */
+async function publish(secret) {
+  const list = []
+  for (const a of secret.accounts) {
+    const s = await signerFor(secret, a)
+    list.push({ id: a.id, name: a.name, address: s.address, kind: a.kind })
+  }
+  await local.set('accounts', list)
+  const id = await local.get('active')
+  const active = list.find((a) => a.id === id) ?? list[0]
+  await local.set('active', active.id)
+  await local.set('account', active)
+  return list
+}
+
+/** A new vault (first setup). */
 async function saveVault(password, secret) {
   if (!password || password.length < 8) throw new Error('Use a password of at least 8 characters.')
-  const s = await signerFrom(secret)
-  await local.set('vault', await seal(password, secret))
-  await local.set('account', { address: s.address, kind: secret.kind })
+  const { sealed, edit } = await sealForEdit(password, secret)
+  await local.set('vault', sealed)
+  await local.set('active', secret.accounts[0].id)
   await session.set('secret', secret)
+  await session.set('edit', edit)
+  const list = await publish(secret)
   await touch()
-  return { address: s.address }
+  return { address: list[0].address }
+}
+
+/** Save a changed vault while unlocked, without asking for the password again. */
+async function persist(secret) {
+  const edit = await session.get('edit')
+  if (!edit) throw new Error('Unlock the wallet again to change accounts.')
+  await local.set('vault', await resealWith(edit, secret))
+  await session.set('secret', secret)
+  return publish(secret)
+}
+
+async function switchTo(id) {
+  const list = (await local.get('accounts')) ?? []
+  const acc = list.find((a) => a.id === id)
+  if (!acc) throw new Error('No such account.')
+  await local.set('active', acc.id)
+  await local.set('account', acc)
+  // Sites connected to this wallet now see the new address.
+  for (const origin of Object.keys(await sites())) broadcast('accountChanged', { publicKey: acc.address }, origin)
+  return acc
+}
+
+async function requireUnlocked() {
+  const secret = await unlockedSecret()
+  if (!secret) throw new Error('The wallet is locked.')
+  await touch()
+  return secret
+}
+
+function nextName(secret) {
+  return `Account ${secret.accounts.length + 1}`
 }
 
 /* ---------- one transaction at a time ----------
@@ -219,28 +306,92 @@ async function fromPopup(msg) {
     case 'create': {
       const problem = phraseProblem(msg.phrase)
       if (problem) throw new Error(problem)
-      return saveVault(msg.password, { kind: 'phrase', phrase: phraseWords(msg.phrase).join(' '), index: 0 })
+      const seed = { id: rid(), phrase: phraseWords(msg.phrase).join(' ') }
+      return saveVault(msg.password, { v: 2, seeds: [seed], keys: [], accounts: [{ id: rid(), name: 'Account 1', kind: 'phrase', seed: seed.id, index: 0 }] })
     }
     case 'importKey': {
       const k = hex.decode(msg.privateKey)
       if (k.length !== 32) throw new Error('A Thru private key is 32 bytes: 64 hex characters.')
-      return saveVault(msg.password, { kind: 'key', privateKey: hex.encode(k) })
+      const key = { id: rid(), privateKey: hex.encode(k) }
+      return saveVault(msg.password, { v: 2, seeds: [], keys: [key], accounts: [{ id: rid(), name: 'Account 1', kind: 'key', key: key.id }] })
     }
     case 'unlock': {
       const sealed = await local.get('vault')
       if (!sealed) throw new Error('No wallet here yet.')
-      const secret = await open(msg.password, sealed)
+      const { secret: stored, edit } = await openForEdit(msg.password, sealed)
+      const secret = upgrade(stored)
       await session.set('secret', secret)
+      await session.set('edit', edit)
+      if (stored?.v !== 2) await persist(secret)
+      else if (!(await local.get('accounts'))) await publish(secret)
       await touch()
       broadcast('unlock')
       return true
     }
     case 'lock': await lock(); return true
+    case 'accounts': {
+      return { list: (await local.get('accounts')) ?? [], active: await local.get('active'), seeds: (await unlockedSecret())?.seeds?.length ?? 0 }
+    }
+    case 'switchAccount': return switchTo(msg.id)
+    case 'addAccount': {
+      // The next account of a phrase already in the wallet.
+      const secret = structuredClone(await requireUnlocked())
+      const seed = secret.seeds.find((x) => x.id === msg.seed) ?? secret.seeds[0]
+      if (!seed) throw new Error('This wallet has no recovery phrase to add accounts from. Create or import one.')
+      const used = secret.accounts.filter((a) => a.kind === 'phrase' && a.seed === seed.id).map((a) => a.index ?? 0)
+      const index = used.length ? Math.max(...used) + 1 : 0
+      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'phrase', seed: seed.id, index }
+      secret.accounts.push(acc)
+      await persist(secret)
+      return switchTo(acc.id)
+    }
+    case 'addPhraseAccount': {
+      // A new or imported recovery phrase, as its own account.
+      const problem = phraseProblem(msg.phrase)
+      if (problem) throw new Error(problem)
+      const secret = structuredClone(await requireUnlocked())
+      const phrase = phraseWords(msg.phrase).join(' ')
+      let seed = secret.seeds.find((x) => x.phrase === phrase)
+      if (!seed) { seed = { id: rid(), phrase }; secret.seeds.push(seed) }
+      const used = secret.accounts.filter((a) => a.kind === 'phrase' && a.seed === seed.id).map((a) => a.index ?? 0)
+      const index = used.length ? Math.max(...used) + 1 : 0
+      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'phrase', seed: seed.id, index }
+      secret.accounts.push(acc)
+      await persist(secret)
+      return switchTo(acc.id)
+    }
+    case 'addKeyAccount': {
+      const k = hex.decode(msg.privateKey)
+      if (k.length !== 32) throw new Error('A Thru private key is 32 bytes: 64 hex characters.')
+      const secret = structuredClone(await requireUnlocked())
+      const address = Pubkey.from(await keys.fromPrivateKey(k)).toThruFmt()
+      const list = (await local.get('accounts')) ?? []
+      const same = list.find((a) => a.address === address)
+      if (same) return switchTo(same.id)
+      const key = { id: rid(), privateKey: hex.encode(k) }
+      secret.keys.push(key)
+      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'key', key: key.id }
+      secret.accounts.push(acc)
+      await persist(secret)
+      return switchTo(acc.id)
+    }
+    case 'renameAccount': {
+      const name = String(msg.name ?? '').trim().slice(0, 24)
+      if (!name) throw new Error('Give it a name.')
+      const secret = structuredClone(await requireUnlocked())
+      const acc = secret.accounts.find((a) => a.id === msg.id)
+      if (!acc) throw new Error('No such account.')
+      acc.name = name
+      await persist(secret)
+      return true
+    }
     case 'reveal': {
       // Always asks for the password again, even when unlocked.
-      const secret = await open(msg.password, await local.get('vault'))
-      const s = await signerFrom(secret)
-      return { phrase: secret.kind === 'phrase' ? secret.phrase : null, privateKey: hex.encode(s.privateKey) }
+      const secret = upgrade(await open(msg.password, await local.get('vault')))
+      const acc = await activeAccount(secret)
+      const s = await signerFor(secret, acc)
+      const seed = acc.kind === 'phrase' ? secret.seeds.find((x) => x.id === acc.seed) : null
+      return { phrase: seed?.phrase ?? null, privateKey: hex.encode(s.privateKey), name: acc.name }
     }
     case 'forget': {
       await open(msg.password, await local.get('vault'))

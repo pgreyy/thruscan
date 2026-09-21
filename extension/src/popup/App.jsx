@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { bg, go, useRoute } from './ui.jsx'
 import { Welcome, Create, Import, Ready, Unlock, Forgot } from './Onboard.jsx'
-import { Home, Send, Receive, ActivityScreen, Sites, NftScreen } from './Home.jsx'
+import { Home, Send, Receive, ActivityScreen, Sites, NftScreen, NftCollection } from './Home.jsx'
+import { Accounts, NewPhraseAccount, ImportAccount } from './Accounts.jsx'
 import { Settings, Reveal, Remove } from './Settings.jsx'
 import { Approve } from './Approve.jsx'
 
@@ -48,12 +49,17 @@ export default function App() {
 
   const nft = route.match(/^\/nft\/(.+)$/)
   if (nft) return <NftScreen account={nft[1]} me={state.account.address} />
+  const col = route.match(/^\/nfts\/(.+)$/)
+  if (col) return <NftCollection mint={col[1]} me={state.account.address} />
 
   switch (route) {
     case '/send': return <Send />
     case '/receive': return <Receive account={state.account} />
     case '/activity': return <ActivityScreen account={state.account} />
     case '/sites': return <Sites />
+    case '/accounts': return <Accounts onChanged={reload} />
+    case '/accounts/new': return <NewPhraseAccount onChanged={reload} />
+    case '/accounts/import': return <ImportAccount onChanged={reload} />
     case '/settings': return <Settings state={state} onLock={lock} reload={reload} />
     case '/reveal/phrase': return <Reveal what="phrase" />
     case '/reveal/key': return <Reveal what="key" />

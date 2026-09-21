@@ -190,8 +190,24 @@ async function nftMetadata(uri) {
     const r = await fetch(uri, { signal: AbortSignal.timeout(5000) })
     if (!r.ok) return {}
     const j = await r.json()
-    const image = typeof j.image === 'string' ? j.image.replace(/^ipfs:\/\//, 'https://ipfs.io/ipfs/') : null
-    return { name: typeof j.name === 'string' ? j.name.slice(0, 80) : null, image: image && /^https:\/\//.test(image) ? image : null, collection: typeof j.collection === 'string' ? j.collection.slice(0, 60) : null }
+    let image = typeof j.image === 'string' ? j.image.replace(/^ipfs:\/\//, 'https://ipfs.io/ipfs/') : null
+    if (image && !/^https:\/\//.test(image)) image = null
+    // Images ThruScan serves are fetched here, where the extension has
+    // permission, and handed to the popup as data, so a browser's shields or
+    // a slow first load cannot leave a blank tile.
+    if (image && image.startsWith('https://thruscan.vercel.app/')) {
+      try {
+        const r2 = await fetch(image, { signal: AbortSignal.timeout(8000) })
+        const type = r2.headers.get('content-type') ?? ''
+        if (r2.ok && /^image\/(svg\+xml|png|jpeg|gif|webp)/.test(type)) {
+          const bytes = new Uint8Array(await r2.arrayBuffer())
+          let bin = ''
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+          image = `data:${type.split(';')[0]};base64,${btoa(bin)}`
+        }
+      } catch { /* keep the link */ }
+    }
+    return { name: typeof j.name === 'string' ? j.name.slice(0, 80) : null, image, collection: typeof j.collection === 'string' ? j.collection.slice(0, 60) : null }
   } catch { return {} }
 }
 
@@ -221,7 +237,11 @@ export async function nfts(url, address) {
     const d = (await accountInfo(url, m)).data
     return [m, d.length === 48 ? Pubkey.from(d.slice(0, 32)).toThruFmt() : null]
   })))
-  return Promise.all(held.map(async (n) => ({ ...n, authority: authority[n.mint], ...(await nftMetadata(n.uri)) })))
+  return Promise.all(held.map(async (n) => {
+    const meta = await nftMetadata(n.uri)
+    const collection = meta.collection ?? (n.mint === PALS.mint ? 'Pixel Pals' : null)
+    return { ...n, authority: authority[n.mint], ...meta, collection }
+  }))
 }
 
 /** TRANSFER: [u32 2][nft u16][new owner u16][mint u16]. The current owner signs. */

@@ -29,13 +29,13 @@ export const hex = {
   },
 }
 
-async function keyFrom(password, salt, rounds) {
+async function keyFrom(password, salt, rounds, extractable = false) {
   const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: rounds, hash: 'SHA-256' },
     base,
     { name: 'AES-GCM', length: 256 },
-    false,
+    extractable,
     ['encrypt', 'decrypt'],
   )
 }
@@ -58,4 +58,38 @@ export async function open(password, sealed) {
   } catch {
     throw new Error('Wrong password.')
   }
+}
+
+/**
+ * Unlock and keep what is needed to save again without asking for the
+ * password: the derived AES key (not the password) and its salt. The caller
+ * keeps it only in session memory, beside the secrets it protects, so it adds
+ * nothing an attacker with that memory would not already have. It lets the
+ * wallet add or rename accounts while unlocked.
+ */
+export async function openForEdit(password, sealed) {
+  let key
+  try {
+    key = await keyFrom(password, b64.decode(sealed.salt), sealed.rounds ?? ROUNDS, true)
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.decode(sealed.iv) }, key, b64.decode(sealed.ct))
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key))
+    return { secret: JSON.parse(dec.decode(pt)), edit: { key: b64.encode(raw), salt: sealed.salt, rounds: sealed.rounds ?? ROUNDS } }
+  } catch {
+    throw new Error('Wrong password.')
+  }
+}
+
+/** Seal again with a key kept by openForEdit. */
+export async function resealWith(edit, payload) {
+  const key = await crypto.subtle.importKey('raw', b64.decode(edit.key), { name: 'AES-GCM' }, false, ['encrypt'])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(payload))))
+  return { v: 1, kdf: 'pbkdf2-sha256', rounds: edit.rounds, salt: edit.salt, iv: b64.encode(iv), ct: b64.encode(ct) }
+}
+
+/** Seal with a fresh salt and also return the edit key for this session. */
+export async function sealForEdit(password, payload) {
+  const sealed = await seal(password, payload)
+  const { edit } = await openForEdit(password, sealed)
+  return { sealed, edit }
 }

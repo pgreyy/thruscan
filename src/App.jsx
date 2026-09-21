@@ -15,6 +15,7 @@ import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
 import { GetWalletPage } from './pages/GetWallet.jsx'
 import { PalsPage } from './pages/Pals.jsx'
+import { LandingPage } from './pages/Landing.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -54,7 +55,8 @@ const G2048_BOARD = import.meta.env.VITE_THRU_2048_BOARD || ''
 const ID_REGISTRY = import.meta.env.VITE_THRU_ID_REGISTRY || ''
 
 const NAV = [
-  { to: '/', label: 'Explorer', icon: 'search' },
+  { to: '/', label: 'Home', icon: 'home' },
+  { to: '/explorer', label: 'Explorer', icon: 'search' },
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/pals', label: 'Pixel Pals', icon: 'pal' },
@@ -81,6 +83,7 @@ const ICON_PATHS = {
   drop: 'M12 3.2c3.1 3.4 5.4 6.4 5.4 9.1a5.4 5.4 0 0 1-10.8 0c0-2.7 2.3-5.7 5.4-9.1zM9.4 13.3a2.6 2.6 0 0 0 2.6 2.6',
   wallet: 'M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7.5V17M16 12.5h1.5',
   tag: 'M20.5 12.3 12.3 20.5a1.6 1.6 0 0 1-2.3 0l-6.5-6.5a1.6 1.6 0 0 1-.5-1.2V4.6c0-.9.7-1.6 1.6-1.6h8.2c.4 0 .9.2 1.2.5l6.5 6.5a1.6 1.6 0 0 1 0 2.3zM7.8 7.8h.01',
+  home: 'M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z',
   pal: 'M8 4h8v2h2v2h2v9h-2v2h-2v2h-2v-2h-4v2H8v-2H6v-2H4V8h2V6h2zM9 11h2M13 11h2M10 15h4',
   rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
 }
@@ -2462,7 +2465,7 @@ function Game2048({ registry }) {
             <section className="card">
               <p className="fine" style={{ marginTop: 0 }}>
                 The last {history.length} moves you sent, kept in this browser. Paste any into the{' '}
-                <Link to="/">Explorer</Link> to see what the chain did with it.
+                <Link to="/explorer">Explorer</Link> to see what the chain did with it.
               </p>
               <div className="chips">
                 {history.slice(0, 12).map((h) => <Address key={h.signature} value={h.signature} />)}
@@ -3111,7 +3114,8 @@ export default function App() {
         <Shell>
         <WalletPill />
         <Routes>
-          <Route path="/" element={<Tabs tabs={[
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/explorer" element={<Tabs tabs={[
             { key: 'explorer', label: 'Explorer', el: <HomePage /> },
             { key: 'wall', label: 'Wall', el: <WallV2 /> },
           ]} />} />          <Route path="/wall" element={<WallV2 />} />
