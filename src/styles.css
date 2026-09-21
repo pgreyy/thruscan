@@ -1353,3 +1353,6 @@ textarea.field { resize: vertical; min-height: 84px; }
   flex-wrap: wrap;
 }
 .page-head .h1 { margin-bottom: 0; }
+
+/* Numbered steps on the get-wallet page. */
+.steps-list { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.55; }

@@ -13,6 +13,7 @@ import { Activity } from './components/Activity.jsx'
 import { HomePage } from './pages/Home.jsx'
 import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
+import { GetWalletPage } from './pages/GetWallet.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
 import { decodeNameServiceAccount, registrationDate } from './lib/nameservice'
@@ -3119,6 +3120,7 @@ export default function App() {
           <Route path="/launch/:id" element={<LaunchDetailPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/get-wallet" element={<GetWalletPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
           <Route path="/builders" element={<Tabs tabs={[

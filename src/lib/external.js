@@ -14,8 +14,9 @@
 
 const KEY = 'thruscan.external.v1'
 
-/** Where to get the extension. Swap for the Chrome Web Store link once listed. */
-export const EXTENSION_URL = 'https://github.com/pgreyy/thruscan/tree/main/extension'
+/** Where to get the extension: ThruScan's own download page (desktop and phone).
+    Swap for the Chrome Web Store link once it is listed. */
+export const EXTENSION_URL = '/get-wallet'
 
 let state = null            // { address, name }
 const listeners = new Set()
