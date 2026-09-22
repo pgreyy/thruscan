@@ -693,10 +693,11 @@ button[aria-current="true"] {
 
 .launch-row {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 14px;
+  /* picture, the name and its progress, then the price. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 11px 13px;
   border: 1px solid var(--line, rgba(128,128,128,0.2));
   border-radius: var(--r-md, 12px);
   background: var(--surface, #fff);
@@ -1029,8 +1030,8 @@ button[aria-current="true"] {
   .modal-card { padding: 18px; }
   .toasts { top: 8px; width: calc(100vw - 16px); }
 
-  .launch-row { grid-template-columns: 1fr; }
-  .launch-row .rt { text-align: left; }
+  .launch-row { grid-template-columns: auto minmax(0, 1fr); }
+  .launch-row .rt { text-align: left; grid-column: 1 / -1; display: flex; gap: 10px; align-items: baseline; }
   .launch-row .bar { max-width: none; }
 
   .wall-msg-head { flex-wrap: wrap; }

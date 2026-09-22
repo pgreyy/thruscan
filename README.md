@@ -30,6 +30,10 @@ browser (React + Vite)
    ├── /api/rpc      reads: accounts, transactions, history, blocks, events
    ├── /api/wallet   writes ThruScan pays for: creating wallets, opening
    │                 token accounts, the faucet, names, launch accounts
+   ├── /api/upload   pictures, stored under the hash of their own bytes
+   ├── /api/token-meta  a launched token's picture and links, which only its
+   │                 creator can change: the write carries their signature and
+   │                 is checked against the creator the registry holds on chain
    └── wallet in the browser signs everything the user does themselves:
                      swaps, buys, sells, launches, records, transfers
    │
@@ -41,6 +45,8 @@ Thru alphanet (rpc.alphanet.thru.org)
 The browser never talks to the Thru node directly, because the node sends no CORS headers. The serverless functions in `api/` do that for it.
 
 A Thru transaction carries exactly one signature, the fee payer's. So ThruScan can pay for things like opening a token account, but it can never move a user's tokens: anything that spends has to be signed by the user's own key in their browser.
+
+Profile pictures follow the same rule. A picture is a record on the owner's `.id` name, written by them; ThruScan cannot change it. A picture that is an NFT is stored as `thru:pixelpals/<number>` and drawn as a hexagon only after the collection has been read and the Pal's current owner compared with the name's owner, so the shape is a check rather than a claim, and it goes back to a circle by itself when the Pal is sold.
 
 ## Running it locally
 
@@ -61,6 +67,9 @@ The pages load, but anything that reads the chain needs the `api/` functions, wh
 | `THRU_SPONSOR_PRIVKEY` | `api/wallet.js` | Its private key, hex. Never commit this. |
 | `THRU_PAD_PROGRAM` | `api/wallet.js` | The launchpad program, if not the default |
 | `THRU_RPC_URL` | `api/rpc.js` | Optional: override the Thru node address |
+| `BLOB_READ_WRITE_TOKEN` | `api/upload.js`, `api/token-meta.js` | Set for you when a Blob store is connected to the project. Without it, uploads answer 501 and the pages offer pasting a link instead |
+| `STATS_KEY` | `api/rpc.js` | Optional: a password for /stats |
+| `VITE_CF_BEACON` | `src/components/Counters.jsx` | Optional: a Cloudflare Web Analytics token. The beacon only loads when it is set |
 | `VITE_*` | `src/lib/addresses.js` | Optional: override program and account addresses after a redeploy |
 
 Program and account addresses have working defaults in `src/lib/addresses.js`. After an alphanet reset they change, and that file is where to update them.

@@ -37,6 +37,10 @@ import {
   burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances,
 } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
+import { TokenIcon, TokenLinks } from '../components/TokenMeta.jsx'
+import { cleanMeta, saveTokenMeta, allTokenMeta } from '../lib/tokenmeta.js'
+import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
+import { signUserMessage } from '../lib/wallet.js'
 import { Tabs } from '../components/Tabs.jsx'
 import { TradeChart, sig4 } from '../components/TradeChart.jsx'
 import { useConfirm } from '../components/Confirm.jsx'
@@ -48,6 +52,7 @@ import {
   TUSD_MINT,
   WTHRU_MINT,
 } from '../lib/addresses.js'
+import './launch.css'
 
 const DECIMALS = 6
 /** Stands in for native THRU in the swap pickers; it is not a mint. */
@@ -438,11 +443,16 @@ function randomSeed() {
  *
  * The commands are still there, under a fold, for anyone who prefers them.
  */
-function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
+function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
+  const fileRef = useRef(null)
 
   const [form, setForm] = useState({ name: '', symbol: '', supply: '1000000000', feePct: '1', virtQuote: '30' })
+  const [social, setSocial] = useState({ x: '', telegram: '', website: '' })
+  const [image, setImage] = useState(null)        // { url, preview } once uploaded
+  const [uploading, setUploading] = useState(false)
+  const [over, setOver] = useState(false)
   const [quote, setQuote] = useState('tusd')
   const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
@@ -452,6 +462,7 @@ function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
   const quoteTicker = quote === 'wthru' ? 'WTHRU' : 'tUSD'
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const setSoc = (k) => (e) => setSocial((s) => ({ ...s, [k]: e.target.value }))
   const symbol = form.symbol.trim().toUpperCase().slice(0, 8)
   const feeBps = Math.round(Math.min(10, Math.max(0, Number(form.feePct) || 0)) * 100)
 
@@ -503,11 +514,43 @@ function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
 
       setDone({ signature: result.signature, mint: made.mint })
       onLaunched?.()
+
+      // The picture and links are stored beside the chain and authorised by a
+      // signature from the creator, so this can only run once the launch is in
+      // the registry for the server to check against. If it does not take, the
+      // token is still launched and the same fields are on the profile page,
+      // which is what the note says rather than making it look like a failure.
+      const meta = cleanMeta({ image: image?.url ?? '', ...social })
+      if (meta.image || meta.x || meta.telegram || meta.website) {
+        setStep('meta')
+        try {
+          await saveTokenMeta({ mint: made.mint, meta, address: wallet.address, sign: signUserMessage })
+        } catch (e) {
+          setError(`Launched, but the picture and links did not save: ${String(e?.message ?? e)}. You can add them from your profile.`)
+        }
+      }
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
       setStep(null)
     }
+  }
+
+  const takeFile = async (file) => {
+    const problem = fileProblem(file)
+    if (problem) { setError(problem); return }
+    setError(null); setUploading(true)
+    try {
+      const shaped = await squareImage(file)
+      try {
+        const url = await uploadImage(shaped.blob, { kind: 'token' })
+        setImage((old) => { if (old?.preview) URL.revokeObjectURL(old.preview); return { url, preview: null } })
+      } finally { URL.revokeObjectURL(shaped.url) }
+    } catch (e) {
+      setError(e instanceof NoStoreError
+        ? 'Pictures are not switched on for this site yet. Everything else still works.'
+        : String(e?.message ?? e))
+    } finally { setUploading(false) }
   }
 
   const manual = [
@@ -520,81 +563,154 @@ function CreateLaunchCard({ nextId, registry, onClose, onLaunched }) {
     `thru token initialize-account ${quoteMint} ${PAD_PROGRAM} <another seed> --fee-payer YOUR_KEY_NAME`,
   ].join('\n')
 
+  const preview = { image: image?.url ?? '' }
+
   return (
-    <section className="card">
+    <section className="card launch-make">
       {gate.modal}
 
       <div className="card-head">
         <div>
           <h2 className="h2">Launch a token</h2>
-          <p className="sub">One button. The whole supply goes onto a curve you cannot mint past.</p>
+          <p className="sub">The whole supply goes onto a curve you cannot mint past.</p>
         </div>
-        <button className="btn ghost" onClick={onClose}>Close</button>
+        <button className="btn ghost sm" onClick={onClose}>Close</button>
       </div>
 
-      <div className="stack" style={{ marginTop: 16 }}>
-        <div className="form-row">
-          <label className="label">Name</label>
-          <input className="field" value={form.name} onChange={set('name')} placeholder="Thru Cat" maxLength={32} />
-        </div>
-        <div className="form-row">
-          <label className="label">Ticker</label>
-          <input className="field mono" value={form.symbol} onChange={set('symbol')} placeholder="TCAT" maxLength={8} />
-        </div>
-        <div className="form-row">
-          <label className="label">Supply</label>
-          <input className="field mono" value={form.supply} onChange={set('supply')} inputMode="decimal" />
-        </div>
-        <div className="form-row">
-          <label className="label">Your fee, percent</label>
-          <input className="field mono" value={form.feePct} onChange={set('feePct')} inputMode="decimal" placeholder="1" />
-        </div>
-        <div className="form-row">
-          <label className="label">Priced in</label>
-          <div className="inline">
-            <button className="btn ghost" onClick={() => setQuote('tusd')} aria-current={quote === 'tusd'}>tUSD</button>
-            <button className="btn ghost" onClick={() => setQuote('wthru')} aria-current={quote === 'wthru'}>WTHRU</button>
+      <div className="launch-grid">
+        <div className="launch-form">
+          <div className="lf-pair">
+            <label className="lf">
+              <span>Name</span>
+              <input className="field" value={form.name} onChange={set('name')} placeholder="Thru Cat" maxLength={32} />
+            </label>
+            <label className="lf">
+              <span>Ticker</span>
+              <input className="field mono" value={form.symbol} onChange={set('symbol')} placeholder="TCAT" maxLength={8} />
+            </label>
           </div>
+
+          {/* The picture sits with the name, because that is the part of the
+              form that decides what the token looks like. Optional, and it says
+              so, so nobody stalls here hunting for a logo. */}
+          <div className="lf-picture">
+            <div
+              className={`tmeta-drop${over ? ' over' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+              onDragLeave={() => setOver(false)}
+              onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer?.files?.[0]; if (f) takeFile(f) }}
+            >
+              <TokenIcon meta={preview} symbol={symbol} mint={form.name} size={48} />
+              <button
+                type="button" className="tmeta-pencil" onClick={() => fileRef.current?.click()}
+                disabled={uploading} aria-label="Add a picture" title="Add a picture"
+              >
+                <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+                  <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                </svg>
+              </button>
+              <input
+                ref={fileRef} type="file" hidden
+                accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) takeFile(f) }}
+              />
+            </div>
+            <p className="fine">
+              {uploading ? 'Uploading…' : image ? 'Picture ready. Press the pencil to change it.' : 'Drop a picture here, or press the pencil. Optional.'}
+            </p>
+          </div>
+
+          <div className="lf-pair">
+            <label className="lf">
+              <span>Supply</span>
+              <input className="field mono" value={form.supply} onChange={set('supply')} inputMode="decimal" />
+            </label>
+            <label className="lf">
+              <span>Your fee, percent</span>
+              <input className="field mono" value={form.feePct} onChange={set('feePct')} inputMode="decimal" placeholder="1" />
+            </label>
+          </div>
+
+          <div className="lf-pair">
+            <div className="lf">
+              <span>Priced in</span>
+              <div className="seg">
+                <button type="button" onClick={() => setQuote('tusd')} aria-pressed={quote === 'tusd'}>tUSD</button>
+                <button type="button" onClick={() => setQuote('wthru')} aria-pressed={quote === 'wthru'}>WTHRU</button>
+              </div>
+            </div>
+            <label className="lf">
+              <span>Opening liquidity, {quoteTicker}</span>
+              <input className="field mono" value={form.virtQuote} onChange={set('virtQuote')} inputMode="decimal" />
+            </label>
+          </div>
+
+          {/* Three places people look for a token, none of them required. A
+              launch with no links is a normal launch. */}
+          <details className="lf-socials">
+            <summary className="fine">Links, all optional</summary>
+            <div className="lf-social-fields">
+              <input className="field" value={social.x} onChange={setSoc('x')} placeholder="X handle" />
+              <input className="field" value={social.telegram} onChange={setSoc('telegram')} placeholder="Telegram handle" />
+              <input className="field" value={social.website} onChange={setSoc('website')} placeholder="Website" />
+            </div>
+          </details>
+
+          {problem && <p className="fine lf-problem">{problem}</p>}
+          {!hasWallet() && <p className="fine lf-problem"><Link to="/wallet">Open a wallet</Link> first.</p>}
+
+          <button
+            className="btn full"
+            onClick={launch}
+            disabled={!!problem || !hasWallet() || step !== null}
+          >
+            {step === 'accounts' ? 'Making the mint and vaults…'
+              : step === 'signing' ? 'Sign the launch…'
+              : step === 'meta' ? 'Saving the picture…'
+              : symbol ? `Launch $${symbol}` : 'Launch'}
+          </button>
+
+          {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+
+          {done && (
+            <div className="rows" style={{ marginTop: 14 }}>
+              <div className="row"><span>Launched</span><b>${symbol}</b></div>
+              <div className="row"><span>Mint</span><span className="mono">{short(done.mint)}</span></div>
+              <div className="row">
+                <span>Transaction</span>
+                <Link className="mono" to={`/tx/${done.signature}`}>{short(done.signature)}</Link>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="form-row">
-          <label className="label">Opening liquidity, {quoteTicker}</label>
-          <input className="field mono" value={form.virtQuote} onChange={set('virtQuote')} inputMode="decimal" />
-        </div>
+
+        {/* What you are about to make, as it will look and as it will behave.
+            Everything here is derived from the form, so there is nothing to
+            keep in step by hand. */}
+        <aside className="launch-preview">
+          <div className="lp-head">
+            <TokenIcon meta={preview} symbol={symbol} mint={form.name} size={52} />
+            <div>
+              <b>{form.name.trim() || 'Your token'}</b>
+              <span className="mono">{symbol ? `$${symbol}` : 'ticker'}</span>
+            </div>
+          </div>
+          <div className="lp-rows">
+            <div><span>Priced in</span><b>{quoteTicker}</b></div>
+            <div><span>Supply</span><b className="mono">{Number(form.supply || 0).toLocaleString('en-US')}</b></div>
+            <div><span>Opening liquidity</span><b className="mono">{Number(form.virtQuote || 0).toLocaleString('en-US')} {quoteTicker}</b></div>
+            <div><span>Your fee</span><b className="mono">{(feeBps / 100).toFixed(2)}%</b></div>
+            {threshold ? <div><span>Graduates at</span><b className="mono">{fmt(threshold)} {quoteTicker}</b></div> : null}
+            <div><span>Mint authority</span><b>Burned to the curve</b></div>
+          </div>
+          <p className="fine">
+            Your fee, up to 10%, is taken on every trade and can be claimed at any time.
+            The supply is minted once, onto the curve.
+          </p>
+        </aside>
       </div>
 
-      <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}>Your fee (max 10%) is charged on every trade and claimable any time.</p>
-
-      {problem && <p className="fine" style={{ marginTop: 12 }}>{problem}</p>}
-
-      {!hasWallet() && (
-        <p className="fine" style={{ marginTop: 12 }}><Link to="/wallet">Open a wallet</Link> first.</p>
-      )}
-
-      <button
-        className="btn"
-        style={{ width: '100%', marginTop: 14 }}
-        onClick={launch}
-        disabled={!!problem || !hasWallet() || step !== null}
-      >
-        {step === 'accounts' ? 'Making the mint and vaults…'
-          : step === 'signing' ? 'Sign the launch…'
-          : symbol ? `Launch $${symbol}` : 'Launch'}
-      </button>
-
-      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
-
-      {done && (
-        <div className="rows" style={{ marginTop: 14 }}>
-          <div className="row"><span>Launched</span><b>${symbol}</b></div>
-          <div className="row"><span>Mint</span><span className="mono">{short(done.mint)}</span></div>
-          <div className="row">
-            <span>Transaction</span>
-            <Link className="mono" to={`/tx/${done.signature}`}>{short(done.signature)}</Link>
-          </div>
-        </div>
-      )}
-
-      <details style={{ marginTop: 16 }}>
+      <details style={{ marginTop: 14 }}>
         <summary className="fine">Do it from the terminal instead</summary>
         <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>Substitute your key name and the addresses each step prints.</p>
         <CopyBlock text={manual} label="Copy the setup commands" />
@@ -1721,7 +1837,7 @@ function CurveChart({ vq, vt, tokensSold, symbol, quote }) {
 
 /** One launch in the list. A row that goes somewhere, not a page of its own
  *  stacked ten deep under nine others. */
-function LaunchRow({ launch, balances, tickers, threshold }) {
+function LaunchRow({ launch, balances, tickers, threshold, meta }) {
   const quote = tickers?.[launch.quoteMint] || short(launch.quoteMint)
   const quoteHeld = balances[launch.quoteVault] ?? 0n
   const raised = quoteHeld > launch.creatorFees ? quoteHeld - launch.creatorFees : 0n
@@ -1730,16 +1846,17 @@ function LaunchRow({ launch, balances, tickers, threshold }) {
 
   return (
     <Link className="launch-row" to={`/launch/${launch.id}`}>
-      <div>
-        <div>
+      <TokenIcon meta={meta} symbol={launch.symbol} mint={launch.mint} size={38} />
+      <div className="lr-main">
+        <div className="lr-title">
           <span className="nm">{launch.name}</span>
-          <span className="sy">${launch.symbol} · paired {quote}</span>
+          <span className="sy">${launch.symbol} · {quote}</span>
         </div>
         <div className="progress-track bar">
           <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
         </div>
-        <div className="fine" style={{ marginTop: 6 }}>
-          {fmt(raised)} of {fmt(threshold)} {quote} raised · {(progress * 100).toFixed(1)}% to graduation
+        <div className="fine lr-note">
+          {fmt(raised)} of {fmt(threshold)} {quote} · {(progress * 100).toFixed(1)}% to graduation
         </div>
       </div>
       <div className="rt">
@@ -1762,6 +1879,7 @@ function LaunchRow({ launch, balances, tickers, threshold }) {
 export function LaunchDetail({ id }) {
   const launchId = Number(id)
   const [slot, setSlot] = useState(null)
+  const [allMeta, setAllMeta] = useState({})
   const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
@@ -1789,7 +1907,14 @@ export function LaunchDetail({ id }) {
     return () => clearInterval(id3)
   }, [reload])
 
+  useEffect(() => {
+    let alive = true
+    allTokenMeta().then((m) => { if (alive) setAllMeta(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
   const launch = data?.launches?.find((l) => l.id === launchId) ?? null
+  const meta = launch ? allMeta[launch.mint] : null
 
   if (loading && !data) {
     return <div className="wrap wrap-top"><p className="fine">Reading the chain.</p></div>
@@ -1821,9 +1946,13 @@ export function LaunchDetail({ id }) {
 
       <section className="card">
         <div className="card-head">
-          <div>
-            <h1 className="h1" style={{ fontSize: 26, margin: 0 }}>{launch.name}</h1>
-            <p className="sub">${launch.symbol} · paired {quote} · {launch.feeBps / 100}% creator fee · <Link className="plain-link" to={`/token/${launch.mint}`}>token page</Link></p>
+          <div className="launch-id">
+            <TokenIcon meta={meta} symbol={launch.symbol} mint={launch.mint} size={44} />
+            <div style={{ minWidth: 0 }}>
+              <h1 className="h1" style={{ fontSize: 26, margin: 0 }}>{launch.name}</h1>
+              <p className="sub">${launch.symbol} · paired {quote} · {launch.feeBps / 100}% creator fee · <Link className="plain-link" to={`/token/${launch.mint}`}>token page</Link></p>
+              <TokenLinks meta={meta} />
+            </div>
           </div>
           <span className="hero-tag">{launch.graduated ? 'Graduated' : 'Live'}</span>
         </div>
@@ -2058,6 +2187,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
 export function LaunchpadPage() {
   const [slot, setSlot] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [meta, setMeta] = useState({})
   const { loading, error, data, balances, tickers, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
@@ -2083,6 +2213,17 @@ export function LaunchpadPage() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
+  // Pictures and links for every launch in one request, refreshed slowly: they
+  // change when a creator edits them, which is rare, and a list of rows should
+  // not make a request per row.
+  useEffect(() => {
+    let alive = true
+    const read = () => allTokenMeta().then((m) => { if (alive) setMeta(m) }).catch(() => {})
+    read()
+    const id = setInterval(() => { if (!document.hidden) read() }, 60_000)
+    return () => { alive = false; clearInterval(id) }
+  }, [])
+
   if (!PAD_PROGRAM || !PAD_REGISTRY) {
     return (
       <div className="wrap">
@@ -2093,47 +2234,42 @@ export function LaunchpadPage() {
     )
   }
 
+  /* The title, the count and the two buttons on one line. This used to be a
+     heading, a lede, then a whole card whose only content was a subtitle and a
+     refresh button, which is three bands of chrome before the first launch. */
   return (
     <div className="wrap">
-      {/* The action belongs beside the title, not buried below the list. Someone
-          arriving to launch something should not have to scroll to find out
-          they can. */}
-      <div className="page-head">
+      <div className="page-head pad-head">
         <div>
           <h1 className="h1">Launchpad</h1>
+          <p className="sub">
+            {data
+              ? `${data.launches.length} of ${data.capacity} slots · graduates at ${fmt(data.gradThreshold)} tUSD`
+              : 'Fixed-supply tokens on a bonding curve'}
+          </p>
         </div>
-        <button className="btn" onClick={() => setCreating((c) => !c)}>
-          {creating ? 'Close' : 'Create a token'}
-        </button>
+        <div className="inline">
+          <button className="btn ghost sm" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
+          {/* Hidden while the form is open: the form has a Close of its own,
+              and two buttons that both close it is one too many. */}
+          {!creating && <button className="btn" onClick={() => setCreating(true)}>Create a token</button>}
+        </div>
       </div>
-      <p className="lede">Fixed-supply tokens on a bonding curve.</p>
 
       {creating && (
         <CreateLaunchCard
           nextId={data ? (data.launches.reduce((m, l) => Math.max(m, l.id), -1) + 1) : 0}
           registry={PAD_REGISTRY}
+          threshold={data?.gradThreshold}
           onClose={() => setCreating(false)}
           onLaunched={reload}
         />
       )}
 
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Launches</h2>
-            <p className="sub">
-              {data
-                ? `${data.launches.length} of ${data.capacity} slots · graduates at ${fmt(data.gradThreshold)} tUSD`
-                : 'reading the chain'}
-            </p>
-          </div>
-          <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
-        </div>
-        {error && <p className="notice bad" style={{ marginTop: 12 }}>Could not read the launch registry. It may be mid-reset.</p>}
-        {!error && data && data.launches.length === 0 && (
-          <p className="fine" style={{ marginTop: 12 }}>Nothing has launched yet.</p>
-        )}
-      </section>
+      {error && <p className="notice bad" style={{ marginTop: 12 }}>Could not read the launch registry. It may be mid-reset.</p>}
+      {!error && data && data.launches.length === 0 && (
+        <section className="card"><p className="fine">Nothing has launched yet.</p></section>
+      )}
 
       {data?.launches.map((l) => (
         <LaunchRow
@@ -2142,6 +2278,7 @@ export function LaunchpadPage() {
           balances={balances}
           tickers={tickers}
           threshold={data.gradThreshold}
+          meta={meta[l.mint]}
         />
       ))}
     </div>

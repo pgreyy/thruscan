@@ -12,6 +12,8 @@ import { decodeSwapRegistry } from '../lib/swap.js'
 import { decodePadRegistry } from '../lib/pad.js'
 import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY, TUSD_MINT } from '../lib/addresses.js'
 import { TradeChart } from '../components/TradeChart.jsx'
+import { TokenIcon, TokenLinks } from '../components/TokenMeta.jsx'
+import { tokenMetaFor } from '../lib/tokenmeta.js'
 import { Search } from './Home.jsx'
 import './home.css'
 
@@ -42,6 +44,13 @@ function Addr({ value }) {
 export function TokenPage() {
   const { mint } = useParams()
   const [state, setState] = useState({ loading: true })
+  const [meta, setMeta] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    tokenMetaFor(mint).then((m) => { if (alive) setMeta(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [mint])
 
   useEffect(() => {
     let alive = true
@@ -102,7 +111,15 @@ export function TokenPage() {
               <h2>{launch?.name || 'Overview'}</h2>
               {launch && <Link className="home-badge plain-link" to={`/launch/${launch.id}`}>{launch.graduated ? 'Graduated launch' : 'Trade on launchpad'}</Link>}
             </div>
-            <Field k="Ticker"><b>{ticker}</b></Field>
+            <Field k="Ticker">
+              <span className="tok-field">
+                <TokenIcon meta={meta} symbol={ticker} mint={mint} size={22} />
+                <b>{ticker}</b>
+              </span>
+            </Field>
+            {meta && (meta.x || meta.telegram || meta.website) && (
+              <Field k="Links"><TokenLinks meta={meta} className="tmeta-links" /></Field>
+            )}
             <Field k="Supply"><span>{info.supplyDisplay}</span><span className="fine detail-after">{info.decimals} decimals</span></Field>
             <Field k="Mint"><Addr value={mint} /></Field>
             <Field k="Mint authority"><Addr value={info.mintAuthority} /></Field>

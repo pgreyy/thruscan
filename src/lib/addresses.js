@@ -14,7 +14,12 @@
 //
 // Last set: 17 September 2026.
 
-const env = import.meta.env
+/* Read by the browser bundle and by serverless functions, which have no
+   import.meta.env at all: touching it there is a TypeError, not an undefined. */
+const env = (() => {
+  try { if (typeof import.meta !== 'undefined' && import.meta.env) return import.meta.env } catch { /* Node */ }
+  return typeof process !== 'undefined' ? process.env : {}
+})()
 
 export const THRUSWAP_PROGRAM =
   env.VITE_THRUSWAP_PROGRAM || 'taanfNIPSm5OA3LDWSLFFAgo3iszZ1rOVsdJPYp4dzDfTg'

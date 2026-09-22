@@ -65,7 +65,7 @@ function buildClient({ url, protocol }) {
   return createThruClient({ transport: make({ baseUrl: url }) })
 }
 
-async function resolveClient() {
+export async function resolveClient() {
   if (cached) return cached
 
   const failures = []
@@ -86,7 +86,7 @@ async function resolveClient() {
   throw error
 }
 
-function withTimeout(promise, ms) {
+export function withTimeout(promise, ms) {
   return Promise.race([
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)),

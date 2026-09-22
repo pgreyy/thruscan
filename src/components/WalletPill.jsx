@@ -27,6 +27,7 @@ import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
 import { ownedNames, knownMints } from '../lib/holdings.js'
+import { NamePfp } from './Pfp.jsx'
 import { isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
 
 const DECIMALS = 6
@@ -49,32 +50,18 @@ function primaryName(address) {
 }
 
 /**
- * An identicon from the address itself.
+ * Whose wallet this is, in twenty pixels.
  *
- * Four coloured cells from a cheap hash. It is not decoration: two addresses
- * that differ only in the middle look identical when truncated, and a glance at
- * the wrong-coloured square is faster than reading six characters.
+ * The same picture as everywhere else: their profile picture when they have
+ * one, a hexagon when it is an NFT they own, and otherwise the identicon drawn
+ * from the address. The identicon is not decoration — two addresses that differ
+ * only in the middle look identical when truncated, and a glance at the
+ * wrong-coloured square is faster than reading six characters.
  */
-function Avatar({ address, size = 20 }) {
-  const cells = useMemo(() => {
-    let h = 0
-    for (let i = 0; i < (address?.length ?? 0); i++) h = (h * 31 + address.charCodeAt(i)) >>> 0
-    return [0, 1, 2, 3].map((i) => `hsl(${(h >> (i * 7)) % 360} 62% 55%)`)
-  }, [address])
-
+function Avatar({ address, label, size = 20 }) {
   if (!address) return null
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: size, height: size, borderRadius: 6, overflow: 'hidden',
-        display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr',
-        flex: `0 0 ${size}px`,
-      }}
-    >
-      {cells.map((c, i) => <span key={i} style={{ background: c }} />)}
-    </span>
-  )
+  const bare = label?.endsWith('.id') ? label.slice(0, -3) : null
+  return <NamePfp name={bare} address={address} size={size} />
 }
 
 /** A wallet, drawn small. Inherits colour, so it works on either theme. */
@@ -335,7 +322,7 @@ export function WalletPill() {
             >
               <WalletGlyph />
             </Link>
-            <Avatar address={address} />
+            <Avatar address={address} label={label} />
             <span className={label.endsWith('.id') ? 'pill-strong' : 'pill-strong mono'}>{label}</span>
             <span className="pill-caret" aria-hidden="true">▾</span>
           </button>

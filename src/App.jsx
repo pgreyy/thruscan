@@ -10,6 +10,7 @@ import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
 import { Tabs } from './components/Tabs.jsx'
 import { GameIdentity } from './components/GameIdentity.jsx'
+import { NamePfp } from './components/Pfp.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
@@ -2057,6 +2058,33 @@ function WordleGame({ onFinished, registry }) {
   )
 }
 
+/**
+ * One line of a leaderboard.
+ *
+ * The picture comes from the .id name the player registered, which is also
+ * where their name on the board comes from, so a hexagon here means the same
+ * thing it means on a profile: that wallet owns that NFT, checked against the
+ * collection rather than taken on trust. Players without a name still get an
+ * identicon, seeded from their player code so it is theirs and stays theirs.
+ */
+function BoardRow({ rank, id, registry, fallbackName, you, detail, value, unit }) {
+  const registered = registry?.byId?.get(id) ?? null
+  return (
+    <div className={`board-row${you ? ' you' : ''}`}>
+      <span className="board-rank">{rank}</span>
+      <NamePfp name={registered} address={id} size={22} />
+      <span className="board-who">
+        <strong>{displayName(registry, id, fallbackName)}{you && ' (you)'}</strong>
+        <span>{detail}</span>
+      </span>
+      <span className="board-count">
+        {value}
+        <span>{unit}</span>
+      </span>
+    </div>
+  )
+}
+
 function WordleBoard({ board, registry, refresh, loading }) {
   const [tab, setTab] = useState('points')
   const me = getPlayerId()
@@ -2079,17 +2107,17 @@ function WordleBoard({ board, registry, refresh, loading }) {
       ) : (
         <div className="board">
           {ranked.slice(0, 50).map((p, i) => (
-            <div className={`board-row${p.id === me ? ' you' : ''}`} key={p.id}>
-              <span className="board-rank">{i + 1}</span>
-              <span className="board-who">
-                <strong>{displayName(registry, p.id, p.name)}{p.id === me && ' (you)'}</strong>
-                <span>{p.won} of {p.played} solved</span>
-              </span>
-              <span className="board-count">
-                {tab === 'points' ? p.points.toLocaleString() : p.bestStreak}
-                <span>{tab === 'points' ? 'points' : `best streak, ${p.streak} now`}</span>
-              </span>
-            </div>
+            <BoardRow
+              key={p.id}
+              rank={i + 1}
+              id={p.id}
+              registry={registry}
+              fallbackName={p.name}
+              you={p.id === me}
+              detail={`${p.won} of ${p.played} solved`}
+              value={tab === 'points' ? p.points.toLocaleString() : p.bestStreak}
+              unit={tab === 'points' ? 'points' : `best streak, ${p.streak} now`}
+            />
           ))}
         </div>
       )}
@@ -2612,17 +2640,17 @@ function Game2048({ registry }) {
             ) : (
               <div className="board">
                 {rank2048(board.entries).slice(0, 50).map((p, i) => (
-                  <div className={`board-row${p.id === getPlayerId() ? ' you' : ''}`} key={p.id}>
-                    <span className="board-rank">{i + 1}</span>
-                    <span className="board-who">
-                      <strong>{displayName(registry, p.id, p.name)}{p.id === getPlayerId() && ' (you)'}</strong>
-                      <span>{p.games} {p.games === 1 ? 'game' : 'games'}, {p.moves} moves</span>
-                    </span>
-                    <span className="board-count">
-                      {p.bestScore.toLocaleString()}
-                      <span>best score</span>
-                    </span>
-                  </div>
+                  <BoardRow
+                    key={p.id}
+                    rank={i + 1}
+                    id={p.id}
+                    registry={registry}
+                    fallbackName={p.name}
+                    you={p.id === getPlayerId()}
+                    detail={`${p.games} ${p.games === 1 ? 'game' : 'games'}, ${p.moves} moves`}
+                    value={p.bestScore.toLocaleString()}
+                    unit="best score"
+                  />
                 ))}
               </div>
             )}

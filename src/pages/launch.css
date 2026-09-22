@@ -1,0 +1,78 @@
+/* Launchpad: the create form and the list of launches.
+
+   The form used to be one column of full-width fields with a label above each,
+   which made six short answers fill a screen and a half. Paired fields and a
+   panel showing what you are about to make put the whole thing in view at once,
+   on a laptop. On a phone the panel drops under the form, where a summary
+   belongs. */
+
+.launch-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 18px;
+  margin-top: 14px;
+  align-items: start;
+}
+
+.launch-form { display: grid; gap: 12px; min-width: 0; }
+
+.lf-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.lf { display: grid; gap: 5px; min-width: 0; }
+.lf > span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.lf .field { width: 100%; }
+
+/* A pair of buttons that read as one control, rather than two loose ghosts. */
+.seg { display: flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.seg button {
+  flex: 1; padding: 9px 10px; font-size: 13px; border: 0; cursor: pointer;
+  background: var(--surface); color: var(--muted); font-family: inherit;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed='true'] { background: var(--signal-soft); color: var(--signal); font-weight: 600; }
+
+.lf-picture { display: flex; align-items: center; gap: 12px; }
+.lf-picture .fine { margin: 0; line-height: 1.55; }
+
+.lf-socials summary { cursor: pointer; }
+.lf-social-fields { display: grid; gap: 8px; margin-top: 10px; }
+.lf-problem { margin: 0; }
+
+.launch-preview {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px;
+  background: var(--soft);
+  min-width: 0;
+}
+.lp-head { display: flex; align-items: center; gap: 11px; }
+.lp-head b { display: block; font-size: 15px; letter-spacing: -0.01em; }
+.lp-head span { font-size: 12px; color: var(--muted); }
+.lp-rows { margin-top: 12px; display: grid; gap: 7px; }
+.lp-rows > div { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; font-size: 12.5px; }
+.lp-rows span { color: var(--muted); }
+.lp-rows b { font-size: 12.5px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.launch-preview .fine { margin: 12px 0 0; line-height: 1.55; }
+
+/* A launch in the list, with its picture. The grid itself is defined with the
+   rest of the row, in components/wallet-pill.css. */
+.lr-main { min-width: 0; }
+.lr-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.lr-title .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lr-title .sy { margin-left: 0; white-space: nowrap; }
+.launch-row .bar { margin-top: 7px; }
+.lr-note { margin-top: 5px; }
+
+.launch-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+.pad-head { align-items: flex-start; }
+.pad-head .sub { margin-top: 2px; }
+
+@media (max-width: 860px) {
+  .launch-grid { grid-template-columns: minmax(0, 1fr); }
+  .launch-preview { order: -1; }
+}
+
+@media (max-width: 430px) {
+  .lf-pair { grid-template-columns: 1fr; }
+}

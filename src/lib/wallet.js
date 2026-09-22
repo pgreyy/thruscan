@@ -47,10 +47,10 @@
 // headers and a browser cannot call it directly.
 
 import {
-  Pubkey, TransactionBuilder, deriveProgramAddress, keys, eoa, signWithDomain,
+  Pubkey, TransactionBuilder, deriveProgramAddress, keys, eoa, signWithDomain, signMessage,
 } from '@thru/sdk'
 import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
-import { isExternal, externalAddress, externalSend } from './external.js'
+import { isExternal, externalAddress, externalSend, provider } from './external.js'
 import { buildWrap, buildUnwrap, WTHRU_MINT_ADDRESS } from './wthru.js'
 
 const STORE_KEY = 'thruscan.wallet.v1'
@@ -860,6 +860,34 @@ const VALUE_FIELD = 256
 
 export async function checkName(name) {
   return api('name-check', { name })
+}
+
+/**
+ * Sign a plain message as this wallet, under Thru's generic message domain.
+ *
+ * Used where something has to be proved to a server rather than to the chain:
+ * that the person asking to change a token's picture is the account the
+ * launchpad records as its creator. Nothing is sent and nothing is spent; the
+ * signature is checked against a public key that is already on chain.
+ *
+ * Both kinds of wallet end up producing the same bytes. The browser wallet
+ * signs with the key it holds; a connected wallet is asked to sign the same
+ * text and returns the signature, because the extension uses the same domain.
+ */
+export async function signUserMessage(text) {
+  const bytes = new TextEncoder().encode(text)
+  if (isExternal()) {
+    const p = provider()
+    if (!p?.signMessage) throw new Error('This wallet cannot sign messages.')
+    try {
+      return await p.signMessage(text)
+    } catch (e) {
+      if (e?.code === 4001) throw new Error('You cancelled it in your wallet.')
+      throw e
+    }
+  }
+  const { publicKey, privateKey } = requireSession()
+  return b64.encode(await signMessage(bytes, privateKey, publicKey))
 }
 
 export async function claimName(name) {
