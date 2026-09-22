@@ -221,6 +221,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .topbar .theme-switch { margin-left: 6px; }
 .topbar .theme-menu { left: 0; right: auto; }
 .topbar {
+  /* Leaves exactly the wallet button's width free (measured in App.jsx). */
+  padding-right: calc(var(--pill-w, 150px) + 22px) !important;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -1313,8 +1315,19 @@ textarea.field { resize: vertical; min-height: 84px; }
 .tile.present { background: var(--ink); border-color: var(--ink); color: var(--canvas); }
 .tile.absent { background: #d9d6d0; border-color: #d9d6d0; color: #7a7871; }
 
-@media (max-width: 419px) {
-  .tile { width: 46px; height: 46px; font-size: 20px; }
+/* Phones: the whole game on one screen. No repeated heading or hint, tiles
+   sized to the screen, and a full-width keyboard right under the board. */
+@media (max-width: 640px) {
+  .wordle-card { padding: 14px 10px 12px; }
+  .wordle-card .card-head, .wordle-hint { display: none; }
+  .wordle-card > .fine { text-align: center; margin: 0 0 8px; }
+  .wordle-card .tiles { gap: 5px; margin-bottom: 12px; }
+  .wordle-card .tile-row { gap: 5px; }
+  .wordle-card .tile { width: min(44px, calc((100vw - 96px) / 5)); height: min(44px, calc((100vw - 96px) / 5)); font-size: 19px; border-radius: 7px; }
+  .wordle-card .keys { width: 100%; gap: 6px; }
+  .wordle-card .key-row { width: 100%; gap: 4px; justify-content: center; }
+  .wordle-card .key { flex: 1 1 0; min-width: 0; max-width: 40px; height: 44px; padding: 0; font-size: 13px; }
+  .wordle-card .key.wide { flex: 1.6 1 0; max-width: 62px; font-size: 10.5px; }
 }
 
 .keys { display: flex; flex-direction: column; gap: 6px; align-items: center; }
@@ -1455,13 +1468,18 @@ textarea.field { resize: vertical; min-height: 84px; }
     border-bottom: 1px solid var(--line);
   }
   .deskbar .brand { flex: 0 0 auto; }
-  .deskbar-search { flex: 0 1 420px; min-width: 150px; }
+  .deskbar-search { flex: 0 1 420px; min-width: 200px; }
+  .deskbar-nav { flex: 0 0 auto; }
+  .deskbar-measure {
+    position: absolute; left: 0; top: 0; display: flex; gap: 4px; white-space: nowrap;
+    visibility: hidden; pointer-events: none;
+  }
   .deskbar-nav { min-width: 0; }
   .deskbar-search .home-search { max-width: none; padding: 3px; box-shadow: none; }
   .deskbar-search .home-search input { padding: 7px 10px; font-size: 14px; }
   .deskbar-search .home-search button { width: 36px; }
   .deskbar-nav { display: flex; align-items: center; gap: 4px; }
-  .deskbar-nav > a, .deskbar-more summary {
+  .deskbar-nav > a, .deskbar-more summary, .deskbar-measure > span {
     padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted);
     text-decoration: none; white-space: nowrap; cursor: pointer; list-style: none;
   }
@@ -1483,7 +1501,7 @@ textarea.field { resize: vertical; min-height: 84px; }
 @media (min-width: 900px) and (max-width: 1180px) {
   .deskbar { gap: 10px; padding-left: 18px; }
   .deskbar-search { flex-basis: 240px; }
-  .deskbar-nav > a, .deskbar-more summary { padding: 8px 7px; font-size: 13.5px; }
+  .deskbar-nav > a, .deskbar-more summary, .deskbar-measure > span { padding: 8px 7px; font-size: 13.5px; }
   .deskbar .brand-name { display: none; }
 }
 
@@ -1505,3 +1523,7 @@ textarea.field { resize: vertical; min-height: 84px; }
 }
 .theme-menu button:hover { background: var(--hover); }
 .theme-menu button.on { font-weight: 600; background: var(--soft); }
+
+@media (max-width: 420px) {
+  .topbar .brand-name { display: none; }
+}

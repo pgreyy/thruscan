@@ -229,3 +229,12 @@ a.col-tr:hover { background: var(--soft); color: var(--ink); }
   .col-tr { grid-template-columns: minmax(0, 1fr) auto auto; padding: 12px 14px; }
   .col-tr > :first-child, .col-tr > :nth-child(5), .col-tr > :nth-child(6), .col-tr > :nth-child(7), .col-tr > :nth-child(8) { display: none; }
 }
+
+/* Phones: stats two to a row, never cut off. */
+@media (max-width: 520px) {
+  .nft-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nft-stats > div { padding: 10px 14px; border-right: 1px solid var(--line) !important; border-bottom: 1px solid var(--line); }
+  .nft-stats > div:nth-child(2n) { border-right: 0 !important; }
+  .nft-stats > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .nft-stats dd { font-size: 15px; overflow: visible; text-overflow: clip; }
+}

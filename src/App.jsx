@@ -1,5 +1,5 @@
 import ThemeSwitch from './components/ThemeSwitch.jsx'
-import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
@@ -627,6 +627,39 @@ function Shell({ children }) {
   const { pathname } = useLocation()
   const current = (to) => (pathname === to ? 'page' : undefined)
 
+  // Desktop bar: as many top links as fit, the rest move into More. The bar
+  // measures itself (and the wallet button, see below) on every resize, so
+  // nothing can ever slide under anything else, at any width or zoom level.
+  const barRef = useRef(null)
+  const [navFit, setNavFit] = useState(TOP_NAV.length)
+  const fitNav = useCallback(() => {
+    const bar = barRef.current
+    if (!bar || window.innerWidth < 900) return
+    const cs = getComputedStyle(bar)
+    const inner = bar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    const gap = parseFloat(cs.columnGap) || 0
+    const brand = bar.querySelector(':scope > .brand')?.offsetWidth ?? 0
+    const right = bar.querySelector(':scope > .deskbar-right')?.offsetWidth ?? 0
+    const widths = [...bar.querySelectorAll('.deskbar-measure > *')].map((e) => e.getBoundingClientRect().width)
+    const more = widths.pop() ?? 60
+    const SEARCH_MIN = 200, LINK_GAP = 4
+    const avail = inner - brand - right - SEARCH_MIN - gap * 3 - 2
+    let used = more, n = 0
+    for (const w of widths) { if (used + LINK_GAP + w > avail) break; used += LINK_GAP + w; n++ }
+    setNavFit(n)
+  }, [])
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const ro = new ResizeObserver(fitNav)
+    ro.observe(bar)
+    fitNav()
+    document.fonts?.ready?.then(fitNav)
+    return () => ro.disconnect()
+  }, [fitNav])
+  const shownNav = TOP_NAV.slice(0, navFit)
+  const moreNav = [...TOP_NAV.slice(navFit), ...MORE_NAV]
+
   const isSmall = () => typeof window !== 'undefined' && window.innerWidth < 900
 
   // Desktop remembers your choice; small screens always start closed, because
@@ -656,6 +689,7 @@ function Shell({ children }) {
       raf = requestAnimationFrame(() => {
         const pill = document.querySelector('.wallet-pill-mount .wallet-pill')
         if (pill) document.documentElement.style.setProperty('--pill-w', `${Math.ceil(pill.getBoundingClientRect().width)}px`)
+        requestAnimationFrame(fitNav)
       })
     }
     const hook = () => {
@@ -704,24 +738,29 @@ function Shell({ children }) {
 
       {/* Desktop: one bar across the top, like a marketplace. The rail above
           is the phone menu only. */}
-      <header className="deskbar">
+      <header className="deskbar" ref={barRef}>
         <Link to="/" className="brand">
           <span className="brand-mark">T</span>
           <span className="brand-name">ThruScan</span>
         </Link>
         <div className="deskbar-search"><Search compact /></div>
         <nav className="deskbar-nav">
-          {TOP_NAV.map((l) => (
+          {shownNav.map((l) => (
             <Link key={l.to} to={l.to} aria-current={[l.to, ...(l.also ?? [])].some((t) => pathname === t || pathname.startsWith(t + '/')) ? 'page' : undefined}>{l.label}</Link>
           ))}
           <details className="deskbar-more">
             <summary>More</summary>
             <div className="deskbar-menu">
-              {MORE_NAV.map((l) => <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>)}
+              {moreNav.map((l) => <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>)}
             </div>
           </details>
         </nav>
         <div className="deskbar-right"><ThemeSwitch /><NetworkStatus /></div>
+        {/* Invisible copy of every top link, for measuring. */}
+        <div className="deskbar-measure" aria-hidden="true">
+          {TOP_NAV.map((l) => <span key={l.to}>{l.label}</span>)}
+          <span>More</span>
+        </div>
       </header>
 
       <header className="topbar">
@@ -1911,7 +1950,7 @@ function WordleGame({ onFinished, registry }) {
 
   return (
     <>
-    <section className="card">
+    <section className="card wordle-card">
       <div className="card-head">
         <div>
           <h2 className="h2">Guess the word</h2>
@@ -1946,7 +1985,7 @@ function WordleGame({ onFinished, registry }) {
       </div>
 
       {status === 'playing' && (
-        <p className="fine" style={{ textAlign: 'center', margin: '-8px 0 14px' }}>
+        <p className="fine wordle-hint" style={{ textAlign: 'center', margin: '-8px 0 14px' }}>
           Tap the board to use your own keyboard, or use the one below.
         </p>
       )}

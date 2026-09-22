@@ -33,6 +33,13 @@ const tokenAmount = (acct) => {
 }
 
 /** A price with sensible precision: 0.0001234, 1.234, 1,234. */
+/** Short form for tight spaces: 30.0M, 1.3K, 0.0033. */
+function compact(v) {
+  if (v === null || !Number.isFinite(v)) return '–'
+  if (v >= 1000) return v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+  return price(v)
+}
+
 function price(v) {
   if (v === null || !Number.isFinite(v)) return '–'
   if (v === 0) return '0'
@@ -134,11 +141,20 @@ function useSeries(tokens) {
     if (!tokens?.length) return
     let alive = true
     const pairs = [...new Map(tokens.map((t) => [t.pair.quoteVault + t.pair.tokenVault, t.pair])).values()]
-    Promise.all(pairs.map(async (p) => [p.quoteVault + p.tokenVault, (await tradesOf(p.quoteVault, p.tokenVault))
-      .filter((x) => Number(x.tokens) > 0)
-      .map((x) => (Number(x.quote) / 10 ** p.qd) / (Number(x.tokens) / 10 ** p.td))]))
-      .then((entries) => { if (alive) setLines(Object.fromEntries(entries)) })
-    return () => { alive = false }
+    // Each pair on its own: one slow or failed history must not flatten the
+    // others. Tried again every minute until each one has loaded.
+    const load = () => pairs.forEach(async (p) => {
+      const k = p.quoteVault + p.tokenVault
+      try {
+        const series = (await tradesOf(p.quoteVault, p.tokenVault))
+          .filter((x) => Number(x.tokens) > 0)
+          .map((x) => (Number(x.quote) / 10 ** p.qd) / (Number(x.tokens) / 10 ** p.td))
+        if (alive && series.length) setLines((o) => ({ ...o, [k]: series }))
+      } catch { /* the next round tries again */ }
+    })
+    load()
+    const t = setInterval(() => { if (!document.hidden) load() }, 60000)
+    return () => { alive = false; clearInterval(t) }
   }, [key])  // eslint-disable-line react-hooks/exhaustive-deps
   return (tokens ?? []).map((t) => {
     const raw = [...(lines[t.pair.quoteVault + t.pair.tokenVault] ?? [])]
@@ -203,10 +219,22 @@ function Banner({ pals, reload }) {
 function Spark({ series, trend = 0 }) {
   const pts = series?.length > 1 ? series.slice(-24) : [1, 1]
   const lo = Math.min(...pts), hi = Math.max(...pts)
-  const y = (v) => (hi === lo ? 14 : 24 - ((v - lo) / (hi - lo)) * 20)
-  const d = pts.map((v, i) => `${(i / (pts.length - 1)) * 72},${y(v).toFixed(1)}`).join(' ')
+  const y = (v) => (hi === lo ? 14 : 25 - ((v - lo) / (hi - lo)) * 22)
+  const d = pts.map((v, i) => `${((i / (pts.length - 1)) * 100).toFixed(2)},${y(v).toFixed(1)}`).join(' ')
   const cls = trend > 0 ? 'lp-spark up' : trend < 0 ? 'lp-spark down' : 'lp-spark'
-  return <svg className={cls} width="72" height="28" viewBox="0 0 72 28" aria-hidden="true"><polyline points={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></svg>
+  // Stretches to the card's width; the stroke keeps its thickness.
+  return (
+    <svg className={cls} viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
+
+/** +2.4%, +340%, or >+999% for anything larger. */
+function pct(c) {
+  if (c > 999) return '>+999%'
+  const sign = c >= 0 ? '+' : ''
+  return `${sign}${Math.abs(c) >= 100 ? Math.round(c) : c.toFixed(1)}%`
 }
 
 function change(series) {
@@ -224,11 +252,12 @@ function Tokens({ tokens }) {
           const c = change(t.series)
           return (
             <Link key={t.symbol} to={t.to} className="lp-token">
-              <span className="lp-coin">{t.symbol.slice(0, 2)}</span>
-              <span className="lp-token-main">
+              <span className="lp-token-top">
+                <span className="lp-coin">{t.symbol.slice(0, 2)}</span>
                 <b>{t.symbol}</b>
-                <span className="mono">{price(t.price)} {t.unit}{c !== null && Math.abs(c) >= 0.05 && <i className={c >= 0 ? 'up' : 'down'}> {c >= 0 ? '+' : ''}{c.toFixed(1)}%</i>}</span>
+                {c !== null && Math.abs(c) >= 0.05 && <i className={c >= 0 ? 'up' : 'down'}>{pct(c)}</i>}
               </span>
+              <span className="lp-token-price mono">{price(t.price)} <small>{t.unit}</small></span>
               <Spark series={t.series} trend={c === null || Math.abs(c) < 0.05 ? 0 : c} />
             </Link>
           )
@@ -310,12 +339,12 @@ export function LandingPage() {
 
         <aside className="lp-side">
           <section className="lp-panel">
-            <header><h3>Launchpad</h3><span className="dim">Market cap</span></header>
+            <header><h3>Launchpad</h3><span className="dim lp-when-wide">Market cap</span></header>
             {launches.slice(0, 7).map((l) => (
               <Link key={l.id} to={`/launch/${l.id}`} className="lp-tr lp-side-row">
                 <span className="lp-coin">{l.symbol.slice(0, 2)}</span>
-                <span className="lp-side-name"><b>{l.symbol}</b><span className="dim">{l.graduated ? 'Graduated' : 'Bonding curve'}</span></span>
-                <span className="mono">{l.cap === null ? '–' : `${price(l.cap)} ${l.unit}`}</span>
+                <span className="lp-side-name"><b>{l.symbol}</b><span className="dim lp-when-wide">{l.graduated ? 'Graduated' : 'Bonding curve'}</span><span className="dim mono lp-when-narrow">{l.cap === null ? '–' : `${compact(l.cap)} ${l.unit}`}</span></span>
+                <span className="mono lp-when-wide">{l.cap === null ? '–' : `${price(l.cap)} ${l.unit}`}</span>
               </Link>
             ))}
             {!markets && <p className="lp-empty">Reading the chain</p>}
