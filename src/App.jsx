@@ -1,6 +1,6 @@
 import ThemeSwitch from './components/ThemeSwitch.jsx'
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, useLocation, useParams, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
@@ -61,7 +61,7 @@ const NAV = [
   { to: '/explorer', label: 'Explorer', icon: 'search' },
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/launch', label: 'Launchpad', icon: 'rocket' },
-  { to: '/nfts', label: 'NFTs', icon: 'pal' },
+  { to: '/collections', label: 'Collections', icon: 'pal' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/builders', label: 'Builders', icon: 'book' },
@@ -73,11 +73,11 @@ const TOP_NAV = [
   { to: '/explorer', label: 'Explore' },
   { to: '/swap', label: 'Swap' },
   { to: '/launch', label: 'Launchpad' },
-  { to: '/nfts', label: 'NFTs', also: ['/pals'] },
+  { to: '/collections', label: 'Collections', also: ['/pals'] },
   { to: '/names', label: 'Names' },
-  { to: '/games', label: 'Games' },
 ]
 const MORE_NAV = [
+  { to: '/games', label: 'Games' },
   { to: '/faucet', label: 'Faucet' },
   { to: '/wall', label: 'Wall' },
   { to: '/builders', label: 'Builders' },
@@ -646,6 +646,30 @@ function Shell({ children }) {
 
   // Following a link on a small screen should put the drawer away again.
   const follow = () => { if (isSmall()) setOpen(false) }
+
+  // The wallet button floats at the top right. Measure it, so the desktop bar
+  // reserves exactly its width and shrinks its own contents to fit.
+  useEffect(() => {
+    let ro = null, mo = null, raf = 0
+    const measure = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const pill = document.querySelector('.wallet-pill-mount .wallet-pill')
+        if (pill) document.documentElement.style.setProperty('--pill-w', `${Math.ceil(pill.getBoundingClientRect().width)}px`)
+      })
+    }
+    const hook = () => {
+      const mount = document.querySelector('.wallet-pill-mount')
+      if (!mount) return false
+      ro = new ResizeObserver(measure); ro.observe(mount)
+      mo = new MutationObserver(() => { measure(); const pill = mount.querySelector('.wallet-pill'); if (pill) ro.observe(pill) })
+      mo.observe(mount, { childList: true, subtree: true, characterData: true })
+      measure()
+      return true
+    }
+    const t = hook() ? null : setInterval(() => { if (hook()) clearInterval(t) }, 300)
+    return () => { clearInterval(t); ro?.disconnect(); mo?.disconnect(); cancelAnimationFrame(raf) }
+  }, [])
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && isSmall()) setOpen(false) }
@@ -3169,7 +3193,8 @@ export default function App() {
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/get-wallet" element={<GetWalletPage />} />
           <Route path="/pals" element={<PalsPage />} />
-          <Route path="/nfts" element={<NftsPage />} />
+          <Route path="/collections" element={<NftsPage />} />
+          <Route path="/nfts" element={<Navigate to="/collections" replace />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
           <Route path="/builders" element={<Tabs tabs={[

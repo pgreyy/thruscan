@@ -1,11 +1,16 @@
 // src/lib/pals/chain.js
 //
-// Where Pixel Pals live on chain, how to read the collection's state, and how
-// to build the four transactions a visitor can send: MINT, SEND and CLAIM (and
-// the wallet's own token account, which the wallet library opens).
+// Where Pixel Pals live on chain, how to read the collection's state and its
+// market, and how to build every transaction a visitor can send.
+//
+// A Pal has two numbers. Its Pal number (0..2025) is the one everyone sees,
+// drawn at random by the program when it is minted. Its NFT id (0, 1, 2... in
+// mint order) is what Thru's NFT program uses to derive the NFT account. The
+// config records both directions, and every builder here that touches a
+// minted Pal takes the Pal number plus its NFT id.
 //
 // Everything here is public. The addresses are fixed by the seeds they were
-// deployed with; the state is one account anyone can read.
+// deployed with; the state is two accounts anyone can read.
 //
 // This file runs in the browser and in the API (Node), so it touches neither
 // the DOM nor import.meta.env directly.
@@ -19,7 +24,7 @@ const env = (() => {
 
 /** The Pixel Pals program (seed pxpals7Q1). */
 export const PALS_PROGRAM = env.VITE_PALS_PROGRAM || 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M'
-/** Its one state account (seed palcfg7Q2 under the program). */
+/** Its state account (seed palcfg7Q2 under the program). */
 export const PALS_CONFIG = env.VITE_PALS_CONFIG || 'tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa'
 /** The market: listings and recent sales (seed palmkt7Q1 under the program). */
 export const PALS_MARKET = env.VITE_PALS_MARKET || 'taRnEmml22MOTV8UN6Y4w3Qp8G_cHRF_ShM9xT7DcCSlyW'
@@ -75,12 +80,12 @@ function layout(payer, readWrite, readOnly) {
 
 // ------------------------------------------------------------- state
 
-export const HDR_SZ = 455
+export const HDR_SZ = 459
 export const ALLOW_SZ = 48
 
-/** Decode the config account. `bytes` is its raw data. */
+/** Decode the config account (version 3). `bytes` is its raw data. */
 export function decodeConfig(bytes) {
-  if (!bytes || bytes.length < HDR_SZ) return null
+  if (!bytes || bytes.length < HDR_SZ || bytes[0] !== 3) return null
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const key = (o) => bytes.slice(o, o + 32)
   const supply = dv.getUint32(202, true)
@@ -88,17 +93,21 @@ export function decodeConfig(bytes) {
   const maxAllow = dv.getUint32(210, true)
   const allowCnt = dv.getUint32(214, true)
   const uriLen = bytes[218]
-  const n = supply
+  const n = supply, bits = Math.ceil(n / 8)
   const offOwners = HDR_SZ, offMinters = HDR_SZ + n * 32, offPrizes = HDR_SZ + n * 64
-  const offClaimed = HDR_SZ + n * 72, offReserved = offClaimed + Math.ceil(n / 8)
-  const offAllow = offReserved + Math.ceil(n / 8)
+  const offClaimed = HDR_SZ + n * 72, offReserved = offClaimed + bits, offMinted = offReserved + bits
+  const offNftOf = offMinted + bits, offOrder = offNftOf + n * 2, offAllow = offOrder + n * 2
+  const bit = (o, i) => Boolean(bytes[o + (i >> 3)] & (1 << (i & 7)))
 
-  const owners = [], minters = []
-  for (let i = 0; i < minted; i++) {
-    owners.push(addr(key(offOwners + i * 32)))
-    minters.push(addr(key(offMinters + i * 32)))
+  // Minted Pals in mint order: Pal number, who minted it, who holds it now.
+  const pals = []
+  for (let k = 0; k < minted; k++) {
+    const num = dv.getUint16(offOrder + k * 2, true)
+    pals.push({ num, nftId: k, minter: addr(key(offMinters + num * 32)), owner: addr(key(offOwners + num * 32)) })
   }
   const prizeVault = key(130)
+  const reservedCnt = dv.getUint32(451, true)
+  const gifted = dv.getUint32(455, true)
   return {
     version: bytes[0],
     prizesLocked: bytes[1] === 1,
@@ -112,11 +121,18 @@ export function decodeConfig(bytes) {
     supply, minted, maxAllow, allowCnt,
     uri: new TextDecoder().decode(bytes.slice(219, 219 + uriLen)),
     reserveWallet: addr(key(419)),
-    reservedCnt: dv.getUint32(451, true),
-    reserved: (id) => Boolean(bytes[offReserved + (id >> 3)] & (1 << (id & 7))),
-    owners, minters,
-    prize: (id) => (id < n ? dv.getBigUint64(offPrizes + id * 8, true) : 0n),
-    claimed: (id) => Boolean(bytes[offClaimed + (id >> 3)] & (1 << (id & 7))),
+    reservedCnt, gifted,
+    /** Numbers set aside for the reserve wallet and not minted yet. */
+    reservedLeft: reservedCnt - gifted,
+    /** Numbers the public can still get. */
+    publicLeft: supply - reservedCnt - (minted - gifted),
+    reserved: (num) => bit(offReserved, num),
+    isMinted: (num) => bit(offMinted, num),
+    nftIdOf: (num) => (bit(offMinted, num) ? dv.getUint16(offNftOf + num * 2, true) : null),
+    ownerOf: (num) => (bit(offMinted, num) ? addr(key(offOwners + num * 32)) : null),
+    pals,
+    prize: (num) => (num < n ? dv.getBigUint64(offPrizes + num * 8, true) : 0n),
+    claimed: (num) => bit(offClaimed, num),
     /** The allowlist ring, newest last. */
     allowed: () => {
       const live = Math.min(allowCnt, maxAllow), out = []
@@ -168,11 +184,11 @@ export function decodeMarket(bytes) {
   }
 }
 
-/** The NFT account for Pal `id`: derived by the NFT program from (mint, id). */
-export async function nftAccountFor(id) {
+/** The NFT account for NFT id `nftId` (mint order), derived by the NFT program from (mint, id). */
+export async function nftAccountFor(nftId, mint = PALS_NFT_MINT) {
   const le = new Uint8Array(8)
-  new DataView(le.buffer).setBigUint64(0, BigInt(id), true)
-  return deriveProgramAddress({ programAddress: NFT_PROGRAM, seed: await sha256(concat(B(PALS_NFT_MINT), le)) }).address
+  new DataView(le.buffer).setBigUint64(0, BigInt(nftId), true)
+  return deriveProgramAddress({ programAddress: NFT_PROGRAM, seed: await sha256(concat(B(mint), le)) }).address
 }
 
 /** A wallet's standard token account for a mint (the zero seed). */
@@ -183,18 +199,15 @@ export async function tokenAccountFor(mint, owner) {
 // --------------------------------------------------------- instructions
 
 /**
- * MINT, paid by `payer`. `id` is the number it will get (the config's
- * `minted`), `proof` the creation proof for that Pal's NFT account.
- *
- *   [0x02][cfg][nft_prog][nft_mint][nft_acct][token_prog][pay_from][treasury]
- *   then the NFT program's mint_to, forwarded as is:
- *   [u32 1][mint][nft][owner = 0][flags u64 = 0][uri 256][proof]
+ * MINT, paid by `payer`. `nftId` is the next NFT id (the config's `minted`),
+ * `proof` the creation proof for that NFT account. The program draws the Pal
+ * number.
+ *   [0x02][cfg][nft_prog][nft_mint][nft_acct][token_prog][pay_from][treasury][proof]
  */
-export async function buildMint({ payer, id, treasury, proof }) {
-  const nft = await nftAccountFor(id)
+export async function buildMint({ payer, nftId, treasury, proof }) {
+  const nft = await nftAccountFor(nftId)
   const payFrom = await tokenAccountFor(WTHRU_MINT, payer)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_NFT_MINT, nft, payFrom, treasury], [NFT_PROGRAM, TOKEN_PROGRAM])
-
   const head = new Uint8Array(15)
   const dv = new DataView(head.buffer)
   head[0] = 0x02
@@ -205,27 +218,18 @@ export async function buildMint({ payer, id, treasury, proof }) {
   dv.setUint16(9, at(TOKEN_PROGRAM), true)
   dv.setUint16(11, at(payFrom), true)
   dv.setUint16(13, at(treasury), true)
-
-  const fwd = new Uint8Array(274)
-  const fv = new DataView(fwd.buffer)
-  fv.setUint32(0, 1, true)
-  fv.setUint16(4, at(PALS_NFT_MINT), true)
-  fv.setUint16(6, at(nft), true)
-  fv.setUint16(8, 0, true)
-  fwd.set(new TextEncoder().encode(PAL_URI_BASE + String(id)), 18)
-
-  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data: concat(head, fwd, proof), nft }
+  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data: concat(head, proof), nft }
 }
 
 /**
- * GIFT: the next Pal, reserved, minted free to the reserve wallet. Signed by
- * the admin or the allower (the server).
- *   [0x0A][cfg][nft_prog][nft_mint][nft_acct][reserve] then mint_to, owner = reserve
+ * GIFT reserved Pal `num` to the reserve wallet, as NFT id `nftId`. Signed by
+ * the admin or the allower.
+ *   [0x0A][cfg][nft_prog][nft_mint][nft_acct][reserve][num u32][proof]
  */
-export async function buildGift({ payer, id, reserve, proof }) {
-  const nft = await nftAccountFor(id)
+export async function buildGift({ payer, nftId, num, reserve, proof }) {
+  const nft = await nftAccountFor(nftId)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_NFT_MINT, nft], [NFT_PROGRAM, reserve])
-  const head = new Uint8Array(11)
+  const head = new Uint8Array(15)
   const dv = new DataView(head.buffer)
   head[0] = 0x0a
   dv.setUint16(1, at(PALS_CONFIG), true)
@@ -233,17 +237,11 @@ export async function buildGift({ payer, id, reserve, proof }) {
   dv.setUint16(5, at(PALS_NFT_MINT), true)
   dv.setUint16(7, at(nft), true)
   dv.setUint16(9, at(reserve), true)
-  const fwd = new Uint8Array(274)
-  const fv = new DataView(fwd.buffer)
-  fv.setUint32(0, 1, true)
-  fv.setUint16(4, at(PALS_NFT_MINT), true)
-  fv.setUint16(6, at(nft), true)
-  fv.setUint16(8, at(reserve), true)
-  fwd.set(new TextEncoder().encode(PAL_URI_BASE + String(id)), 18)
-  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data: concat(head, fwd, proof), nft }
+  dv.setUint32(11, num, true)
+  return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data: concat(head, proof), nft }
 }
 
-/** RESERVE (set = true) or UNRESERVE a list of numbers. Admin only. */
+/** RESERVE (set = true) or UNRESERVE a list of Pal numbers. Admin only. */
 export function buildReserve({ payer, ids, set = true }) {
   const { rw, at } = layout(payer, [PALS_CONFIG], [])
   const data = new Uint8Array(5 + ids.length * 4)
@@ -255,9 +253,9 @@ export function buildReserve({ payer, ids, set = true }) {
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: [], data }
 }
 
-/** SEND Pal `id` from `payer` (its holder) to `dest`. */
-export async function buildSend({ payer, id, dest }) {
-  const nft = await nftAccountFor(id)
+/** SEND Pal `num` (NFT id `nftId`) from `payer`, its holder, to `dest`. */
+export async function buildSend({ payer, num, nftId, dest }) {
+  const nft = await nftAccountFor(nftId)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, nft], [NFT_PROGRAM, PALS_NFT_MINT, dest])
   const data = new Uint8Array(15)
   const dv = new DataView(data.buffer)
@@ -267,12 +265,12 @@ export async function buildSend({ payer, id, dest }) {
   dv.setUint16(5, at(PALS_NFT_MINT), true)
   dv.setUint16(7, at(nft), true)
   dv.setUint16(9, at(dest), true)
-  dv.setUint32(11, id, true)
+  dv.setUint32(11, num, true)
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
 }
 
-/** CLAIM what Pal `id` holds, into the holder's WTHRU account. */
-export async function buildClaim({ payer, id, vault }) {
+/** CLAIM what Pal `num` holds, into the holder's WTHRU account. */
+export async function buildClaim({ payer, num, vault }) {
   const dest = await tokenAccountFor(WTHRU_MINT, payer)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, vault, dest], [TOKEN_PROGRAM])
   const data = new Uint8Array(13)
@@ -282,7 +280,7 @@ export async function buildClaim({ payer, id, vault }) {
   dv.setUint16(3, at(TOKEN_PROGRAM), true)
   dv.setUint16(5, at(vault), true)
   dv.setUint16(7, at(dest), true)
-  dv.setUint32(9, id, true)
+  dv.setUint32(9, num, true)
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
 }
 
@@ -299,13 +297,13 @@ export function buildAllow({ payer, wallet, tag }) {
 }
 
 /**
- * LIST Pal `id` for `price` WTHRU base units (1 THRU each). The Pal moves into
+ * LIST Pal `num` for `price` WTHRU base units (1 THRU each). The Pal moves into
  * the program's keeping until it sells or is delisted. Listing a Pal that is
  * already listed by the same wallet changes its price.
- *   [0x0D][cfg][market][nft_prog][nft_mint][nft_acct][escrow][payout][id u32][price u64]
+ *   [0x0D][cfg][market][nft_prog][nft_mint][nft_acct][escrow][payout][num u32][price u64]
  */
-export async function buildList({ payer, id, price }) {
-  const nft = await nftAccountFor(id)
+export async function buildList({ payer, num, nftId, price }) {
+  const nft = await nftAccountFor(nftId)
   const payout = await tokenAccountFor(WTHRU_MINT, payer)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_MARKET, nft], [NFT_PROGRAM, PALS_NFT_MINT, payout])
   const data = new Uint8Array(27)
@@ -318,14 +316,14 @@ export async function buildList({ payer, id, price }) {
   dv.setUint16(9, at(nft), true)
   dv.setUint16(11, 1, true) // the program itself holds listed Pals
   dv.setUint16(13, at(payout), true)
-  dv.setUint32(15, id, true)
+  dv.setUint32(15, num, true)
   dv.setBigUint64(19, BigInt(price), true)
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
 }
 
-/** DELIST: the Pal comes back to the seller. [0x0E][cfg][market][nft_prog][nft_mint][nft_acct][id u32] */
-export async function buildDelist({ payer, id }) {
-  const nft = await nftAccountFor(id)
+/** DELIST: the Pal comes back to the seller. [0x0E][cfg][market][nft_prog][nft_mint][nft_acct][num u32] */
+export async function buildDelist({ payer, num, nftId }) {
+  const nft = await nftAccountFor(nftId)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_MARKET, nft], [NFT_PROGRAM, PALS_NFT_MINT])
   const data = new Uint8Array(15)
   const dv = new DataView(data.buffer)
@@ -335,21 +333,21 @@ export async function buildDelist({ payer, id }) {
   dv.setUint16(5, at(NFT_PROGRAM), true)
   dv.setUint16(7, at(PALS_NFT_MINT), true)
   dv.setUint16(9, at(nft), true)
-  dv.setUint32(11, id, true)
+  dv.setUint32(11, num, true)
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
 }
 
 /**
  * BUY one or more listed Pals (a sweep) in one transaction, all or nothing.
- * `items` are listings as decodeMarket returns them; each price is also the
- * most this buyer agrees to pay, so a seller raising it first makes it fail.
+ * `items` are [{ id (Pal number), nftId, payout, price }]; each price is also
+ * the most this buyer agrees to pay, so a seller raising it first makes it fail.
  *   [0x0F][cfg][market][nft_prog][nft_mint][token_prog][pay_from][fee_to][count u8]
- *   then count x { nft_acct u16, payout u16, id u32, max_price u64 }
+ *   then count x { nft_acct u16, payout u16, num u32, max_price u64 }
  */
 export async function buildBuy({ payer, items, treasury }) {
   if (!items.length || items.length > 8) throw new Error('Pick between 1 and 8 Pals.')
   const payFrom = await tokenAccountFor(WTHRU_MINT, payer)
-  const nfts = await Promise.all(items.map((it) => nftAccountFor(it.id)))
+  const nfts = await Promise.all(items.map((it) => nftAccountFor(it.nftId)))
   const payouts = items.map((it) => it.payout)
   const { rw, ro, at } = layout(payer, [PALS_CONFIG, PALS_MARKET, payFrom, treasury, ...nfts, ...payouts], [NFT_PROGRAM, PALS_NFT_MINT, TOKEN_PROGRAM])
   const data = new Uint8Array(16 + items.length * 16)
@@ -386,7 +384,6 @@ export function palsError(code) {
     21: 'Already claimed.',
     23: 'Someone minted at the same moment. Try again.',
     25: 'Pick a different wallet to send to.',
-    28: 'That number is reserved. Trying the next one.',
     30: 'That Pal is no longer for sale.',
     31: 'The price went up before your purchase landed. Nothing was charged.',
     32: 'The market is not set up yet.',

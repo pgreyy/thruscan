@@ -254,7 +254,7 @@ export function NftCollection({ mint, me }) {
             {g.items.map((n) => (
               <button key={n.account} className="row nft-row" onClick={() => go(`/nft/${n.account}`)}>
                 <NftImage src={n.image} id={n.id} />
-                <span className="row-main"><b>{n.name || `#${n.id}`}</b></span>
+                <span className="row-main"><b>{n.name || `#${n.id}`}</b>{n.listed && <span className="fine">Listed · {Number(n.price).toLocaleString('en-US')} THRU</span>}</span>
                 <span className="chev">›</span>
               </button>
             ))}
@@ -287,7 +287,7 @@ export function NftScreen({ account: nftAccount, me }) {
       </div>
     )
   }
-  const canSend = n.authority === me || (n.mint === PALS.mint && n.authority === PALS.program)
+  const canSend = !n.listed && (n.authority === me || (n.mint === PALS.mint && n.authority === PALS.program))
   const send = () => act.run(async () => {
     const sig = await bg('sendNft', { account: nftAccount, to: to.trim() })
     const r = await bg('waitFor', { signature: sig })
@@ -305,7 +305,10 @@ export function NftScreen({ account: nftAccount, me }) {
           <div><span>Number</span><b>#{n.id}</b></div>
           <div><span>Mint</span><a className="mono" href={`${EXPLORER}/account/${n.mint}`} target="_blank" rel="noreferrer">{short(n.mint)}</a></div>
         </div>
-        {!canSend && !result && (
+        {n.listed && (
+          <p className="fine">Listed for {Number(n.price).toLocaleString('en-US')} THRU. The market holds it until it sells. To change the price or take it back, <a href={`${EXPLORER}/pals?id=${n.id}`} target="_blank" rel="noreferrer">open it on ThruScan</a>.</p>
+        )}
+        {!canSend && !n.listed && !result && (
           <p className="fine">Transfers for this collection go through its own program, so send it from the collection's site.</p>
         )}
         {!canSend ? null : !result ? (

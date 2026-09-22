@@ -175,10 +175,15 @@ export function describe(item, me) {
 export function decodeNft(b) {
   if (!b || b.length !== 336) return null
   const uri = new TextDecoder().decode(b.slice(80, 336)).replace(/\0+$/, '')
+  const nftId = readU64(b, 64).toString()
+  // The number people see. A collection whose uri ends in ?id=N (Pixel Pals,
+  // numbered at random when minted) shows N; otherwise it is the NFT id.
+  const m = uri.match(/[?&]id=(\d+)$/)
   return {
     mint: Pubkey.from(b.slice(0, 32)).toThruFmt(),
     owner: Pubkey.from(b.slice(32, 64)).toThruFmt(),
-    id: readU64(b, 64).toString(),
+    id: m ? m[1] : nftId,
+    nftId,
     uri,
   }
 }
@@ -223,11 +228,24 @@ export async function nfts(url, address) {
       if (!page) break
     } catch { break }
   }
-  const infos = await Promise.all([...candidates].map(async (a) => [a, await accountInfo(url, a)]))
+  // Pixel Pals, straight from ThruScan: the ones this wallet holds (a busy
+  // wallet's history can scroll past the transaction that brought one in) and
+  // the ones it has listed, which the market holds until they sell.
+  let listings = []
+  try {
+    const r = await fetch(`${EXPLORER}/api/rpc?action=pals&lite=1&wallet=${address}`, { signal: AbortSignal.timeout(30000) })
+    const j = await r.json()
+    for (const x of j?.mine?.nfts ?? []) candidates.add(x.account)
+    listings = j?.mine?.listings ?? []
+    for (const x of listings) candidates.add(x.account)
+  } catch { /* history alone, then */ }
+  const listed = new Map(listings.map((x) => [x.account, x]))
+  const infos = await Promise.all([...candidates].map(async (a) => [a, await accountInfo(url, a).catch(() => null)]))
   const held = infos
-    .filter(([, info]) => info.owner === PROGRAMS.NFT)
+    .filter(([, info]) => info && info.owner === PROGRAMS.NFT)
     .map(([account, info]) => ({ account, ...decodeNft(info.data) }))
-    .filter((n) => n.owner === address)
+    .filter((n) => n.owner === address || (listed.has(n.account) && n.owner === PALS.program))
+    .map((n) => (listed.has(n.account) ? { ...n, listed: true, price: listed.get(n.account).price } : n))
   // Each collection's mint records its authority. On Thru's NFT program that
   // authority, not the holder, is what can move an NFT (checked on alphanet),
   // so it decides who can send it: the holder directly only when the holder is

@@ -128,8 +128,14 @@ a.lp-tr:hover { background: var(--soft); color: var(--ink); }
 .lp-token-main b { font-size: 14px; }
 .lp-token-main .mono { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-token-main i { font-style: normal; }
-.lp-token-main i.up { color: var(--good); }
-.lp-token-main i.down { color: var(--bad); }
-.lp-spark { flex: 0 0 auto; color: var(--ink); }
+.lp-token-main i.up { color: #16a34a; }
+.lp-token-main i.down { color: #dc2626; }
+:root[data-theme='dark'] .lp-token-main i.up { color: #4ade80; }
+:root[data-theme='dark'] .lp-token-main i.down { color: #f87171; }
+.lp-spark { flex: 0 0 auto; color: var(--muted); }
+.lp-spark.up { color: #16a34a; }
+.lp-spark.down { color: #dc2626; }
+:root[data-theme='dark'] .lp-spark.up { color: #4ade80; }
+:root[data-theme='dark'] .lp-spark.down { color: #f87171; }
 @media (max-width: 1100px) { .lp-tokens { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 900px) { .lp-search { display: none; } }

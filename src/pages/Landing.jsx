@@ -191,7 +191,7 @@ function Banner({ pals, reload }) {
             <Link className="lp-banner-ghost" to="/pals">{open ? 'View collection' : 'Collection'}</Link>
           </div>
         </div>
-        {m.minted !== null && <p className="lp-banner-note">Minted. <Link to={`/pals?id=${m.minted}`}>Pixel Pal #{m.minted}</Link> is yours.</p>}
+        {m.minted !== null && <p className="lp-banner-note">{m.minted === 'unknown' ? <>Minted. <Link to="/pals?tab=yours">See your Pal</Link>.</> : <>Minted. <Link to={`/pals?id=${m.minted}`}>Pixel Pal #{m.minted}</Link> is yours.</>}</p>}
         {m.needWallet && <p className="lp-banner-note">You need a Thru wallet to mint. <Link to="/wallet">Get one here</Link>, it takes a minute.</p>}
         {m.error && <p className="lp-banner-note bad">{m.error}</p>}
       </div>
@@ -200,12 +200,13 @@ function Banner({ pals, reload }) {
 }
 
 /** A small price line from a list of prices; flat when there is no history. */
-function Spark({ series }) {
+function Spark({ series, trend = 0 }) {
   const pts = series?.length > 1 ? series.slice(-24) : [1, 1]
   const lo = Math.min(...pts), hi = Math.max(...pts)
   const y = (v) => (hi === lo ? 14 : 24 - ((v - lo) / (hi - lo)) * 20)
   const d = pts.map((v, i) => `${(i / (pts.length - 1)) * 72},${y(v).toFixed(1)}`).join(' ')
-  return <svg className="lp-spark" width="72" height="28" viewBox="0 0 72 28" aria-hidden="true"><polyline points={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></svg>
+  const cls = trend > 0 ? 'lp-spark up' : trend < 0 ? 'lp-spark down' : 'lp-spark'
+  return <svg className={cls} width="72" height="28" viewBox="0 0 72 28" aria-hidden="true"><polyline points={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></svg>
 }
 
 function change(series) {
@@ -228,7 +229,7 @@ function Tokens({ tokens }) {
                 <b>{t.symbol}</b>
                 <span className="mono">{price(t.price)} {t.unit}{c !== null && Math.abs(c) >= 0.05 && <i className={c >= 0 ? 'up' : 'down'}> {c >= 0 ? '+' : ''}{c.toFixed(1)}%</i>}</span>
               </span>
-              <Spark series={t.series} />
+              <Spark series={t.series} trend={c === null || Math.abs(c) < 0.05 ? 0 : c} />
             </Link>
           )
         })}

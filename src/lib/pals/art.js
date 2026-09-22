@@ -534,6 +534,26 @@ export function allPals(minters) {
   return pals
 }
 
+/**
+ * Every minted Pal, from the chain's mint order. `list` is [{ num, minter }]
+ * in the order they were minted (earlier Pals are never changed by later
+ * ones). Returns a Map from Pal number to Pal, each with its rank (1 is the
+ * rarest) and its place in the mint order (`nftId`).
+ */
+export function palsInOrder(list) {
+  const taken = new Set()
+  const out = new Map()
+  list.forEach(({ num, minter }, nftId) => {
+    const p = palFor(num, minter, taken)
+    taken.add(p.signature)
+    p.nftId = nftId
+    out.set(num, p)
+  })
+  const nums = [...out.keys()].sort((a, b) => (out.get(b).score - out.get(a).score) || (a - b))
+  nums.forEach((num, i) => { out.get(num).rank = i + 1 })
+  return out
+}
+
 /* Rarity score: how unlikely each trait is, added up (in bits). */
 const ODDS = {}
 for (const [k, list] of Object.entries({ Body: BODIES, Pattern: PATTERNS, Top: EARS, Eyes: EYES, Mouth: MOUTHS, Headwear: HATS, Face: FACEWEAR, Limbs: LIMBS, Background: SKY })) {

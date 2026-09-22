@@ -10,7 +10,7 @@ import { useUnlockGate, isDismissal } from '../../components/Unlock.jsx'
 import { hasProvider, connectExternal } from '../external.js'
 import {
   hasWallet, currentAddress, signAndSend, waitForResult, wrapThru, nativeBalance, tokenBalances,
-  requestProof, palsAllow, palsAdvance, accountExists,
+  requestProof, palsAllow, accountExists,
 } from '../wallet.js'
 import { buildMint, palsError, nftAccountFor, WTHRU_MINT } from './chain.js'
 
@@ -54,28 +54,30 @@ export function useMint({ price = 1000n, onMinted } = {}) {
       setStep('clearing')
       await palsAllow(me)
 
-      // The number this Pal gets is the count right now. If someone else takes
-      // it first, the program says so and this tries the next one.
+      // The program draws the Pal's number at random. What is fixed in
+      // advance is only the NFT id (the mint count); if someone else takes
+      // that id first, the program says so and this tries again.
       for (let attempt = 0; attempt < 6; attempt++) {
         setStep('minting')
-        let now = await state(me)
-        if (now.nextReserved) {
-          await palsAdvance().catch(() => {})
-          now = await state(me)
-          if (now.nextReserved) continue
-        }
-        if (now.minted >= now.supply) throw new Error('Sold out.')
-        const id = now.minted
-        const proof = await requestProof(await nftAccountFor(id))
-        const tx = await buildMint({ payer: me, id, treasury: now.treasury, proof })
+        const now = await state(me)
+        if ((now.publicLeft ?? 1) <= 0) throw new Error('Sold out.')
+        const nftId = now.minted
+        const proof = await requestProof(await nftAccountFor(nftId))
+        const tx = await buildMint({ payer: me, nftId, treasury: now.treasury, proof })
         const sig = await signAndSend({ ...tx, computeUnits: 300_000_000, stateUnits: 60_000, memoryUnits: 60_000 })
         const r = await waitForResult(sig, 30_000)
         if (r.settled && !r.succeeded && Number(r.userError) === 23) continue
-        if (r.settled && !r.succeeded && Number(r.userError) === 28) { await palsAdvance().catch(() => {}); continue }
         if (r.settled && !r.succeeded) throw new Error(palsError(r.userError))
-        setMinted(id)
+        // Which number it drew: the Pal in this wallet with that NFT id.
+        let num = null
+        for (let i = 0; i < 5 && num === null; i++) {
+          const after = await state(me)
+          num = after.mine?.nfts?.find((x) => x.nftId === nftId)?.id ?? null
+          if (num === null) await new Promise((res) => setTimeout(res, 2000))
+        }
+        setMinted(num ?? 'unknown')
         setStep(null)
-        await onMinted?.(id)
+        await onMinted?.(num)
         return
       }
       throw new Error('Busy right now. Try again in a moment.')

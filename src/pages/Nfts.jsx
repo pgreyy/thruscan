@@ -1,100 +1,113 @@
 // src/pages/Nfts.jsx
 //
-// The NFT market's front page: every collection with its numbers, the
-// cheapest things for sale right now, and the latest sales. Pixel Pals is the
-// first collection; artists' collections from the launchpad join this table.
+// Collections: every NFT collection on ThruScan in one ranked table, with
+// its floor, volume, sales, listings, owners and size. A row opens the
+// collection's own page, where its items are bought and sold.
 
-import { useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useWallet } from './Wallet.jsx'
-import { usePals, PalArt, PalCard, fmt, short, ago } from './Pals.jsx'
-import { useMarket } from '../lib/pals/useMarket.js'
-import { GENESIS, palFor } from '../lib/pals/art.js'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { COLLECTIONS } from '../lib/collections.js'
+import { PalArt, fmt } from './Pals.jsx'
 import './nfts.css'
 
+const COLS = [
+  ['floor', 'Floor'],
+  ['volume', 'Volume'],
+  ['sales', 'Sales'],
+  ['listed', 'Listed'],
+  ['owners', 'Owners'],
+  ['minted', 'Items'],
+]
+
+function useStats() {
+  const [stats, setStats] = useState({})
+  const [errors, setErrors] = useState({})
+  useEffect(() => {
+    let alive = true
+    const load = () => COLLECTIONS.forEach((c) => c.stats()
+      .then((s) => { if (alive) { setStats((o) => ({ ...o, [c.slug]: s })); setErrors((o) => ({ ...o, [c.slug]: null })) } })
+      .catch((e) => { if (alive) setErrors((o) => ({ ...o, [c.slug]: String(e?.message ?? e) })) }))
+    load()
+    const t = setInterval(() => { if (!document.hidden) load() }, 15_000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+  return { stats, errors }
+}
+
+function Avatar({ c }) {
+  const pal = useMemo(() => c.avatar(), [c])
+  return <PalArt pal={pal} size={44} className="col-avatar" />
+}
+
 export function NftsPage() {
-  const wallet = useWallet()
-  const navigate = useNavigate()
-  const { info, error, reload, pals, listings } = usePals(wallet.address)
-  const market = useMarket({ onDone: reload })
-  const m = info?.market
-  const genesis = useMemo(() => palFor(GENESIS.id, GENESIS.wallet), [])
-  const taken = info ? info.minted + (info.reservedAhead ?? 0) : 0
-  const cheapest = (m?.listings ?? []).slice(0, 10)
-  const mine = new Set([...(info?.mine?.holding ?? []), ...(info?.mine?.listed ?? [])])
-  const open = (id) => navigate(`/pals?id=${id}`)
+  const { stats, errors } = useStats()
+  const [filter, setFilter] = useState('all')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState({ key: 'volume', dir: -1 })
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return COLLECTIONS
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.creator.toLowerCase().includes(q))
+      .filter((c) => filter !== 'minting' || stats[c.slug]?.minting)
+      .sort((a, b) => {
+        const x = stats[a.slug]?.[sort.key] ?? -1, y = stats[b.slug]?.[sort.key] ?? -1
+        return (x - y) * sort.dir || a.name.localeCompare(b.name)
+      })
+  }, [stats, filter, query, sort])
+
+  const head = (key, label) => (
+    <button className={`col-sort${sort.key === key ? ' on' : ''}`} onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : -1 }))}>
+      {label}{sort.key === key && <span aria-hidden="true">{sort.dir < 0 ? ' ↓' : ' ↑'}</span>}
+    </button>
+  )
 
   return (
     <div className="nft-page">
-      {market.modal}
-      <div className="nft-title">
-        <h1>NFTs</h1>
-        <Link to="/pals" className="btn">Mint Pixel Pals</Link>
+      <div className="col-top">
+        <h1>Collections</h1>
+        <div className="col-tools">
+          <div className="col-seg" role="tablist">
+            {[['all', 'All'], ['minting', 'Minting now']].map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilter(k)}>{l}</button>
+            ))}
+          </div>
+          <input className="field col-search" placeholder="Search collections" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
       </div>
 
-      <section className="nft-section">
-        <div className="nft-table nft-collections" role="table">
-          <div className="nft-tr nft-th" role="row">
-            <span>Collection</span><span>Floor</span><span>Volume</span><span>Sales</span><span>Listed</span><span>Owners</span><span>Items</span>
-          </div>
-          <Link to="/pals" className="nft-tr" role="row">
-            <span className="nft-item">
-              <PalArt pal={genesis} size={40} className="nft-thumb" />
-              <span><b>Pixel Pals</b><i>{info && taken < info.supply ? 'Minting' : 'Thru'}</i></span>
-            </span>
-            <span className="mono">{m?.floor ? `${fmt(m.floor)} THRU` : '–'}</span>
-            <span className="mono">{m?.live ? `${fmt(m.volume)} THRU` : '–'}</span>
-            <span className="mono">{m?.live ? fmt(m.sales) : '–'}</span>
-            <span className="mono">{m?.live ? fmt(m.listed) : '–'}</span>
-            <span className="mono">{m ? fmt(m.holders) : '–'}</span>
-            <span className="mono">{info ? `${fmt(taken)} / ${fmt(info.supply)}` : '–'}</span>
-          </Link>
+      <div className="col-table" role="table">
+        <div className="col-tr col-th" role="row">
+          <span>#</span><span>Collection</span>
+          {COLS.map(([k, l]) => <span key={k}>{head(k, l)}</span>)}
         </div>
-        {error && <p className="notice bad" style={{ marginTop: 10 }}>{error}</p>}
-      </section>
-
-      <section className="nft-section">
-        <header className="nft-section-head">
-          <h2>Cheapest right now</h2>
-          <Link to="/pals?tab=sale">All for sale</Link>
-        </header>
-        {!info ? <p className="nft-empty">{error ? 'Could not load the market. It retries every few seconds.' : 'Loading…'}</p> : cheapest.length === 0
-          ? <p className="nft-empty">Nothing is listed yet. Holders list from a Pal's page, and the cheapest show up here.</p>
-          : (
-            <div className="nft-grid">
-              {cheapest.map((l) => pals[l.id] && (
-                <PalCard key={l.id} id={l.id} pal={pals[l.id]} listing={listings.get(l.id)} mine={mine.has(l.id)}
-                  onOpen={open} onBuy={market.buy} busy={market.busy !== null} />
-              ))}
-            </div>
-          )}
-        {market.note && <p className="notice" style={{ marginTop: 12 }}>{market.note}</p>}
-        {market.error && <p className="notice bad" style={{ marginTop: 12 }}>{market.error}</p>}
-        {market.needWallet && <p className="notice" style={{ marginTop: 12 }}>You need a Thru wallet to buy. <Link to="/wallet">Get one here</Link>.</p>}
-      </section>
-
-      <section className="nft-section">
-        <header className="nft-section-head">
-          <h2>Latest sales</h2>
-          <Link to="/pals?tab=activity">Activity</Link>
-        </header>
-        {!info ? <p className="nft-empty">Loading…</p> : !(m?.recent?.length)
-          ? <p className="nft-empty">No sales yet.</p>
-          : (
-            <div className="nft-table" role="table">
-              {m.recent.slice(0, 8).map((s) => (
-                <div className="nft-tr nft-sale" role="row" key={s.n ?? `${s.id}-${s.slot}`}>
-                  <button className="nft-item" onClick={() => open(s.id)}>
-                    {pals[s.id] && <PalArt pal={pals[s.id]} size={40} className="nft-thumb" />}
-                    <span><b>Pixel Pal #{s.id}</b><i>{short(s.seller)} to {short(s.buyer)}</i></span>
-                  </button>
-                  <span className="mono">{fmt(s.price)} THRU</span>
-                  <span className="nft-muted">{ago(s.time)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-      </section>
+        {rows.map((c, i) => {
+          const s = stats[c.slug]
+          return (
+            <Link key={c.slug} to={c.to} className="col-tr" role="row">
+              <span className="col-rank">{i + 1}</span>
+              <span className="col-name">
+                <Avatar c={c} />
+                <span>
+                  <b>{c.name}</b>
+                  <i>
+                    by {c.creator}
+                    {s?.minting && <em> · Minting {fmt(s.minted)} / {fmt(s.supply)}</em>}
+                    {errors[c.slug] && !s && <em> · not loading right now</em>}
+                  </i>
+                </span>
+              </span>
+              <span className="mono">{s?.floor != null ? `${fmt(s.floor)} THRU` : '–'}</span>
+              <span className="mono">{s?.volume != null ? `${fmt(s.volume)} THRU` : '–'}</span>
+              <span className="mono">{s?.sales != null ? fmt(s.sales) : '–'}</span>
+              <span className="mono">{s?.listed != null ? fmt(s.listed) : '–'}</span>
+              <span className="mono">{s?.owners != null ? fmt(s.owners) : '–'}</span>
+              <span className="mono">{s ? fmt(s.minted) : '–'}</span>
+            </Link>
+          )
+        })}
+        {rows.length === 0 && <p className="nft-empty col-none">{filter === 'minting' ? 'Nothing is minting right now.' : 'No collection matches that.'}</p>}
+      </div>
     </div>
   )
 }

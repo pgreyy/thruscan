@@ -1447,12 +1447,16 @@ textarea.field { resize: vertical; min-height: 84px; }
   .deskbar {
     position: sticky; top: 0; z-index: 50;
     display: flex; align-items: center; gap: 22px;
-    height: 64px; padding: 0 200px 0 28px; box-sizing: border-box;
+    /* The wallet button floats over the right end; its width is measured
+       (--pill-w, set in App.jsx) so the bar leaves exactly that much room and
+       everything else shrinks to fit instead of sliding under it. */
+    height: 64px; padding: 0 calc(var(--pill-w, 170px) + 32px) 0 28px; box-sizing: border-box;
     background: var(--glass); backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line);
   }
   .deskbar .brand { flex: 0 0 auto; }
-  .deskbar-search { flex: 0 1 420px; min-width: 200px; }
+  .deskbar-search { flex: 0 1 420px; min-width: 150px; }
+  .deskbar-nav { min-width: 0; }
   .deskbar-search .home-search { max-width: none; padding: 3px; box-shadow: none; }
   .deskbar-search .home-search input { padding: 7px 10px; font-size: 14px; }
   .deskbar-search .home-search button { width: 36px; }
@@ -1477,9 +1481,10 @@ textarea.field { resize: vertical; min-height: 84px; }
   @media (max-width: 1380px) { .deskbar-right .status { display: none; } }
 }
 @media (min-width: 900px) and (max-width: 1180px) {
-  .deskbar { gap: 12px; }
-  .deskbar-search { flex-basis: 260px; }
-  .deskbar-right { display: none; }
+  .deskbar { gap: 10px; padding-left: 18px; }
+  .deskbar-search { flex-basis: 240px; }
+  .deskbar-nav > a, .deskbar-more summary { padding: 8px 7px; font-size: 13.5px; }
+  .deskbar .brand-name { display: none; }
 }
 
 /* ---------- theme switch ---------- */

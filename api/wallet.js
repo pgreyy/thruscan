@@ -37,7 +37,7 @@ import { createThruClient, Pubkey, proofs, deriveProgramAddress, TransactionBuil
 import { createGrpcTransport } from '@connectrpc/connect-node'
 import { createHash } from 'node:crypto'
 import { sendLanded } from './_send.js'
-import { decodeConfig, buildAllow, buildGift, nftAccountFor, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
+import { decodeConfig, buildAllow, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -756,37 +756,13 @@ async function palsState(c) {
   return a ? decodeConfig(a.data.data) : null
 }
 
-/* Mint every reserved number the count has reached, to the reserve wallet.
-   The program refuses a public mint of a reserved number, so the public mint
-   waits for this; it runs before a wallet is cleared and whenever the page
-   finds the next number reserved. Safe to call any time: the program itself
-   refuses a GIFT when the next number is not reserved. */
-async function palsGiftPending(c) {
-  let gifted = 0
-  for (let i = 0; i < 25; i++) {
-    const cfg = await palsState(c)
-    if (!cfg || cfg.minted >= cfg.supply || !cfg.reserved(cfg.minted)) break
-    const id = cfg.minted
-    const nft = await nftAccountFor(id)
-    const proof = await proofs.generateStateProof(c.ctx, { address: nft, proofType: PROOF_CREATING })
-    await sponsorSend(c, await buildGift({ payer: process.env.THRU_SPONSOR_PUBKEY, id, reserve: cfg.reserveWallet, proof: proof.proof }))
-    const after = await palsState(c)
-    if (!after || after.minted === id) break   // did not land; leave it for the next call
-    gifted++
-  }
-  return gifted
-}
-
 async function palsAllow(c, { address }, ip) {
   if (!address) return { ok: false, error: 'Connect a wallet first.' }
   const cfg = await palsState(c)
   if (!cfg) return { ok: false, error: 'Pixel Pals is not open yet.' }
-  if (cfg.minted >= cfg.supply) return { ok: false, error: 'Sold out.' }
-  if (cfg.minters.includes(address)) return { ok: false, error: 'This wallet has already minted its Pal.' }
-  if (cfg.allowed().some((r) => r.wallet === address)) {
-    await palsGiftPending(c).catch(() => 0)
-    return { ok: true, already: true }
-  }
+  if (cfg.publicLeft <= 0) return { ok: false, error: 'Sold out.' }
+  if (cfg.pals.some((p) => p.minter === address)) return { ok: false, error: 'This wallet has already minted its Pal.' }
+  if (cfg.allowed().some((r) => r.wallet === address)) return { ok: true, already: true }
 
   const wallet = await getAccount(c, address)
   if (!wallet) return { ok: false, error: 'This wallet is not on chain yet.' }
@@ -803,7 +779,6 @@ async function palsAllow(c, { address }, ip) {
     return { ok: false, status: 429, error: `${PALS_PER_NETWORK_PER_WEEK} Pals have already been minted from this network this week.` }
   }
 
-  await palsGiftPending(c).catch(() => 0)
   const signature = await sponsorSend(c, buildAllow({ payer: process.env.THRU_SPONSOR_PUBKEY, wallet: address, tag }))
   const after = await palsState(c)
   if (!after?.allowed().some((r) => r.wallet === address)) {
@@ -876,7 +851,10 @@ export default async function handler(req, res) {
       case 'pals-advance': {
         if (palsBusy.has(ip)) return json(res, 429, { ok: false, error: 'One at a time. Try again in a moment.' })
         palsBusy.add(ip)
-        try { return json(res, 200, { ok: true, gifted: await palsGiftPending(c) }) } finally { palsBusy.delete(ip) }
+        // Reserved numbers are no longer tied to the mint order (numbers are
+        // drawn at random and reserved ones are never drawn), so there is
+        // nothing to advance. Kept so older pages still get an answer.
+        try { return json(res, 200, { ok: true, gifted: 0 }) } finally { palsBusy.delete(ip) }
       }
       case 'pals-allow': {
         if (palsBusy.has(ip)) return json(res, 429, { ok: false, error: 'One at a time. Try again in a moment.' })

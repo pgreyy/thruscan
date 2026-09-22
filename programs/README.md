@@ -88,6 +88,19 @@ it errors in the meantime. Transactions still execute; only reads break. Check
 first with a read-only pointer, return early when nothing changes, and only
 then ask to write (thrupals `read_cfg` / `check_mkt`).
 
+**Upgrading a program's state in place.** Pixel Pals went from numbering in
+mint order (config version 2) to random numbers (version 3) without moving
+any address: the new program has a MIGRATE instruction that resizes the config
+(writable first, then resize), moves the arrays after the header from the end
+backwards, and fills the new maps from the old rule (Pal number = NFT id). Every
+other instruction refuses a config that is not the current version, so nothing
+can act on half-migrated state.
+
+**Random numbers on chain.** thrupals draws each public Pal's number from
+SHA-256 of the previous block's hash, the state root at execution, the slot,
+the block time, the minting wallet and the mint count, and builds the NFT
+program's mint_to itself so the uri carries the drawn number.
+
 **Check the address of every program you call.** A program that takes the
 token program's index from its caller and then trusts the transfer can be
 handed a program of the caller's own that accepts the call and does nothing,

@@ -14,7 +14,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useWallet } from './Wallet.jsx'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { signAndSend, waitForResult } from '../lib/wallet.js'
-import { allPals, toSvg, GENESIS, palFor } from '../lib/pals/art.js'
+import { palsInOrder, toSvg, GENESIS, palFor } from '../lib/pals/art.js'
 import { buildSend, buildClaim, palsError, nftAccountFor, WTHRU_MINT, PALS_PROGRAM } from '../lib/pals/chain.js'
 import { useMint } from '../lib/pals/useMint.js'
 import { useMarket } from '../lib/pals/useMarket.js'
@@ -52,9 +52,17 @@ export function usePals(address) {
     } catch (e) { setError(String(e?.message ?? e)) }
   }, [address])
   useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load() }, 10_000); return () => clearInterval(t) }, [load])
-  const pals = useMemo(() => (info?.minters ? allPals(info.minters) : []), [info?.minters?.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Pals by Pal number (a sparse array), drawn in mint order so a later mint
+  // never changes an earlier Pal. `palNums` lists the minted numbers.
+  const { pals, palNums } = useMemo(() => {
+    const map = palsInOrder((info?.pals ?? []).map(([num, minter]) => ({ num, minter })))
+    const arr = []
+    for (const [num, p] of map) arr[num] = p
+    return { pals: arr, palNums: [...map.keys()] }
+  }, [info?.pals?.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const owners = useMemo(() => Object.fromEntries((info?.pals ?? []).map(([num, , owner]) => [num, owner])), [info?.pals])
   const listings = useMemo(() => new Map((info?.market?.listings ?? []).map((l) => [l.id, l])), [info?.market])
-  return { info, error, reload: load, pals, listings }
+  return { info, error, reload: load, pals, palNums, owners, listings }
 }
 
 /** One item in a grid: art, number, rank, and its price when it is for sale. */
@@ -99,7 +107,7 @@ const SORTS = [
 export function PalsPage() {
   const wallet = useWallet()
   const me = wallet.address
-  const { info, error, reload, pals, listings } = usePals(me)
+  const { info, error, reload, pals, palNums, owners, listings } = usePals(me)
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') || 'items'
   const setTab = (t) => setParams(t === 'items' ? {} : { tab: t })
@@ -122,7 +130,7 @@ export function PalsPage() {
   const isMine = (id) => holding.includes(id) || myListed.includes(id)
 
   const rows = useMemo(() => {
-    let ids = pals.map((_, id) => id)
+    let ids = [...palNums]
     if (tab === 'sale') ids = ids.filter((id) => listings.has(id))
     if (tab === 'yours') ids = ids.filter((id) => holding.includes(id) || myListed.includes(id))
     const q = query.trim().replace(/^#/, '')
@@ -147,7 +155,7 @@ export function PalsPage() {
       return Number(BigInt(y) - BigInt(x))
     })
     return ids
-  }, [pals, listings, tab, sort, query, holding, myListed])
+  }, [pals, palNums, listings, tab, sort, query, holding, myListed])
 
   // Sweep: the cheapest listings that are not yours, N at a time.
   const buyable = useMemo(() => (m?.listings ?? []).filter((l) => l.seller !== me), [m, me])
@@ -229,8 +237,8 @@ export function PalsPage() {
         <PalModal
           id={openId}
           pal={pals[openId]}
-          total={pals.length}
-          owner={info?.owners?.[openId]}
+          total={palNums.length}
+          owner={owners[openId]}
           listing={listings.get(openId)}
           mine={isMine(openId)}
           prize={info?.mine?.prizes?.find((p) => p.id === openId)}
@@ -282,7 +290,7 @@ function CollectionHead({ info, pals, mintOpen, taken, supply, reload }) {
             </div>
             <div className="pal-bar"><div style={{ width: `${Math.min(100, (taken / supply) * 100)}%` }} /></div>
             <button className="btn full" onClick={mint.mint} disabled={mint.busy || mint.minted !== null}>{mint.minted !== null ? 'Minted' : mint.label ?? `Mint for ${fmt(info?.price ?? 1000)} THRU`}</button>
-            {mint.minted !== null && <p className="fine">Minted. <Link to={`/pals?id=${mint.minted}`}>Pixel Pal #{mint.minted}</Link> is yours.</p>}
+            {mint.minted !== null && <p className="fine">{mint.minted === 'unknown' ? <>Minted. <Link to="/pals?tab=yours">See your Pal</Link>.</> : <>Minted. <Link to={`/pals?id=${mint.minted}`}>Pixel Pal #{mint.minted}</Link> is yours.</>}</p>}
             {mint.needWallet && <p className="fine">You need a Thru wallet. <Link to="/wallet">Get one here</Link>.</p>}
             {mint.error && <p className="fine bad-text">{mint.error}</p>}
           </div>
@@ -356,13 +364,13 @@ function PalModal({ id, pal, total, owner, listing, mine, prize, vault, feeBps, 
     const dest = to.trim()
     if (!/^ta[A-Za-z0-9_-]{44}$/.test(dest)) throw new Error('That does not look like a Thru address.')
     if (dest === wallet.address) throw new Error('That is this wallet.')
-    return signAndSend(await buildSend({ payer: wallet.address, id, dest }))
+    return signAndSend(await buildSend({ payer: wallet.address, num: id, nftId: pal.nftId, dest }))
   })
 
   const claim = () => act('claim', async () => {
     const { openTokenAccount } = await import('../lib/wallet.js')
     await openTokenAccount(WTHRU_MINT)
-    return signAndSend(await buildClaim({ payer: wallet.address, id, vault }))
+    return signAndSend(await buildClaim({ payer: wallet.address, num: id, vault }))
   })
 
   const cleanPrice = price.replace(/[, ]/g, '')
@@ -407,12 +415,12 @@ function PalModal({ id, pal, total, owner, listing, mine, prize, vault, feeBps, 
               <div className="nft-list">
                 <div className="nft-list-row">
                   <input className="field mono" placeholder="Price in THRU" value={price} inputMode="numeric" onChange={(e) => setPrice(e.target.value)} />
-                  <button className="btn" onClick={() => market.list(id, cleanPrice)} disabled={working || !validPrice}>
+                  <button className="btn" onClick={() => market.list(id, pal.nftId, cleanPrice)} disabled={working || !validPrice}>
                     {market.busy === 'list' ? 'Listing…' : listing ? 'Change price' : 'List'}
                   </button>
                 </div>
                 {validPrice && feeBps > 0 && <p className="fine">You get {fmt(youGet)} THRU after the {(feeBps / 100).toString()}% fee.</p>}
-                {listing && <button className="btn ghost full" onClick={() => market.delist(id)} disabled={working}>{market.busy === 'delist' ? 'Taking it back…' : 'Cancel listing'}</button>}
+                {listing && <button className="btn ghost full" onClick={() => market.delist(id, pal.nftId)} disabled={working}>{market.busy === 'delist' ? 'Taking it back…' : 'Cancel listing'}</button>}
               </div>
             )}
           </div>
@@ -440,7 +448,7 @@ function PalModal({ id, pal, total, owner, listing, mine, prize, vault, feeBps, 
           <p className="fine">
             <a href={`/api/rpc?action=pal&id=${id}`} target="_blank" rel="noreferrer">Metadata</a>
             {' · '}
-            <NftLink id={id} />
+            <NftLink nftId={pal.nftId} />
           </p>
         </div>
       </div>
@@ -449,9 +457,9 @@ function PalModal({ id, pal, total, owner, listing, mine, prize, vault, feeBps, 
   )
 }
 
-function NftLink({ id }) {
+function NftLink({ nftId }) {
   const [addr, setAddr] = useState(null)
-  useEffect(() => { nftAccountFor(id).then(setAddr) }, [id])
+  useEffect(() => { nftAccountFor(nftId).then(setAddr) }, [nftId])
   return addr ? <Link to={`/account/${addr}`}>On chain</Link> : null
 }
 

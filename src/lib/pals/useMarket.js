@@ -75,14 +75,14 @@ export function useMarket({ onDone } = {}) {
   }, items.length > 1 ? `Bought ${items.length} Pals.` : `Bought Pixel Pal #${items[0].id}.`)
 
   /** List a Pal, or change its price if it is already listed. */
-  const list = (id, price) => run('list', async (me) => {
+  const list = (num, nftId, price) => run('list', async (me) => {
     const p = BigInt(price)
     if (p <= 0n) throw new Error('Set a price above zero.')
     await openTokenAccount(WTHRU_MINT) // where the money arrives when it sells
-    return signAndSend({ ...(await buildList({ payer: me, id, price: p })), ...UNITS })
+    return signAndSend({ ...(await buildList({ payer: me, num, nftId, price: p })), ...UNITS })
   }, `Listed for ${fmt(price)} THRU.`)
 
-  const delist = (id) => run('delist', async (me) => signAndSend({ ...(await buildDelist({ payer: me, id })), ...UNITS }), 'Taken off the market. It is back in your wallet.')
+  const delist = (num, nftId) => run('delist', async (me) => signAndSend({ ...(await buildDelist({ payer: me, num, nftId })), ...UNITS }), 'Taken off the market. It is back in your wallet.')
 
   return { buy, list, delist, busy, error, note, needWallet, modal: gate.modal, clear: () => { setError(null); setNote(null) } }
 }
