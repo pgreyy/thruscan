@@ -1,0 +1,32 @@
+/* The private stats page. */
+.st-page { width: 100%; max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.st-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.st-top h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.st-note { font-size: 13px; color: var(--muted); }
+.st-block { display: flex; flex-direction: column; gap: 10px; }
+.st-block h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.st-text { margin: 0; font-size: 14px; color: var(--muted); max-width: 70ch; }
+.st-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.st-fig {
+  display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+}
+.st-fig span { font-size: 12.5px; color: var(--muted); }
+.st-fig b { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+.st-fig i { font-style: normal; font-size: 12px; color: var(--muted); }
+.st-bars {
+  display: flex; align-items: flex-end; gap: 4px; height: 160px; padding: 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto;
+}
+.st-bar { flex: 1 1 0; min-width: 10px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
+.st-bar > div { background: var(--ink); border-radius: 3px; min-height: 2px; }
+.st-bar span { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: center; }
+.st-none { margin: 0; padding: 20px; text-align: center; font-size: 14px; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; }
+.st-key { display: flex; flex-direction: column; gap: 10px; }
+.st-key-row { display: flex; gap: 8px; }
+.st-key-row .field { flex: 1; min-width: 0; margin: 0; height: 42px; }
+@media (max-width: 760px) {
+  .st-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-fig b { font-size: 20px; }
+  .st-bar span { display: none; }
+}

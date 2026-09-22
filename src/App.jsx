@@ -1,4 +1,6 @@
 import ThemeSwitch from './components/ThemeSwitch.jsx'
+import { Analytics } from '@vercel/analytics/react'
+import { CloudflareBeacon, usePageViews } from './components/Counters.jsx'
 import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
@@ -17,6 +19,7 @@ import { TokenPage } from './pages/Token.jsx'
 import { GetWalletPage } from './pages/GetWallet.jsx'
 import { PalsPage } from './pages/Pals.jsx'
 import { NftsPage } from './pages/Nfts.jsx'
+import { StatsPage } from './pages/Stats.jsx'
 import { LandingPage } from './pages/Landing.jsx'
 import { describe as describeTx } from './lib/activity.js'
 import { getAccount, getTransaction, getBlockHeight } from './lib/rpcClient'
@@ -3210,12 +3213,20 @@ function CommunityPage() {
   )
 }
 
+/* Page views. Vercel counts them on its own; this reports each in-app page
+   change as well, since the site never reloads while you move around it. */
+function Counted() {
+  usePageViews()
+  return (<><Analytics /><CloudflareBeacon /></>)
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ToastHost>
         <Shell>
         <WalletPill />
+        <Counted />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/explorer" element={<Tabs tabs={[
@@ -3234,6 +3245,8 @@ export default function App() {
           <Route path="/pals" element={<PalsPage />} />
           <Route path="/collections" element={<NftsPage />} />
           <Route path="/nfts" element={<Navigate to="/collections" replace />} />
+          {/* Not linked anywhere: ThruScan's own numbers. */}
+          <Route path="/stats" element={<StatsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />
           <Route path="/builders" element={<Tabs tabs={[

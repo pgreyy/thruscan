@@ -415,6 +415,113 @@ function json(res, status, body, { cacheSeconds = 0 } = {}) {
   res.status(status).send(JSON.stringify(body))
 }
 
+/* ---------- ThruScan's own numbers ----------
+
+   Everything the site does for a visitor is paid for by one key, the sponsor:
+   putting a new wallet on chain, the faucet, registering a .id name, clearing
+   a wallet to mint a Pal. So its transaction history IS the usage record, and
+   it cannot be inflated by page refreshes or bots. The scan is paginated and
+   cached here; each request continues where the last one stopped.
+*/
+
+const SPONSOR = process.env.THRU_SPONSOR_PUBKEY || ''
+const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+const FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
+const NAME_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
+const STATS_PAGE = 200          // transactions per request to the node
+const STATS_PAGES_PER_CALL = 2  // at most, so one request stays inside its 30s
+const STATS_TTL_MS = 5 * 60 * 1000
+
+let statsScan = null   // { at, done, next, seen:Set, rows:[] }
+
+function statsDay(ms) { return new Date(ms).toISOString().slice(0, 10) }
+
+async function scanSponsor(client) {
+  const fresh = !statsScan || (statsScan.done && Date.now() - statsScan.at > STATS_TTL_MS)
+  if (fresh) statsScan = { at: Date.now(), done: false, next: null, seen: new Set(), rows: [] }
+  const scan = statsScan
+  for (let i = 0; i < STATS_PAGES_PER_CALL && !scan.done; i++) {
+    const res = await withTimeout(client.ctx.query.listTransactionsForAccount({
+      account: Pubkey.from(SPONSOR).toProtoPubkey(),
+      page: { pageSize: STATS_PAGE, ...(scan.next ? { pageToken: scan.next } : {}) },
+    }), 20000)
+    for (const p of res.transactions ?? []) {
+      const tx = Transaction.fromProto(p)
+      const sig = tx.getSignature?.()?.toThruFmt?.() ?? null
+      if (!sig || scan.seen.has(sig)) continue
+      scan.seen.add(sig)
+      const ex = tx.executionResult
+      const data = tx.instructionData ?? new Uint8Array()
+      scan.rows.push({
+        program: tx.program?.toThruFmt?.() ?? null,
+        op: data.length ? data[0] : null,
+        rw: (tx.readWriteAccounts ?? []).map((a) => a.toThruFmt()),
+        ro: (tx.readOnlyAccounts ?? []).map((a) => a.toThruFmt()),
+        slot: tx.slot?.toString() ?? null,
+        ok: ex ? (ex.vmError ?? 0) === 0 && BigInt(ex.userErrorCode ?? 0n) === 0n : true,
+      })
+    }
+    scan.next = res.page?.nextPageToken || null
+    if (!scan.next) { scan.done = true; scan.at = Date.now() }
+  }
+  return scan
+}
+
+/** Turns the scanned rows into the counts the stats page shows. */
+async function sponsorStats(client) {
+  const scan = await scanSponsor(client)
+  const wallets = new Set(), names = new Set(), cleared = new Set(), tokens = new Set()
+  const slots = new Set()
+  const events = []
+  for (const r of scan.rows) {
+    if (!r.ok) continue
+    let kind = null, who = null
+    if (r.program === EOA_PROGRAM) {
+      // A wallet made on ThruScan, put on chain at the site's expense.
+      kind = 'wallet'; who = r.rw[0]
+    } else if (r.program === NAME_PROGRAM) {
+      kind = 'name'; who = r.rw.join(',')
+    } else if (r.program === PALS_PROGRAM && r.op === 0x01) {
+      // ALLOW: a wallet cleared to mint a Pal, one per person who tried.
+      kind = 'cleared'; who = r.ro[0]
+    } else if (r.program === TOKEN_PROGRAM && r.ro.length === 2) {
+      // A token account opened for somebody: [mint, owner] are read-only.
+      kind = 'token'; who = r.ro[1]
+    }
+    if (!kind || !who) continue
+    if (kind === 'wallet') wallets.add(who)
+    if (kind === 'name') names.add(who)
+    if (kind === 'cleared') cleared.add(who)
+    if (kind === 'token') tokens.add(who)
+    events.push({ kind, slot: r.slot })
+    if (r.slot) slots.add(r.slot)
+  }
+  // Dates for the daily chart: block times for the newest slots only, and
+  // never allowed to hold up the answer.
+  const recent = [...slots].sort((a, b) => Number(BigInt(b) - BigInt(a))).slice(0, 200)
+  const times = recent.length ? await withTimeout(blockTimes(client, recent), 5000).catch(() => ({})) : {}
+  const byDay = new Map()
+  for (const e of events) {
+    const t = times[e.slot]
+    if (!t) continue
+    const day = statsDay(t)
+    const row = byDay.get(day) ?? { day, wallet: 0, name: 0, cleared: 0, token: 0 }
+    row[e.kind] += 1
+    byDay.set(day, row)
+  }
+  return {
+    sponsor: SPONSOR,
+    scanned: scan.rows.length,
+    complete: scan.done,
+    wallets: wallets.size,
+    names: names.size,
+    cleared: cleared.size,
+    tokens: tokens.size,
+    daily: [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : 1)).slice(-30),
+  }
+}
+
 /* ---------- Pixel Pals ----------
    One account holds the whole collection's state. Read it at most every few
    seconds per warm instance; the art is a pure function of that state. */
@@ -658,6 +765,33 @@ export default async function handler(req, res) {
         for (const t of items) t.time = times[t.slot] ?? null
 
         return json(res, 200, { ok: true, items, next: Object.keys(next).length ? next : null }, { cacheSeconds: 3 })
+      }
+
+      case 'stats': {
+        if (!SPONSOR) return json(res, 200, { ok: false, error: 'No sponsor key configured on this deployment.' })
+        // Optional password: set STATS_KEY in the project's environment to
+        // keep these numbers to yourself.
+        if (process.env.STATS_KEY && params.key !== process.env.STATS_KEY) {
+          return json(res, 401, { ok: false, error: 'Wrong key.', needsKey: true })
+        }
+        const cfg = await palsState(client).catch(() => null)
+        const mkt = cfg ? await marketState(client).catch(() => null) : null
+        const site = await sponsorStats(client)
+        return json(res, 200, {
+          ok: true,
+          site,
+          pals: cfg ? {
+            minted: cfg.minted,
+            gifted: cfg.gifted,
+            publicLeft: cfg.publicLeft,
+            supply: cfg.supply,
+            holders: new Set(cfg.pals.map((p) => p.owner).filter((o) => o !== PALS_PROGRAM)).size,
+            minters: new Set(cfg.pals.map((p) => p.minter)).size,
+            listed: mkt ? [...mkt.listings.values()].filter((l) => cfg.ownerOf(l.id) === PALS_PROGRAM).length : null,
+            sales: mkt?.sales ?? null,
+            volume: (mkt?.volume ?? 0n).toString(),
+          } : null,
+        }, { cacheSeconds: 0 })
       }
 
       case 'pals': {
