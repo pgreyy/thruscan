@@ -1600,3 +1600,14 @@ textarea.field { resize: vertical; min-height: 84px; }
 @media (max-width: 420px) {
   .topbar .brand-name { display: none; }
 }
+
+/* Keeping a token on your own front page. */
+.tok-head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.tok-star {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--muted);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.tok-star:hover { color: var(--ink); border-color: var(--muted); }
+.tok-star.on { color: var(--signal); border-color: var(--signal-line); background: var(--signal-soft); }

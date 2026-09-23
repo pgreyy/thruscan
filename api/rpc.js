@@ -468,6 +468,73 @@ async function scanSponsor(client) {
   return scan
 }
 
+/* ---------- who owns which name ----------
+ *
+ * There is no index from an address to the names it holds, and the obvious
+ * substitute does not work: ThruScan's sponsor pays for every registration, so
+ * a registration does not appear in the OWNER's transaction history at all. An
+ * account page that looked there found nothing, which is why a wallet holding a
+ * name showed none.
+ *
+ * The sponsor's own history is the index. Every domain account it ever wrote to
+ * is read once and kept, and each one states its name and its current owner, so
+ * a transfer is reflected without anything being re-derived. Names registered
+ * somewhere other than ThruScan are not in here; nothing else can find those
+ * either, short of reading the whole chain.
+ */
+let nameIndex = null   // { at, rows: [{ name, owner, account }] }
+const NAMES_TTL_MS = 5 * 60 * 1000
+
+async function nameOwners(client) {
+  if (nameIndex && Date.now() - nameIndex.at < NAMES_TTL_MS) return nameIndex.rows
+
+  /* Drive the scan to the end rather than a couple of pages at a time.
+     The stats page can afford to fill in over several visits; this cannot,
+     because the answer to "which names does this wallet hold" is wrong rather
+     than incomplete while the scan is part way through. The budget keeps the
+     whole thing inside the function's own limit. */
+  const until = Date.now() + 12_000
+  let scan = null
+  while (Date.now() < until) {
+    try {
+      scan = await scanSponsor(client)
+    } catch {
+      // One slow page does not throw the pages already read away: the scan
+      // keeps its place, this call answers with what it has, and the next one
+      // carries on from there.
+      break
+    }
+    if (scan.done) break
+  }
+  if (!scan) return nameIndex?.rows ?? []
+  const domains = new Set()
+  for (const r of scan.rows) {
+    if (!r.ok || r.program !== NAME_PROGRAM) continue
+    for (const a of r.rw) domains.add(a)
+  }
+  const rows = []
+  await Promise.all([...domains].map(async (account) => {
+    try {
+      const acc = await withTimeout(client.accounts.get(account), 8000)
+      const bytes = acc.data?.data
+      if (!bytes || bytes.length < 145) return
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      // Domain accounts only: kind byte 2, then parent, owner, name.
+      if (bytes[0] !== 2) return
+      const owner = Pubkey.from(bytes.slice(33, 65)).toThruFmt()
+      const nameLen = dv.getUint32(129, true)
+      if (nameLen < 1 || nameLen > 64) return
+      const name = new TextDecoder().decode(bytes.slice(65, 65 + nameLen))
+      if (name) rows.push({ name, owner, account })
+    } catch { /* one unreadable domain is not worth failing the list for */ }
+  }))
+  rows.sort((a, b) => a.name.localeCompare(b.name))
+  // A part-built index is cached only briefly, so the next visitor picks up
+  // where this one left off rather than waiting five minutes for the rest.
+  nameIndex = { at: scan.done ? Date.now() : Date.now() - NAMES_TTL_MS + 2_000, rows, complete: scan.done }
+  return rows
+}
+
 /** Turns the scanned rows into the counts the stats page shows. */
 async function sponsorStats(client) {
   const scan = await scanSponsor(client)
@@ -765,6 +832,24 @@ export default async function handler(req, res) {
         for (const t of items) t.time = times[t.slot] ?? null
 
         return json(res, 200, { ok: true, items, next: Object.keys(next).length ? next : null }, { cacheSeconds: 3 })
+      }
+
+      case 'names': {
+        // Every .id ThruScan registered, and who holds it now. Small enough to
+        // send whole: a caller wanting one address's names filters locally,
+        // and the answer is cached for everybody else.
+        if (!SPONSOR) return json(res, 200, { ok: true, names: [], complete: false })
+        try {
+          const rows = await nameOwners(client)
+          const owner = typeof params.owner === 'string' ? params.owner : null
+          return json(res, 200, {
+            ok: true,
+            names: owner ? rows.filter((r) => r.owner === owner) : rows,
+            complete: Boolean(nameIndex?.complete),
+          }, { cacheSeconds: 60 })
+        } catch (err) {
+          return json(res, 200, { ok: false, error: String(err?.message ?? err) })
+        }
       }
 
       case 'stats': {

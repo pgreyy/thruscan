@@ -48,14 +48,53 @@ export async function readName(name) {
 }
 
 /**
- * Names this address owns right now. `extra` adds names to check that the
- * history may not reach, such as ones this browser remembers.
+ * Names this address owns right now.
+ *
+ * Three sources, because no single one is enough:
+ *
+ *   the site's index   every name ThruScan registered, with its current owner,
+ *                      built from the sponsor's history on the server. This is
+ *                      the one that works for a wallet that has never sent a
+ *                      transaction, which is most of them.
+ *
+ *   this address's own history, which catches a name registered elsewhere,
+ *
+ *   `extra`, the names this browser remembers claiming.
+ *
+ * The index is authoritative about ownership already, but every candidate is
+ * still read from the name service and checked, so a name transferred a minute
+ * ago is not listed against its old owner.
  */
 export async function ownedNames(address, extra = []) {
   if (!address) return []
-  let fromChain = []
-  try { fromChain = await namesFromHistory(address) } catch { /* fall back to extra */ }
-  const candidates = [...new Set([...fromChain, ...extra])]
+
+  /* The index is built by walking the sponsor's history a few pages per call,
+     so a cold deployment answers "nothing yet, still looking". Asking once more
+     a moment later is the difference between a name appearing and a page that
+     says a wallet holds none. */
+  const askIndex = () => fetch(`/api/rpc?action=names&owner=${encodeURIComponent(address)}`)
+    .then((r) => r.json())
+    .then((j) => (j.ok ? { names: (j.names ?? []).map((n) => n.name), complete: Boolean(j.complete) } : { names: [], complete: true }))
+    .catch(() => ({ names: [], complete: true }))
+
+  const indexed = (async () => {
+    let r = await askIndex()
+    for (let i = 0; i < 3 && !r.complete && r.names.length === 0; i++) {
+      await new Promise((res) => setTimeout(res, 2000))
+      r = await askIndex()
+    }
+    return r.names
+  })()
+
+  /* The history read is the slow one, and on a quiet node it can simply not
+     come back. It is the least important of the three sources, so it gets a
+     deadline rather than the power to hold up the other two. */
+  const historic = Promise.race([
+    namesFromHistory(address).catch(() => []),
+    new Promise((res) => setTimeout(() => res([]), 6000)),
+  ])
+
+  const candidates = [...new Set([...(await indexed), ...(await historic), ...extra])]
   const rows = await Promise.all(candidates.map((n) => readName(n).catch(() => null)))
   return rows.filter((r) => r?.domain && r.domain.owner === address)
 }

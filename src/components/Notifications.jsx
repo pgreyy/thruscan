@@ -8,6 +8,7 @@
 // be found this way rather than announced when it happens.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useDismiss } from '../lib/dismiss.js'
 import { Link } from 'react-router-dom'
 import { currentAddress } from '../lib/wallet.js'
 import * as notes from '../lib/notify.js'
@@ -103,14 +104,7 @@ export function NotificationBell() {
   useEffect(() => notes.subscribe(() => bump((n) => n + 1)), [])
   useMarketWatch(address)
 
-  useEffect(() => {
-    if (!open) return undefined
-    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
-    const key = (e) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', away)
-    document.addEventListener('keydown', key)
-    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', key) }
-  }, [open])
+  useDismiss(boxRef, open, useCallback(() => setOpen(false), []))
 
   const list = notes.items(address)
   const unread = list.filter((n) => !n.read).length

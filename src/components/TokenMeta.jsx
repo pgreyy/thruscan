@@ -10,7 +10,14 @@
 // src/lib/tokenmeta.js for the message and api/token-meta.js for the check.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { signUserMessage } from '../lib/wallet.js'
+import {
+  signUserMessage, signAndSend, waitForResult, deriveTokenAccount, openTokenAccount,
+} from '../lib/wallet.js'
+import { buildClaimInstruction } from '../lib/pad.js'
+import { THRUPAD_PROGRAM as PAD_PROGRAM, THRUPAD_REGISTRY as PAD_REGISTRY } from '../lib/addresses.js'
+import { displayDecimals } from '../lib/wthru.js'
+import { useUnlockGate, isDismissal } from './Unlock.jsx'
+import { useConfirm } from './Confirm.jsx'
 import {
   saveTokenMeta, tokenMetaFor, cleanMeta, metaProblem, xUrl, telegramUrl, EMPTY_META,
 } from '../lib/tokenmeta.js'
@@ -78,8 +85,10 @@ export function TokenLinks({ meta, className = 'tmeta-links' }) {
  * see all three and fix the one with the wrong picture, without a dialog in
  * between.
  */
-export function TokenMetaCard({ launch, address, decimals = 6 }) {
+export function TokenMetaCard({ launch, address, decimals = 6, quoteTicker = 'tUSD', onClaimed }) {
   const fileRef = useRef(null)
+  const gate = useUnlockGate()
+  const confirm = useConfirm()
   const [meta, setMeta] = useState(null)
   const [draft, setDraft] = useState(EMPTY_META)
   const [open, setOpen] = useState(false)
@@ -98,7 +107,47 @@ export function TokenMetaCard({ launch, address, decimals = 6 }) {
     return () => { alive = false }
   }, [launch.mint])
 
-  const fmtFees = (units) => (Number(units ?? 0n) / 10 ** decimals).toLocaleString(undefined, { maximumFractionDigits: 4 })
+  const dp = displayDecimals(launch.quoteMint, decimals)
+  const fmtFees = (units) => (Number(units ?? 0n) / 10 ** dp).toLocaleString(undefined, { maximumFractionDigits: 4 })
+  const owed = launch.creatorFees ?? 0n
+
+  /* Claiming what the curve has collected for you.
+     The money sits in the launch's quote vault until it is asked for; the
+     program moves it only into an account owned by the creator it recorded, so
+     the destination is derived from the wallet rather than typed. */
+  const claim = async () => {
+    setError(null); setNote(null)
+    if (owed <= 0n) return
+    const ok = await confirm.ask({
+      title: `Claim your $${launch.symbol} fees`,
+      body: 'These are the fees your curve has taken on trades so far. They go straight to your wallet.',
+      detail: [{ label: 'You receive', value: `${fmtFees(owed)} ${quoteTicker}` }],
+      confirmLabel: `Claim ${fmtFees(owed)} ${quoteTicker}`,
+      tone: 'go',
+    })
+    if (!ok) return
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    setBusy('claim')
+    try {
+      // The vault pays into a token account for the quote asset; open one if
+      // this wallet has never held it.
+      await openTokenAccount(launch.quoteMint)
+      const dest = await deriveTokenAccount(launch.quoteMint, address)
+      const built = buildClaimInstruction({
+        registry: PAD_REGISTRY, launchId: launch.id, quoteVault: launch.quoteVault, dest,
+      })
+      const sig = await signAndSend({ program: PAD_PROGRAM, ...built })
+      const r = await waitForResult(sig)
+      if (r.settled && !r.succeeded) throw new Error(`The chain rejected it (error ${r.userError || r.vmError}).`)
+      setNote(`Claimed ${fmtFees(owed)} ${quoteTicker}.`)
+      await onClaimed?.()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally { setBusy(null) }
+  }
 
   const save = async (next) => {
     const clean = cleanMeta(next)
@@ -143,6 +192,7 @@ export function TokenMetaCard({ launch, address, decimals = 6 }) {
 
   return (
     <div className="tmeta">
+      {gate.modal}{confirm.modal}
       <div className="tmeta-head">
         <div
           className={`tmeta-drop${over ? ' over' : ''}`}
@@ -168,13 +218,20 @@ export function TokenMetaCard({ launch, address, decimals = 6 }) {
 
         <div className="tmeta-id">
           <b>${launch.symbol}</b> <span className="fine">{launch.name}</span>
-          <p className="fine mono">{fmtFees(launch.creatorFees)} unclaimed · {Number(launch.tradeCount)} trades</p>
+          <p className="fine mono">{fmtFees(owed)} {quoteTicker} unclaimed · {Number(launch.tradeCount)} trades</p>
           <TokenLinks meta={meta} />
         </div>
 
-        <button className="btn ghost sm" onClick={() => setOpen((v) => !v)} disabled={working}>
-          {open ? 'Close' : 'Links'}
-        </button>
+        <div className="tmeta-btns">
+          {owed > 0n && (
+            <button className="btn sm" onClick={claim} disabled={working}>
+              {busy === 'claim' ? 'Claiming' : 'Claim fees'}
+            </button>
+          )}
+          <button className="btn ghost sm" onClick={() => setOpen((v) => !v)} disabled={working}>
+            {open ? 'Close' : 'Links'}
+          </button>
+        </div>
       </div>
 
       {busy === 'image' && <p className="fine" style={{ marginTop: 8 }}>Uploading and signing…</p>}

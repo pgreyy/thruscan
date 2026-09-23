@@ -78,17 +78,43 @@ export const nameDomain = cache(60_000, async (name) => {
   return domain ? { ...domain, account: r.account } : null
 })
 
-/** The whole collection, once, shared by every picture on the page. */
-export const palsSnapshot = cache(30_000, async () => {
-  const r = await fetch('/api/rpc?action=pals')
-  const j = await r.json()
-  if (!j.ok) throw new Error(j.error || 'Could not read the collection.')
-  const map = palsInOrder((j.pals ?? []).map(([num, minter]) => ({ num, minter })))
-  const art = []
-  for (const [num, p] of map) art[num] = p
-  const owners = Object.fromEntries((j.pals ?? []).map(([num, , owner]) => [num, owner]))
-  return { art, owners }
-})
+/* The whole collection, once, shared by every picture on the page.
+
+   The read is a big one, and a single slow answer used to decide whether
+   someone's hexagon appeared: two pictures resolving at the same moment would
+   race, one would get a timeout, and the same wallet would show a hexagon on
+   the profile and an identicon in the wallet button. So the last good answer is
+   kept and reused when a read fails. The collection changes when a Pal is sold,
+   not by the second, and a slightly old ownership list is a far better answer
+   than no answer. */
+let lastGood = null
+
+async function readCollection() {
+  const attempt = async () => {
+    const r = await fetch('/api/rpc?action=pals')
+    const j = await r.json()
+    if (!j.ok) throw new Error(j.error || 'Could not read the collection.')
+    const map = palsInOrder((j.pals ?? []).map(([num, minter]) => ({ num, minter })))
+    const art = []
+    for (const [num, p] of map) art[num] = p
+    const owners = Object.fromEntries((j.pals ?? []).map(([num, , owner]) => [num, owner]))
+    return { art, owners }
+  }
+  try {
+    lastGood = await attempt()
+    return lastGood
+  } catch (first) {
+    try {
+      lastGood = await attempt()
+      return lastGood
+    } catch (e) {
+      if (lastGood) return lastGood
+      throw e
+    }
+  }
+}
+
+export const palsSnapshot = cache(30_000, readCollection)
 
 export const EMPTY_PFP = { kind: 'none', url: null, pal: null, num: null, verified: false, owner: null }
 

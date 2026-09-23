@@ -13,6 +13,7 @@ import { decodePadRegistry } from '../lib/pad.js'
 import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY, TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
 import { palFor, toSvg, GENESIS } from '../lib/pals/art.js'
 import { Search } from './Home.jsx'
+import { withFavouritesFirst, onFavouritesChange } from '../lib/favourites.js'
 import { useMint } from '../lib/pals/useMint.js'
 import './landing.css'
 
@@ -110,8 +111,9 @@ async function readMarkets() {
       // One native THRU is one WTHRU base unit; tUSD has 6 decimals.
       if (w && t !== null) thru = Number(t) / 1e6 / Number(w)
       const pair = { quoteVault: tVault, tokenVault: wVault, qd: 6, td: 0 }
-      tokens.push({ symbol: 'THRU', price: thru, unit: 'tUSD', pair, to: '/swap' })
-      if (thru) tokens.push({ symbol: 'tUSD', price: 1 / thru, unit: 'THRU', pair, invert: true, to: '/swap' })
+      // THRU in tUSD. The inverse card, tUSD priced in THRU, used to sit beside
+      // it: the same number upside down, in the units nobody quotes in.
+      tokens.push({ symbol: 'THRU', price: thru, unit: 'tUSD', mint: WTHRU_MINT, pair, to: '/swap' })
     }
   } catch { /* unknown */ }
 
@@ -126,8 +128,14 @@ async function readMarkets() {
       return { ...l, symbol: l.symbol || `#${l.id}`, price, cap, unit: inTusd ? 'tUSD' : 'THRU', qd }
     })
     launches.sort((a, b) => (b.cap ?? 0) - (a.cap ?? 0))
-    for (const l of launches.filter((x) => !x.graduated).slice(0, 4 - tokens.length)) {
-      tokens.push({ symbol: l.symbol, price: l.price, unit: l.unit, pair: { quoteVault: l.quoteVault, tokenVault: l.tokenVault, qd: l.qd, td: 6 }, to: `/launch/${l.id}` })
+    // Enough of them that a favourite has something to be chosen from; the
+    // page shows four.
+    for (const l of launches.filter((x) => !x.graduated).slice(0, 8)) {
+      tokens.push({
+        symbol: l.symbol, price: l.price, unit: l.unit, mint: l.mint,
+        pair: { quoteVault: l.quoteVault, tokenVault: l.tokenVault, qd: l.qd, td: 6 },
+        to: `/token/${l.mint}`,
+      })
     }
   } catch { /* unknown */ }
   return { thru, launches, tokens }
@@ -288,7 +296,17 @@ export function LandingPage() {
   const blocks = overview?.blocks ?? []
   const txs = overview?.transactions ?? []
   const launches = markets?.launches ?? []
-  const series = useSeries(markets?.tokens)
+  const priced = useSeries(markets?.tokens)
+
+  /* Which four. Favourites first, then whatever the page would have chosen by
+     size, and it re-renders the moment one is set on a token's own page. */
+  const [favTick, setFavTick] = useState(0)
+  useEffect(() => onFavouritesChange(() => setFavTick((n) => n + 1)), [])
+  const series = useMemo(() => withFavouritesFirst(priced, 4), [priced, favTick])
+  const moves = useMemo(
+    () => Object.fromEntries(priced.filter((t) => t.mint).map((t) => [t.mint, t.series])),
+    [priced],
+  )
 
   return (
     <div className="lp">
@@ -340,16 +358,29 @@ export function LandingPage() {
         <aside className="lp-side">
           <section className="lp-panel">
             <header><h3>Launchpad</h3><span className="dim lp-when-wide">Market cap</span></header>
-            {launches.slice(0, 7).map((l) => (
-              <Link key={l.id} to={`/launch/${l.id}`} className="lp-tr lp-side-row">
-                <span className="lp-coin">{l.symbol.slice(0, 2)}</span>
-                <span className="lp-side-name"><b>{l.symbol}</b><span className="dim lp-when-wide">{l.graduated ? 'Graduated' : 'Bonding curve'}</span><span className="dim mono lp-when-narrow">{l.cap === null ? '–' : `${compact(l.cap)} ${l.unit}`}</span></span>
-                <span className="mono lp-when-wide">{l.cap === null ? '–' : `${price(l.cap)} ${l.unit}`}</span>
-              </Link>
-            ))}
+            {launches.slice(0, 7).map((l) => {
+              // Coloured by where the price has been, not by the size of the
+              // number: green is "worth more than it was", which is the only
+              // thing a colour can honestly mean here.
+              const c = change(moves[l.mint])
+              const tone = c === null || Math.abs(c) < 0.05 ? '' : c >= 0 ? ' up' : ' down'
+              return (
+                <Link key={l.id} to={`/token/${l.mint}`} className="lp-tr lp-side-row">
+                  <span className="lp-coin">{l.symbol.slice(0, 2)}</span>
+                  <span className="lp-side-name">
+                    <b>{l.symbol}</b>
+                    <span className="dim lp-when-wide">{l.graduated ? 'Graduated' : 'Bonding curve'}</span>
+                    <span className={`mono lp-when-narrow${tone}`}>{l.cap === null ? '–' : `${compact(l.cap)} ${l.unit}`}</span>
+                  </span>
+                  <span className={`lp-side-cap lp-when-wide${tone}`}>
+                    <b className="mono">{l.cap === null ? '–' : `${price(l.cap)} ${l.unit}`}</b>
+                    {c !== null && Math.abs(c) >= 0.05 && <i className="mono">{pct(c)}</i>}
+                  </span>
+                </Link>
+              )
+            })}
             {!markets && <p className="lp-empty">Reading the chain</p>}
             {markets && launches.length === 0 && <p className="lp-empty">No launches yet.</p>}
-            <Link to="/launch" className="lp-foot">Launch a token</Link>
           </section>
 
           <section className="lp-panel">

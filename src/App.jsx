@@ -11,6 +11,7 @@ import { BuildersPage } from './pages/Builders.jsx'
 import { Tabs } from './components/Tabs.jsx'
 import { GameIdentity } from './components/GameIdentity.jsx'
 import { NamePfp } from './components/Pfp.jsx'
+import { useDismissDetails } from './lib/dismiss.js'
 import { NotificationBell } from './components/Notifications.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
@@ -636,6 +637,8 @@ function Shell({ children }) {
   // measures itself (and the wallet button, see below) on every resize, so
   // nothing can ever slide under anything else, at any width or zoom level.
   const barRef = useRef(null)
+  const moreRef = useRef(null)
+  useDismissDetails(moreRef)
   const [navFit, setNavFit] = useState(TOP_NAV.length)
   const fitNav = useCallback(() => {
     const bar = barRef.current
@@ -758,7 +761,7 @@ function Shell({ children }) {
           {shownNav.map((l) => (
             <Link key={l.to} to={l.to} aria-current={[l.to, ...(l.also ?? [])].some((t) => pathname === t || pathname.startsWith(t + '/')) ? 'page' : undefined}>{l.label}</Link>
           ))}
-          <details className="deskbar-more">
+          <details className="deskbar-more" ref={moreRef}>
             <summary>More</summary>
             <div className="deskbar-menu">
               {moreNav.map((l) => <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>)}

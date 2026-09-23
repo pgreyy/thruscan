@@ -5,7 +5,7 @@
 // seconds. Everything is read live from alphanet.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import { describe, timeAgo } from '../lib/activity.js'
 import { decodeSwapRegistry } from '../lib/swap.js'
@@ -88,9 +88,15 @@ function useCounts() {
 
 export function Search({ compact = false }) {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+
+  /* The box empties once it has taken you somewhere. It sits in the top bar on
+     every page, so a leftover address follows you around the site long after
+     you have finished with it, and the next search starts by clearing it. */
+  useEffect(() => { setQ(''); setError(null) }, [pathname])
 
   const go = async (e) => {
     e?.preventDefault()

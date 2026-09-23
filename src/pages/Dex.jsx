@@ -53,6 +53,7 @@ import {
   TUSD_MINT,
   WTHRU_MINT,
 } from '../lib/addresses.js'
+import { useDismiss } from '../lib/dismiss.js'
 import './launch.css'
 
 const DECIMALS = 6
@@ -744,12 +745,7 @@ function TokenPicker({ tokens, value, onChange, exclude, label, onAdded }) {
   const [open, setOpen] = useState(false)
   const boxRef = useRef(null)
 
-  useEffect(() => {
-    if (!open) return
-    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
-  }, [open])
+  useDismiss(boxRef, open, useCallback(() => setOpen(false), []))
 
   const chosen = tokens.find((t) => t.mint === value)
 
@@ -1838,36 +1834,69 @@ function CurveChart({ vq, vt, tokensSold, symbol, quote }) {
 
 /** One launch in the list. A row that goes somewhere, not a page of its own
  *  stacked ten deep under nine others. */
-function LaunchRow({ launch, balances, tickers, threshold, meta }) {
+/* ---------- a launch, as a card ----------
+ *
+ * A launchpad is a place you scan, not a list you read: which of these is
+ * moving, and what is it worth. So each one is a card with its picture, its
+ * ticker, what the curve values it at, and how far along it is. The list used
+ * to be full-width rows a hundred pixels tall, which fit four on a screen and
+ * told you no more than these do at a fifth of the size.
+ */
+function marketCap(launch, quoteDecimals) {
+  const vq = Number(launch.vq), vt = Number(launch.vt), sold = Number(launch.tokensSold)
+  if (!(vt > 0)) return null
+  return (vq / vt) * (vt + sold) / 10 ** quoteDecimals
+}
+
+/** 1,234 -> 1.2K, 1,200,000 -> 1.2M. A market cap is read, not counted. */
+function compactNumber(n) {
+  if (n === null || !isFinite(n)) return '–'
+  const abs = Math.abs(n)
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(abs >= 1e10 ? 0 : 2)}B`
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 2)}M`
+  if (abs >= 1e3) return `${(n / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}K`
+  if (abs >= 1) return n.toFixed(2)
+  if (abs === 0) return '0'
+  return n.toPrecision(2)
+}
+
+function LaunchCard({ launch, balances, tickers, decimals, threshold, meta }) {
   const quote = tickers?.[launch.quoteMint] || short(launch.quoteMint)
+  const qd = decimals?.[launch.quoteMint] ?? DECIMALS
   const quoteHeld = balances[launch.quoteVault] ?? 0n
   const raised = quoteHeld > launch.creatorFees ? quoteHeld - launch.creatorFees : 0n
   const progress = graduationProgress(raised, threshold)
-  const price = Number(launch.vq) / Number(launch.vt || 1n)
+  const cap = marketCap(launch, qd)
 
   return (
-    <Link className="launch-row" to={`/launch/${launch.id}`}>
-      <TokenIcon meta={meta} symbol={launch.symbol} mint={launch.mint} size={38} />
-      <div className="lr-main">
-        <div className="lr-title">
-          <span className="nm">{launch.name}</span>
-          <span className="sy">${launch.symbol} · {quote}</span>
-        </div>
-        <div className="progress-track bar">
-          <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
-        </div>
-        <div className="fine lr-note">
-          {fmt(raised)} of {fmt(threshold)} {quote} · {(progress * 100).toFixed(1)}% to graduation
-        </div>
-      </div>
-      <div className="rt">
-        <div className="mono">{price.toExponential(2)}</div>
-        <div className="fine">{launch.graduated ? 'Graduated' : `${Number(launch.tradeCount)} trades`}</div>
-      </div>
+    <Link className="lcard" to={`/launch/${launch.id}`}>
+      <span className="lcard-art">
+        <TokenIcon meta={meta} symbol={launch.symbol} mint={launch.mint} size={160} className="lcard-icon" />
+        {launch.graduated && <span className="lcard-flag">Graduated</span>}
+      </span>
+      <span className="lcard-body">
+        <span className="lcard-line">
+          <b>{launch.name}</b>
+          <i className="mono">${launch.symbol}</i>
+        </span>
+        <span className="lcard-cap mono">{compactNumber(cap)} {quote}<em>market cap</em></span>
+        {!launch.graduated && (
+          <>
+            <span className="progress-track lcard-bar">
+              <span className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
+            </span>
+            <span className="lcard-note">
+              {(progress * 100).toFixed(1)}% of the way · {Number(launch.tradeCount)} {Number(launch.tradeCount) === 1 ? 'trade' : 'trades'}
+            </span>
+          </>
+        )}
+        {launch.graduated && (
+          <span className="lcard-note">{Number(launch.tradeCount)} trades · the curve is frozen</span>
+        )}
+      </span>
     </Link>
   )
 }
-
 
 /**
  * One launch, on its own page.
@@ -2189,7 +2218,7 @@ export function LaunchpadPage() {
   const [slot, setSlot] = useState(null)
   const [creating, setCreating] = useState(false)
   const [meta, setMeta] = useState({})
-  const { loading, error, data, balances, tickers, reload } = useChainData(
+  const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
     (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
@@ -2213,6 +2242,15 @@ export function LaunchpadPage() {
     const id = setInterval(tick, 15000)
     return () => { alive = false; clearInterval(id) }
   }, [])
+
+  const sections = useMemo(() => {
+    const all = data?.launches ?? []
+    const byCap = (a, b) => (marketCap(b, decimals?.[b.quoteMint] ?? DECIMALS) ?? 0) - (marketCap(a, decimals?.[a.quoteMint] ?? DECIMALS) ?? 0)
+    return [
+      { key: 'climbing', title: 'Climbing', sub: 'Still on the curve, priced by whoever trades next.', rows: all.filter((l) => !l.graduated).sort(byCap) },
+      { key: 'graduated', title: 'Graduated', sub: 'Raised enough to freeze the curve.', rows: all.filter((l) => l.graduated).sort(byCap) },
+    ]
+  }, [data, decimals])
 
   // Pictures and links for every launch in one request, refreshed slowly: they
   // change when a creator edits them, which is rare, and a list of rows should
@@ -2239,7 +2277,7 @@ export function LaunchpadPage() {
      heading, a lede, then a whole card whose only content was a subtitle and a
      refresh button, which is three bands of chrome before the first launch. */
   return (
-    <div className="wrap">
+    <div className="wrap-wide">
       <div className="page-head pad-head">
         <div>
           <h1 className="h1">Launchpad</h1>
@@ -2272,15 +2310,29 @@ export function LaunchpadPage() {
         <section className="card"><p className="fine">Nothing has launched yet.</p></section>
       )}
 
-      {data?.launches.map((l) => (
-        <LaunchRow
-          key={l.id}
-          launch={l}
-          balances={balances}
-          tickers={tickers}
-          threshold={data.gradThreshold}
-          meta={meta[l.mint]}
-        />
+      {/* Two states, two sections. A token that has graduated is finished
+          climbing and trades in a pool; one still on its curve is the thing
+          people came to look at, so it goes first and sorts by size. */}
+      {sections.map(({ key, title, sub, rows }) => rows.length > 0 && (
+        <section className="lsec" key={key}>
+          <div className="lsec-head">
+            <h2>{title}<span className="lsec-count">{rows.length}</span></h2>
+            <p className="fine">{sub}</p>
+          </div>
+          <div className="lcards">
+            {rows.map((l) => (
+              <LaunchCard
+                key={l.id}
+                launch={l}
+                balances={balances}
+                tickers={tickers}
+                decimals={decimals}
+                threshold={data.gradThreshold}
+                meta={meta[l.mint]}
+              />
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   )

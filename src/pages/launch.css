@@ -54,14 +54,56 @@
 .lp-rows b { font-size: 12.5px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .launch-preview .fine { margin: 12px 0 0; line-height: 1.55; }
 
-/* A launch in the list, with its picture. The grid itself is defined with the
-   rest of the row, in components/wallet-pill.css. */
-.lr-main { min-width: 0; }
-.lr-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.lr-title .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lr-title .sy { margin-left: 0; white-space: nowrap; }
-.launch-row .bar { margin-top: 7px; }
-.lr-note { margin-top: 5px; }
+/* ---------- the list ----------
+   Cards, in two sections. A launchpad is scanned rather than read: the
+   picture, the ticker and what the curve values it at, small enough that a
+   screen holds ten. */
+
+.lsec { margin-bottom: 28px; }
+.lsec:first-of-type { margin-top: 6px; }
+.lsec-head { margin-bottom: 12px; }
+.lsec-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; }
+.lsec-count {
+  margin-left: 9px; font-family: var(--mono); font-size: 12.5px;
+  font-weight: 500; color: var(--muted);
+}
+.lsec-head .fine { margin: 3px 0 0; }
+
+/* Five or six across on a laptop, two on a phone. Any wider and the page
+   becomes a gallery of six enormous squares, which is what it was. */
+.lcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 11px; }
+
+.lcard {
+  display: block; min-width: 0; color: inherit; text-decoration: none;
+  border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
+  background: var(--surface);
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+.lcard:hover { border-color: var(--signal-line); transform: translateY(-2px); }
+
+.lcard-art { position: relative; display: block; aspect-ratio: 1; background: var(--soft); }
+/* The icon fills the cover rather than sitting in the middle of it: a token's
+   picture is the thing people recognise first. */
+.lcard-art .lcard-icon {
+  width: 100% !important; height: 100% !important; flex: none !important;
+  border-radius: 0; font-size: 40px !important;
+}
+.lcard-flag {
+  position: absolute; left: 8px; top: 8px;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--ink); color: var(--canvas);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em;
+}
+
+.lcard-body { display: block; padding: 9px 10px 11px; min-width: 0; }
+.lcard-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.lcard-line b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcard-line i { font-size: 11.5px; color: var(--muted); font-style: normal; white-space: nowrap; }
+.lcard-cap { display: block; margin-top: 4px; font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+.lcard-cap em { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted); font-style: normal; font-family: var(--sans); }
+.lcard-bar { display: block; margin-top: 9px; }
+.lcard-bar .progress-fill { display: block; }
+.lcard-note { display: block; margin-top: 6px; font-size: 11px; color: var(--muted); }
 
 .launch-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
 
@@ -75,4 +117,9 @@
 
 @media (max-width: 430px) {
   .lf-pair { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 460px) {
+  .lcards { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lcard-art .lcard-icon { font-size: 34px !important; }
 }

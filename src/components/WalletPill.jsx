@@ -17,7 +17,7 @@
 //   locked       the address, and a tap to unlock
 //   unlocked     balance, a wallet button, address, and a panel with the rest
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './wallet-pill.css'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
@@ -26,8 +26,10 @@ import { locked, unlock } from '../lib/wallet.js'
 import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { TUSD_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
-import { ownedNames, knownMints } from '../lib/holdings.js'
-import { NamePfp } from './Pfp.jsx'
+import { ownedNames, readName, knownMints } from '../lib/holdings.js'
+import { pfpForDomain, EMPTY_PFP } from '../lib/pfp.js'
+import { Pfp } from './Pfp.jsx'
+import { useDismiss } from '../lib/dismiss.js'
 import { isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
 
 const DECIMALS = 6
@@ -58,10 +60,9 @@ function primaryName(address) {
  * only in the middle look identical when truncated, and a glance at the
  * wrong-coloured square is faster than reading six characters.
  */
-function Avatar({ address, label, size = 20 }) {
+function Avatar({ address, pfp, size = 20 }) {
   if (!address) return null
-  const bare = label?.endsWith('.id') ? label.slice(0, -3) : null
-  return <NamePfp name={bare} address={address} size={size} />
+  return <Pfp pfp={pfp} address={address} size={size} />
 }
 
 /** A wallet, drawn small. Inherits colour, so it works on either theme. */
@@ -169,11 +170,14 @@ function Panel({ wallet, onClose }) {
         <span>Profile</span><span className="pill-go">→</span>
       </Link>
 
+      {/* One identity, not two. A name IS the wallet as far as anyone else is
+          concerned, so that is what shows; the address is what the copy button
+          puts on the clipboard either way, because a name is not what you paste
+          into a send field. */}
       <Link className="pill-row pill-wallet" to="/wallet" onClick={onClose}>
         <span>Wallet</span>
         <span className="pill-who">
-          {name && <b>{name}</b>}
-          <span className="mono">{short(wallet.address)}</span>
+          {name ? <b>{name}</b> : <span className="mono">{short(wallet.address)}</span>}
         </span>
         <CopyDot value={wallet.address} />
       </Link>
@@ -266,15 +270,45 @@ export function WalletPill() {
 
   // A new device has no list of names yet. Read them off the chain once, so
   // the pill shows the name everywhere rather than only where it was claimed.
+  /* The name and the picture together, from the chain.
+     The picture used to be looked up separately, by name, which meant it
+     depended on this browser having the name written down and on a second
+     round trip finishing. It now comes from the domain account this already
+     fetches, so the button shows what the profile shows, first load, on any
+     device. */
   const [, bumpName] = useState(0)
+  const [pfp, setPfp] = useState(EMPTY_PFP)
   useEffect(() => {
     const address = wallet.address
-    if (!address || primaryName(address)) return
+    if (!address) { setPfp(EMPTY_PFP); return undefined }
     let alive = true
-    ownedNames(address).then((rows) => {
+    /* Two passes, the same as the profile page.
+
+       The names this browser remembers resolve in one call and settle the
+       picture at once. The chain's own answer follows and replaces them, which
+       is what finds a name claimed on another device. Neither pass is allowed
+       to clear a picture that the other already found: the history scan behind
+       ownedNames is slow on a busy wallet and sometimes comes back empty, and
+       that is exactly how this button ended up showing an identicon while the
+       profile showed the picture. */
+    let remembered = []
+    try { remembered = JSON.parse(localStorage.getItem(`thruscan.names.${address}`) || '[]') } catch { /* private mode */ }
+
+    const show = async (domain) => {
+      if (!domain || !alive) return
+      const shown = await pfpForDomain(domain)
+      if (alive) setPfp(shown)
+    }
+
+    Promise.all(remembered.map((n) => readName(n).catch(() => null)))
+      .then((rows) => show(rows.find((r) => r?.domain?.owner === address)?.domain))
+      .catch(() => {})
+
+    ownedNames(address, remembered).then(async (rows) => {
       if (!alive || rows.length === 0) return
-      try { localStorage.setItem(`thruscan.names.${address}`, JSON.stringify(rows.map((r) => r.name))) } catch {}
+      try { localStorage.setItem(`thruscan.names.${address}`, JSON.stringify(rows.map((r) => r.name))) } catch { /* private mode */ }
       bumpName((n) => n + 1)
+      await show(rows[0].domain)
     }).catch(() => {})
     return () => { alive = false }
   }, [wallet.address])
@@ -282,17 +316,7 @@ export function WalletPill() {
   // Close on a click anywhere else, and on Escape. Both are expected, and a
   // panel that only closes by clicking the thing that opened it is a trap on a
   // phone where that thing may now be under your thumb.
-  useEffect(() => {
-    if (!open) return
-    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
-    const key = (e) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', away)
-    document.addEventListener('keydown', key)
-    return () => {
-      document.removeEventListener('mousedown', away)
-      document.removeEventListener('keydown', key)
-    }
-  }, [open])
+  useDismiss(boxRef, open, useCallback(() => setOpen(false), []))
 
   // Every token ThruScan knows (pools, launches, ones added by address), so a
   // launchpad token shows here before it has a pool.
@@ -340,7 +364,7 @@ export function WalletPill() {
             >
               <WalletGlyph />
             </Link>
-            <Avatar address={address} label={label} />
+            <Avatar address={address} pfp={pfp} />
             <span className={label.endsWith('.id') ? 'pill-strong' : 'pill-strong mono'}>{label}</span>
             <span className="pill-caret" aria-hidden="true">▾</span>
           </button>

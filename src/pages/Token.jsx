@@ -14,6 +14,7 @@ import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY, TUSD_MINT } from '../lib/addresses
 import { TradeChart } from '../components/TradeChart.jsx'
 import { TokenIcon, TokenLinks } from '../components/TokenMeta.jsx'
 import { tokenMetaFor } from '../lib/tokenmeta.js'
+import { isFavourite, toggleFavourite, onFavouritesChange } from '../lib/favourites.js'
 import { Search } from './Home.jsx'
 import './home.css'
 
@@ -45,11 +46,17 @@ export function TokenPage() {
   const { mint } = useParams()
   const [state, setState] = useState({ loading: true })
   const [meta, setMeta] = useState(null)
+  const [fav, setFav] = useState(false)
 
   useEffect(() => {
     let alive = true
     tokenMetaFor(mint).then((m) => { if (alive) setMeta(m) }).catch(() => {})
     return () => { alive = false }
+  }, [mint])
+
+  useEffect(() => {
+    setFav(isFavourite(mint))
+    return onFavouritesChange(() => setFav(isFavourite(mint)))
   }, [mint])
 
   useEffect(() => {
@@ -109,7 +116,23 @@ export function TokenPage() {
           <section className="home-list detail-card">
             <div className="home-list-head">
               <h2>{launch?.name || 'Overview'}</h2>
-              {launch && <Link className="home-badge plain-link" to={`/launch/${launch.id}`}>{launch.graduated ? 'Graduated launch' : 'Trade on launchpad'}</Link>}
+              <span className="tok-head-right">
+                {/* A star takes one of the four slots on the front page. It is
+                    kept in this browser: a preference, not a possession. */}
+                <button
+                  className={`tok-star${fav ? ' on' : ''}`}
+                  onClick={() => { toggleFavourite(mint); setFav(isFavourite(mint)) }}
+                  aria-pressed={fav}
+                  title={fav ? 'On your front page' : 'Put this on your front page'}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill={fav ? 'currentColor' : 'none'}
+                       stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+                    <path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9z" />
+                  </svg>
+                  {fav ? 'On your front page' : 'Add to front page'}
+                </button>
+                {launch && <Link className="home-badge plain-link" to={`/launch/${launch.id}`}>{launch.graduated ? 'Graduated launch' : 'Trade on launchpad'}</Link>}
+              </span>
             </div>
             <Field k="Ticker">
               <span className="tok-field">

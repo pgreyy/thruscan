@@ -3,7 +3,8 @@
 // One small button in the top bar. It shows the theme in use; clicking it
 // offers System, Light and Dark.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useDismiss } from '../lib/dismiss.js'
 import { CHOICES, getChoice, setChoice, watchSystem } from '../lib/theme.js'
 
 const LABEL = { system: 'System', light: 'Light', dark: 'Dark' }
@@ -28,14 +29,7 @@ export default function ThemeSwitch() {
     window.addEventListener('thruscan-theme', on)
     return () => window.removeEventListener('thruscan-theme', on)
   }, [])
-  useEffect(() => {
-    if (!open) return
-    const off = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false) }
-    const esc = (e) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('pointerdown', off)
-    document.addEventListener('keydown', esc)
-    return () => { document.removeEventListener('pointerdown', off); document.removeEventListener('keydown', esc) }
-  }, [open])
+  useDismiss(box, open, useCallback(() => setOpen(false), []))
 
   return (
     <div className="theme-switch" ref={box}>

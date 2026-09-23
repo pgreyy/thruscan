@@ -52,10 +52,6 @@ import { toSvg } from '../lib/pals/art.js'
 import './profile.css'
 
 const DECIMALS = 6
-/* An overview is a glance, not an inventory: 202 Pals drawn on the first
-   screen is a slow page nobody asked for. The tab beside it has all of them. */
-const PREVIEW = 10
-const PAGE = 60
 
 const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
 
@@ -304,13 +300,29 @@ function TokenTile({ ticker, amount, meta, mint }) {
   )
 }
 
-function PalTile({ num, pal }) {
-  const art = useMemo(() => toSvg(pal.grid, 220), [pal])
+/**
+ * A collection, not an item.
+ *
+ * Two hundred Pals drawn one to a card is a page you scroll past rather than
+ * read, and it will only get worse as collections are added. So what a profile
+ * shows is one card per collection, with four of its pictures as the cover and
+ * the count under the name. The collection's own page is where all of them
+ * live, and it already knows how to show the ones you hold.
+ */
+function CollectionFolder({ name, to, items }) {
+  const cover = useMemo(
+    () => items.slice(0, 4).map(({ num, pal }) => ({ num, svg: toSvg(pal.grid, 120) })),
+    [items],
+  )
   return (
-    <Link className="pitem" to="/pals" title={`Pixel Pal #${num}`}>
-      <span className="pitem-art" dangerouslySetInnerHTML={{ __html: art }} />
-      <span className="pitem-name">Pixel Pal #{num}</span>
-      <span className="pitem-sub">Rank {pal.rank}</span>
+    <Link className="pfolder" to={to} title={`Your ${name}`}>
+      <span className={`pfolder-art n${cover.length}`}>
+        {cover.map((c) => (
+          <span key={c.num} dangerouslySetInnerHTML={{ __html: c.svg }} />
+        ))}
+      </span>
+      <span className="pfolder-name">{name}</span>
+      <span className="pfolder-sub">{items.length} {items.length === 1 ? 'item' : 'items'}</span>
     </Link>
   )
 }
@@ -327,23 +339,7 @@ function Row({ title, count, to, children }) {
   )
 }
 
-/** The items tab, which is the one that may hold hundreds. */
-function ItemsPanel({ pals }) {
-  const [shown, setShown] = useState(PAGE)
-  if (pals.length === 0) return <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>
-  return (
-    <>
-      <div className="pitems">
-        {pals.slice(0, shown).map(({ num, pal }) => <PalTile key={num} num={num} pal={pal} />)}
-      </div>
-      {shown < pals.length && (
-        <button className="btn ghost" style={{ marginTop: 14 }} onClick={() => setShown((n) => n + PAGE)}>
-          Show {Math.min(PAGE, pals.length - shown)} more
-        </button>
-      )}
-    </>
-  )
-}
+
 
 /* ---------- the page ---------- */
 
@@ -462,9 +458,14 @@ export function ProfilePage() {
       {held.map((h) => <TokenTile key={h.mint} {...h} meta={meta[h.mint]} />)}
     </div>
   )
-  const itemsPreview = pals.length > 0 && (
-    <div className="pitems">
-      {pals.slice(0, PREVIEW).map(({ num, pal }) => <PalTile key={num} num={num} pal={pal} />)}
+  /* One entry per collection this wallet holds something from. Written as a
+     list so a second collection is a row here rather than a rewrite. */
+  const folders = pals.length > 0
+    ? [{ key: 'pixel-pals', name: 'Pixel Pals', to: '/pals?tab=yours', items: pals }]
+    : []
+  const itemsView = folders.length > 0 && (
+    <div className="pfolders">
+      {folders.map((f) => <CollectionFolder key={f.key} {...f} />)}
     </div>
   )
 
@@ -533,8 +534,8 @@ export function ProfilePage() {
                 <Row title="Tokens" count={held.length || null}>
                   {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some tUSD</Link> to start.</p>}
                 </Row>
-                <Row title="Items" count={pals.length || null} to={pals.length > PREVIEW ? '?view=items' : null}>
-                  {itemsPreview || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
+                <Row title="Items" count={pals.length || null}>
+                  {itemsView || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
                 </Row>
                 <Row title="Launched" count={launches.length || null}>
                   {scanning
@@ -543,7 +544,15 @@ export function ProfilePage() {
                       ? <p className="fine">Nothing yet. <Link to="/launch">Launch a token</Link>.</p>
                       : (
                         <div className="launch-mine">
-                          {launches.map((l) => <TokenMetaCard key={l.id} launch={l} address={wallet.address} />)}
+                          {launches.map((l) => (
+                            <TokenMetaCard
+                              key={l.id}
+                              launch={l}
+                              address={wallet.address}
+                              quoteTicker={wallet.tickers?.[l.quoteMint] || 'tUSD'}
+                              onClaimed={async () => { await loadLaunches(); wallet.refresh() }}
+                            />
+                          ))}
                         </div>
                       )}
                 </Row>
@@ -580,7 +589,7 @@ export function ProfilePage() {
             badge: pals.length || null,
             el: (
               <Row title="Items" count={pals.length || null}>
-                <ItemsPanel pals={pals} />
+                {itemsView || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
               </Row>
             ),
           },
