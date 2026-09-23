@@ -100,7 +100,7 @@ export class NoStoreError extends Error {
 }
 
 export async function uploadImage(blob, { kind = 'pfp' } = {}) {
-  const r = await fetch(`/api/upload?kind=${encodeURIComponent(kind)}`, {
+  const r = await fetch(`/api/media?kind=${encodeURIComponent(kind)}`, {
     method: 'POST',
     headers: { 'Content-Type': blob.type || 'application/octet-stream' },
     body: blob,

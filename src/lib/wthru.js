@@ -93,3 +93,21 @@ export function buildUnwrap({ source, amount }) {
   dv.setBigUint64(16, BigInt(amount), true)
   return { program: WTHRU_PROGRAM, readWrite, readOnly, data, computeUnits: 400_000, stateUnits: 10_000, memoryUnits: 10_000 }
 }
+
+/**
+ * How many decimals to SHOW a mint with.
+ *
+ * WTHRU declares 8 decimals, and that is true of the mint. But one native THRU
+ * unit wraps to exactly one WTHRU base unit, and the site counts native THRU in
+ * whole units, so a wallet holding 15,000 units of each would read "15,000
+ * THRU" beside "0.00015 WTHRU". They are the same amount. That mismatch is how
+ * a sale for 15,000 looked to its seller like nothing arrived.
+ *
+ * So WTHRU is shown on the same scale as the THRU it wraps. The mint is
+ * unchanged and the arithmetic is unchanged: this only decides where a decimal
+ * point is drawn. Anywhere the mint's own declaration is the point being made,
+ * such as the token page's "8 decimals", read it from the mint instead.
+ */
+export function displayDecimals(mint, declared = 6) {
+  return mint === WTHRU_MINT_ADDRESS ? 0 : declared
+}

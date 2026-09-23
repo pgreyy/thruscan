@@ -105,7 +105,7 @@ const TTL_MS = 20_000
 export async function allTokenMeta({ fresh = false } = {}) {
   if (!fresh && cached && Date.now() - cachedAt < TTL_MS) return cached
   try {
-    const r = await fetch('/api/token-meta')
+    const r = await fetch('/api/media')
     const j = await r.json()
     if (!j.ok) throw new Error(j.error || 'no metadata')
     cached = j.meta ?? {}
@@ -138,7 +138,7 @@ export async function saveTokenMeta({ mint, meta, address, sign }) {
   const signedAt = Date.now()
   const signature = await sign(metaMessage({ mint, ...clean, signedAt }))
 
-  const r = await fetch('/api/token-meta', {
+  const r = await fetch('/api/media', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mint, ...clean, address, signedAt, signature }),

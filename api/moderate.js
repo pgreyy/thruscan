@@ -185,7 +185,7 @@ export default async function handler(req, res) {
     const image = await findHeaderImage(fields.Link ?? '')
 
     // Write straight to Airtable rather than bouncing through
-    // submit-community. That endpoint hardcodes a Pending status, which would
+    // api/submit. That endpoint hardcodes a Pending status, which would
     // mean approving something here and then approving it again in Airtable.
     const create = await fetch(
       `${AIRTABLE_API}/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(COMMUNITY_TABLE)}`,

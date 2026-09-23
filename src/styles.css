@@ -1541,6 +1541,62 @@ textarea.field { resize: vertical; min-height: 84px; }
 .theme-menu button:hover { background: var(--hover); }
 .theme-menu button.on { font-weight: 600; background: var(--soft); }
 
+/* ---------- the bell ----------
+   Same size and shape as the theme button beside it, so the two read as a pair
+   rather than as two unrelated controls that happened to land together. */
+.bell { position: relative; flex: 0 0 auto; }
+.bell-btn {
+  position: relative;
+  width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.bell-btn:hover { border-color: var(--muted); }
+
+/* The count sits on the bell rather than beside it: the bar is measured to the
+   pixel, and a badge that changes the button's width would move the nav. */
+.bell-dot {
+  position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--signal); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  font-family: var(--mono); border: 2px solid var(--surface); box-sizing: content-box;
+}
+
+.bell-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 70;
+  width: 320px; max-width: calc(100vw - 24px);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
+}
+.topbar .bell-menu { left: 0; right: auto; }
+
+.bell-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.bell-clear {
+  border: 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 4px;
+}
+.bell-clear:hover { color: var(--ink); }
+.bell-none { margin: 0; padding: 14px 12px; line-height: 1.6; }
+
+.bell-list { max-height: 330px; overflow-y: auto; }
+.bell-item {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+  text-decoration: none; color: inherit;
+}
+.bell-item:last-child { border-bottom: 0; }
+.bell-item:hover { background: var(--hover); }
+.bell-item > span:nth-child(2) { flex: 1; min-width: 0; }
+.bell-item b { display: block; font-size: 13px; font-weight: 600; }
+.bell-item i { display: block; font-size: 11.5px; color: var(--muted); font-style: normal; margin-top: 1px; }
+.bell-when { font-size: 11px; color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
+.bell-item.new { background: var(--signal-soft); }
+
+.bell-kind { width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex: 0 0 7px; background: var(--muted); }
+.bell-sold { background: var(--good); }
+.bell-bought { background: var(--signal); }
+
 @media (max-width: 420px) {
   .topbar .brand-name { display: none; }
 }

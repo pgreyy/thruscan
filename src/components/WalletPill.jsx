@@ -76,21 +76,29 @@ function WalletGlyph() {
   )
 }
 
-function CopyRow({ label, value }) {
+/** Copy the address without leaving the row it sits on. */
+function CopyDot({ value }) {
   const [done, setDone] = useState(false)
   if (!value) return null
   return (
     <button
-      className="pill-row"
-      title={value}
-      onClick={() => {
+      className="pill-copy"
+      title="Copy the address"
+      aria-label="Copy the address"
+      onClick={(e) => {
+        e.preventDefault(); e.stopPropagation()
         navigator.clipboard?.writeText(value)
         setDone(true)
         setTimeout(() => setDone(false), 1400)
       }}
     >
-      <span>{label}</span>
-      <span className="mono">{done ? 'Copied' : short(value)}</span>
+      {done ? '✓' : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+        </svg>
+      )}
     </button>
   )
 }
@@ -148,15 +156,27 @@ function Panel({ wallet, onClose }) {
       amount: fmt(b.amount, wallet.decimals?.[mint] ?? DECIMALS, 4),
     }))
 
+  /* Who you are, then where to go, then what you hold.
+     The name and the address used to be two rows of their own above all of it,
+     which spent the top of the menu restating what the button you just pressed
+     already said. They now sit on the Wallet row, which is where they are
+     useful: it is the row that opens the page about them. */
+  const name = primaryName(wallet.address)
+
   return (
     <div className="pill-panel">
-      {primaryName(wallet.address) && (
-        <div className="pill-row" style={{ cursor: 'default' }}>
-          <span className="fine">Name</span>
-          <b>{primaryName(wallet.address)}</b>
-        </div>
-      )}
-      <CopyRow label="Address" value={wallet.address} />
+      <Link className="pill-row" to="/profile" onClick={onClose}>
+        <span>Profile</span><span className="pill-go">→</span>
+      </Link>
+
+      <Link className="pill-row pill-wallet" to="/wallet" onClick={onClose}>
+        <span>Wallet</span>
+        <span className="pill-who">
+          {name && <b>{name}</b>}
+          <span className="mono">{short(wallet.address)}</span>
+        </span>
+        <CopyDot value={wallet.address} />
+      </Link>
 
       <div className="pill-divider" />
 
@@ -174,8 +194,6 @@ function Panel({ wallet, onClose }) {
 
       <div className="pill-divider" />
 
-      <Link className="pill-row" to="/profile" onClick={onClose}><span>Profile</span><span>→</span></Link>
-      <Link className="pill-row" to="/wallet" onClick={onClose}><span>Wallet</span><span>→</span></Link>
       {!isExternal() && (hasProvider()
         ? (
           <button className="pill-row" onClick={() => connectExternal().then(onClose).catch(() => {})}>

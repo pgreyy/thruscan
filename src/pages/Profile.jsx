@@ -1,6 +1,7 @@
 // src/pages/Profile.jsx
 //
-// Everything about your account in one place.
+// Everything about your account in one place: who you are, what you hold, what
+// you made, and what you have done.
 //
 // The picture is the interesting part. It is not stored by ThruScan: it is a
 // record on your `.id` name, which is a key/value pair on Thru's own name
@@ -21,6 +22,11 @@
 //            on chain every time and the Pal's current owner compared with this
 //            name's owner. Sell it and it goes back to a circle by itself.
 //
+// Everything to do with changing the picture is behind the pencil. A profile
+// is a thing you look at far more often than you edit, and a page that leads
+// with an upload box and a row of every NFT you own is a page built for the
+// rare visit rather than the common one.
+//
 // Tokens launched are read out of the launchpad registry by matching the
 // creator field, which is the only place that fact exists. There is no index
 // and no database, which is why the page scans rather than queries.
@@ -30,7 +36,9 @@ import { Link } from 'react-router-dom'
 import { useWallet } from './Wallet.jsx'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { Pfp } from '../components/Pfp.jsx'
-import { TokenMetaCard } from '../components/TokenMeta.jsx'
+import { TokenMetaCard, TokenIcon } from '../components/TokenMeta.jsx'
+import { Activity } from '../components/Activity.jsx'
+import { Tabs } from '../components/Tabs.jsx'
 import { setNameRecord, waitForResult, hasWallet } from '../lib/wallet.js'
 import { ownedNames, readName } from '../lib/holdings.js'
 import { withSuffix, ROOT_SUFFIX } from '../lib/names.js'
@@ -39,10 +47,15 @@ import { getAccount } from '../lib/rpcClient.js'
 import { THRUPAD_REGISTRY as PAD_REGISTRY } from '../lib/addresses.js'
 import { AVATAR_KEY, PFP_KEY, formatNftPfp, pfpForDomain, EMPTY_PFP, palsSnapshot } from '../lib/pfp.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
+import { allTokenMeta } from '../lib/tokenmeta.js'
 import { toSvg } from '../lib/pals/art.js'
 import './profile.css'
 
 const DECIMALS = 6
+/* An overview is a glance, not an inventory: 202 Pals drawn on the first
+   screen is a slow page nobody asked for. The tab beside it has all of them. */
+const PREVIEW = 10
+const PAGE = 60
 
 const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
 
@@ -51,6 +64,14 @@ function fmt(units, decimals = DECIMALS, maxFrac = 4) {
   if (!isFinite(n)) return '0'
   if (n !== 0 && Math.abs(n) < 10 ** -maxFrac) return `<${10 ** -maxFrac}`
   return n.toLocaleString(undefined, { maximumFractionDigits: maxFrac })
+}
+
+/** Nanoseconds since the epoch, as the name service records them. */
+function joined(registeredAt) {
+  if (!registeredAt) return null
+  const ms = Number(registeredAt / 1_000_000n)
+  if (!isFinite(ms) || ms <= 0) return null
+  return new Date(ms).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
 
 /* ---------- picking a Pal ---------- */
@@ -73,9 +94,10 @@ function PalOption({ pal, num, on, onPick }) {
   )
 }
 
-/* ---------- the picture card ---------- */
+/* ---------- changing the picture ----------
+   Only ever on screen because someone pressed the pencil. */
 
-function PictureCard({ primary, domain, pfp, onSaved }) {
+function PictureEditor({ primary, domain, pfp, onSaved, onClose }) {
   const gate = useUnlockGate()
   const fileRef = useRef(null)
 
@@ -83,7 +105,6 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
   const [error, setError] = useState(null)
   const [note, setNote] = useState(null)
   const [over, setOver] = useState(false)
-  const [preview, setPreview] = useState(null)
   const [showLink, setShowLink] = useState(false)
   const [linkDraft, setLinkDraft] = useState('')
   const [mine, setMine] = useState([])        // [{ num, pal }] this name's own Pals
@@ -112,8 +133,6 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
     return () => { alive = false }
   }, [owner])
 
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
-
   const write = useCallback(async (key, value, what) => {
     setError(null); setNote(null)
     try { await gate.ensure() } catch (e) {
@@ -134,12 +153,11 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
     const problem = fileProblem(file)
     if (problem) { setError(problem); return }
     setError(null); setNote(null); setBusy('upload')
-    let objectUrl = null
     try {
       const shaped = await squareImage(file)
-      objectUrl = shaped.url
-      setPreview((old) => { if (old) URL.revokeObjectURL(old); return shaped.url })
-      const url = await uploadImage(shaped.blob, { kind: 'pfp' })
+      let url
+      try { url = await uploadImage(shaped.blob, { kind: 'pfp' }) }
+      finally { URL.revokeObjectURL(shaped.url) }
       await write(AVATAR_KEY, url, 'Picture saved on your name.')
     } catch (e) {
       if (e instanceof NoStoreError) {
@@ -150,7 +168,6 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
       }
     } finally {
       setBusy(null)
-      if (objectUrl) { URL.revokeObjectURL(objectUrl); setPreview(null) }
     }
   }
 
@@ -180,76 +197,39 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
   }
 
   const working = busy !== null
-  const shown = preview
-    ? { kind: 'image', url: preview }
-    : pfp
-
-  if (!primary) {
-    return (
-      <section className="card">
-        <h2 className="h2">Picture</h2>
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          The picture lives on your name, so <Link to="/names">claim a .{ROOT_SUFFIX} name</Link> first. It is free.
-        </p>
-      </section>
-    )
-  }
 
   return (
-    <section className="card">
+    <section className="card pic-editor">
       {gate.modal}
 
       <div className="card-head">
         <div>
-          <h2 className="h2">Picture</h2>
+          <h2 className="h2">Your picture</h2>
           <p className="sub">Stored on {withSuffix(primary.name)}, not on ThruScan</p>
         </div>
+        <button className="btn ghost sm" onClick={onClose}>Done</button>
       </div>
 
-      <div className="pic-edit">
-        <div
-          className={`pic-drop${over ? ' over' : ''}`}
-          onDragOver={(e) => { e.preventDefault(); setOver(true) }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => {
-            e.preventDefault(); setOver(false)
-            const file = e.dataTransfer?.files?.[0]
-            if (file) takeFile(file)
-          }}
-        >
-          <Pfp pfp={shown} address={owner} size={112} />
-          <button
-            type="button"
-            className="pic-pencil"
-            onClick={() => fileRef.current?.click()}
-            disabled={working}
-            aria-label="Change picture"
-            title="Upload a picture"
-          >
-            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-              <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-            </svg>
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-            hidden
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) takeFile(f) }}
-          />
-        </div>
-
+      <div
+        className={`pic-edit${over ? ' over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault(); setOver(false)
+          const file = e.dataTransfer?.files?.[0]
+          if (file) takeFile(file)
+        }}
+      >
+        <Pfp pfp={pfp} address={owner} size={72} />
         <div className="pic-say">
           <p className="fine">
             {busy === 'upload'
               ? 'Cropping and uploading…'
-              : pfp?.kind === 'nft'
-                ? <>Pixel Pal <b>#{pfp.num}</b>, checked against the collection every time this loads. Sell it and this goes back to a circle.</>
-                : <>Drag a picture onto the square, or press the pencil. It is cropped square, shrunk to 400 pixels and saved as a link on your name.</>}
+              : 'Drop a picture here, or choose one. It is cropped square, shrunk to 400 pixels and saved as a link on your name.'}
           </p>
           <div className="pic-acts">
-            <button className="btn ghost sm" onClick={() => fileRef.current?.click()} disabled={working}>
-              {busy === 'upload' ? 'Uploading' : 'Upload a picture'}
+            <button className="btn sm" onClick={() => fileRef.current?.click()} disabled={working}>
+              {busy === 'upload' ? 'Uploading' : 'Choose a picture'}
             </button>
             {pfp?.kind === 'image' && (
               <button className="btn ghost sm" onClick={clearPicture} disabled={working}>
@@ -258,11 +238,18 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
             )}
           </div>
         </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+          hidden
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) takeFile(f) }}
+        />
       </div>
 
       <div className="pic-nfts">
         <div className="pic-nfts-head">
-          <h3 className="h3">Use one of your NFTs</h3>
+          <h3 className="h3">Or use one of your NFTs</h3>
           {claimed !== null && <span className="fine">Tap it again to stop using it</span>}
         </div>
         {mine.length === 0 ? (
@@ -303,6 +290,61 @@ function PictureCard({ primary, domain, pfp, onSaved }) {
   )
 }
 
+/* ---------- what you hold ---------- */
+
+function TokenTile({ ticker, amount, meta, mint }) {
+  return (
+    <Link className="ptile" to={`/token/${mint}`}>
+      <TokenIcon meta={meta} symbol={ticker} mint={mint} size={34} />
+      <span className="ptile-id">
+        <b>{ticker}</b>
+        <i className="mono">{amount}</i>
+      </span>
+    </Link>
+  )
+}
+
+function PalTile({ num, pal }) {
+  const art = useMemo(() => toSvg(pal.grid, 220), [pal])
+  return (
+    <Link className="pitem" to="/pals" title={`Pixel Pal #${num}`}>
+      <span className="pitem-art" dangerouslySetInnerHTML={{ __html: art }} />
+      <span className="pitem-name">Pixel Pal #{num}</span>
+      <span className="pitem-sub">Rank {pal.rank}</span>
+    </Link>
+  )
+}
+
+function Row({ title, count, to, children }) {
+  return (
+    <section className="prow">
+      <div className="prow-head">
+        <h2>{title}{count != null && <span className="prow-count">{count}</span>}</h2>
+        {to && <Link className="prow-all" to={to}>See all →</Link>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** The items tab, which is the one that may hold hundreds. */
+function ItemsPanel({ pals }) {
+  const [shown, setShown] = useState(PAGE)
+  if (pals.length === 0) return <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>
+  return (
+    <>
+      <div className="pitems">
+        {pals.slice(0, shown).map(({ num, pal }) => <PalTile key={num} num={num} pal={pal} />)}
+      </div>
+      {shown < pals.length && (
+        <button className="btn ghost" style={{ marginTop: 14 }} onClick={() => setShown((n) => n + PAGE)}>
+          Show {Math.min(PAGE, pals.length - shown)} more
+        </button>
+      )}
+    </>
+  )
+}
+
 /* ---------- the page ---------- */
 
 export function ProfilePage() {
@@ -312,6 +354,9 @@ export function ProfilePage() {
   const [launches, setLaunches] = useState([])
   const [scanning, setScanning] = useState(true)
   const [pfp, setPfp] = useState(EMPTY_PFP)
+  const [editing, setEditing] = useState(false)
+  const [pals, setPals] = useState([])
+  const [meta, setMeta] = useState({})
 
   const storeKey = wallet.address ? `thruscan.names.${wallet.address}` : null
 
@@ -354,6 +399,11 @@ export function ProfilePage() {
 
   useEffect(() => { loadNames() }, [loadNames])
   useEffect(() => { loadLaunches() }, [loadLaunches])
+  useEffect(() => {
+    let alive = true
+    allTokenMeta().then((m) => { if (alive) setMeta(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
 
   const primary = names[0] ?? null
 
@@ -363,6 +413,24 @@ export function ProfilePage() {
     pfpForDomain(primary.domain).then((p) => { if (alive) setPfp(p) })
     return () => { alive = false }
   }, [primary?.domain])
+
+  // The Pals this wallet holds, drawn from the collection itself.
+  useEffect(() => {
+    let alive = true
+    if (!wallet.address) { setPals([]); return undefined }
+    palsSnapshot()
+      .then(({ art, owners }) => {
+        if (!alive) return
+        setPals(Object.entries(owners)
+          .filter(([, who]) => who === wallet.address)
+          .map(([num]) => Number(num))
+          .filter((num) => art[num])
+          .sort((a, b) => a - b)
+          .map((num) => ({ num, pal: art[num] })))
+      })
+      .catch(() => { if (alive) setPals([]) })
+    return () => { alive = false }
+  }, [wallet.address])
 
   const held = Object.entries(wallet.balances ?? {})
     .filter(([, b]) => b?.exists && b.amount > 0n)
@@ -387,95 +455,142 @@ export function ProfilePage() {
     )
   }
 
+  const since = joined(primary?.domain?.registeredAt)
+
+  const tokens = held.length > 0 && (
+    <div className="ptiles">
+      {held.map((h) => <TokenTile key={h.mint} {...h} meta={meta[h.mint]} />)}
+    </div>
+  )
+  const itemsPreview = pals.length > 0 && (
+    <div className="pitems">
+      {pals.slice(0, PREVIEW).map(({ num, pal }) => <PalTile key={num} num={num} pal={pal} />)}
+    </div>
+  )
+
   return (
-    <div className="wrap">
-      <section className="card profile-head">
-        <Pfp pfp={pfp} address={wallet.address} size={88} />
-        <div style={{ minWidth: 0 }}>
-          <h1 className="h1" style={{ marginBottom: 4, fontSize: 30 }}>
-            {primary ? withSuffix(primary.name) : 'Unnamed'}
-          </h1>
-          <p className="sub mono" style={{ wordBreak: 'break-all' }}>{wallet.address}</p>
-          {pfp.kind === 'nft' && (
-            <p className="fine" style={{ marginTop: 6 }}>
-              <Link to="/pals">Pixel Pal #{pfp.num}</Link>, held by this wallet on chain
-            </p>
+    <div className="wrap-wide profile">
+      <header className="phead">
+        <div className="phead-pic">
+          <Pfp pfp={pfp} address={wallet.address} size={104} />
+          {primary && (
+            <button
+              type="button"
+              className="pic-pencil"
+              onClick={() => setEditing((v) => !v)}
+              aria-label="Change your picture"
+              aria-expanded={editing}
+              title="Change your picture"
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+              </svg>
+            </button>
           )}
+        </div>
+
+        <div className="phead-id">
+          <h1>{primary ? withSuffix(primary.name) : 'Unnamed'}</h1>
+          <p className="mono phead-addr">{wallet.address}</p>
+          <p className="phead-facts">
+            {pfp.kind === 'nft' && (
+              <>
+                <Link to="/pals">Pixel Pal #{pfp.num}</Link>, held by this wallet on chain
+                <span className="phead-dot">·</span>
+              </>
+            )}
+            {since && <>Joined {since}<span className="phead-dot">·</span></>}
+            {pals.length} {pals.length === 1 ? 'item' : 'items'}
+            <span className="phead-dot">·</span>
+            {held.length} {held.length === 1 ? 'token' : 'tokens'}
+          </p>
           {!primary && (
             <p className="fine" style={{ marginTop: 8 }}>
-              <Link to="/names">Claim a name</Link>, free.
+              <Link to="/names">Claim a name</Link>, free, and you can set a picture.
             </p>
           )}
         </div>
-      </section>
+      </header>
 
-      <PictureCard primary={primary} domain={primary?.domain} pfp={pfp} onSaved={loadNames} />
+      {editing && primary && (
+        <PictureEditor
+          primary={primary}
+          domain={primary.domain}
+          pfp={pfp}
+          onSaved={loadNames}
+          onClose={() => setEditing(false)}
+        />
+      )}
 
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Holdings</h2>
-            <p className="sub">{wallet.registered ? 'Live on alphanet' : 'Not registered yet'}</p>
-          </div>
-          <button className="btn ghost" onClick={() => wallet.refresh()}>Refresh</button>
-        </div>
-        <div className="rows" style={{ marginTop: 12 }}>
-          {held.length === 0
-            ? <p className="fine">Nothing yet. <Link to="/faucet">Get some tUSD</Link> to start.</p>
-            : held.map((h) => (
-              <div className="row" key={h.mint}>
-                <span><b>{h.ticker}</b></span>
-                <span className="mono">{h.amount}</span>
-              </div>
-            ))}
-          <div className="row">
-            <span className="fine">Fees</span>
-            <span className="mono fine">{wallet.native?.toString() ?? '0'} THRU</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Launched</h2>
-            <p className="sub">Tokens whose curve records you as the creator</p>
-          </div>
-          <Link className="btn ghost" to="/launch">Launch one</Link>
-        </div>
-        {scanning
-          ? <p className="fine" style={{ marginTop: 12 }}>Reading the launchpad…</p>
-          : launches.length === 0
-            ? <p className="fine" style={{ marginTop: 12 }}>Nothing yet.</p>
-            : (
-              <div className="launch-mine" style={{ marginTop: 12 }}>
-                {launches.map((l) => (
-                  <TokenMetaCard key={l.id} launch={l} address={wallet.address} />
-                ))}
-              </div>
-            )}
-      </section>
-
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Names</h2>
-            <p className="sub">Claimed in this browser</p>
-          </div>
-          <Link className="btn ghost" to="/names">Claim another</Link>
-        </div>
-        <div className="rows" style={{ marginTop: 12 }}>
-          {names.length === 0
-            ? <p className="fine">None yet.</p>
-            : names.map((n) => (
-              <div className="row" key={n.account}>
-                <span><b>{withSuffix(n.name)}</b></span>
-                <span className="fine">{n.domain?.records?.length ?? 0} records</span>
-              </div>
-            ))}
-        </div>
-      </section>
-
+      <Tabs
+        param="view"
+        tabs={[
+          {
+            key: 'overview',
+            label: 'Overview',
+            el: (
+              <>
+                <Row title="Tokens" count={held.length || null}>
+                  {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some tUSD</Link> to start.</p>}
+                </Row>
+                <Row title="Items" count={pals.length || null} to={pals.length > PREVIEW ? '?view=items' : null}>
+                  {itemsPreview || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
+                </Row>
+                <Row title="Launched" count={launches.length || null}>
+                  {scanning
+                    ? <p className="fine">Reading the launchpad…</p>
+                    : launches.length === 0
+                      ? <p className="fine">Nothing yet. <Link to="/launch">Launch a token</Link>.</p>
+                      : (
+                        <div className="launch-mine">
+                          {launches.map((l) => <TokenMetaCard key={l.id} launch={l} address={wallet.address} />)}
+                        </div>
+                      )}
+                </Row>
+                <Row title="Names" count={names.length || null}>
+                  {names.length === 0
+                    ? <p className="fine">None yet. <Link to="/names">Claim one</Link>, free.</p>
+                    : (
+                      <div className="rows">
+                        {names.map((n) => (
+                          <div className="row" key={n.account}>
+                            <span><b>{withSuffix(n.name)}</b></span>
+                            <span className="fine">{n.domain?.records?.length ?? 0} records</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </Row>
+              </>
+            ),
+          },
+          {
+            key: 'tokens',
+            label: 'Tokens',
+            badge: held.length || null,
+            el: (
+              <Row title="Tokens" count={held.length || null}>
+                {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some tUSD</Link> to start.</p>}
+              </Row>
+            ),
+          },
+          {
+            key: 'items',
+            label: 'Items',
+            badge: pals.length || null,
+            el: (
+              <Row title="Items" count={pals.length || null}>
+                <ItemsPanel pals={pals} />
+              </Row>
+            ),
+          },
+          {
+            key: 'activity',
+            label: 'Activity',
+            el: <div className="prow"><Activity addresses={[wallet.address]} me={wallet.address} /></div>,
+          },
+        ]}
+      />
     </div>
   )
 }

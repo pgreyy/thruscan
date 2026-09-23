@@ -36,7 +36,7 @@ import dns from 'node:dns'
 import { createThruClient, Pubkey, proofs, deriveProgramAddress, TransactionBuilder } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
 import { createHash } from 'node:crypto'
-import { sendLanded } from './_send.js'
+import { sendLanded } from '../src/lib/sendLanded.js'
 import { decodeConfig, buildAllow, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
@@ -239,7 +239,7 @@ async function sponsorSend(c, { program, readWrite = [], readOnly = [], data, st
   const priv = hexToBytes(process.env.THRU_SPONSOR_PRIVKEY)
   const chainId = await c.chain.getChainId()
   // Confirmed on chain before this returns, and rebuilt with a fresh nonce if
-  // another send took this one. See api/_send.js for why.
+  // another send took this one. See src/lib/sendLanded.js for why.
   return sendLanded(c, {
     nonceOf: async () => (await c.accounts.get(pub))?.meta?.nonce ?? 0n,
     build: async (nonce) => {

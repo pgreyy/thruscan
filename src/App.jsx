@@ -11,6 +11,7 @@ import { BuildersPage } from './pages/Builders.jsx'
 import { Tabs } from './components/Tabs.jsx'
 import { GameIdentity } from './components/GameIdentity.jsx'
 import { NamePfp } from './components/Pfp.jsx'
+import { NotificationBell } from './components/Notifications.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
@@ -657,6 +658,11 @@ function Shell({ children }) {
     if (!bar) return
     const ro = new ResizeObserver(fitNav)
     ro.observe(bar)
+    // The right-hand group is watched too: the bar's own box never changes, so
+    // a control appearing there (the bell's count, the network status settling)
+    // would otherwise leave the nav sized for a narrower right side.
+    const right = bar.querySelector(':scope > .deskbar-right')
+    if (right) ro.observe(right)
     fitNav()
     document.fonts?.ready?.then(fitNav)
     return () => ro.disconnect()
@@ -759,7 +765,7 @@ function Shell({ children }) {
             </div>
           </details>
         </nav>
-        <div className="deskbar-right"><ThemeSwitch /><NetworkStatus /></div>
+        <div className="deskbar-right"><NotificationBell /><ThemeSwitch /><NetworkStatus /></div>
         {/* Invisible copy of every top link, for measuring. */}
         <div className="deskbar-measure" aria-hidden="true">
           {TOP_NAV.map((l) => <span key={l.to}>{l.label}</span>)}
@@ -776,6 +782,7 @@ function Shell({ children }) {
             <span className="brand-mark">T</span>
             <span className="brand-name">ThruScan</span>
           </Link>
+          <NotificationBell />
           <ThemeSwitch />
         </div>
       </header>
@@ -3018,7 +3025,7 @@ function ProjectsPage() {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch('/api/submit-project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const res = await fetch('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'project', ...form }) })
       const data = await res.json()
       if (data.success) { setSubmitted(true); setForm(EMPTY_PROJECT) }
       else setError(data.error || 'That did not save. Try again.')
@@ -3158,7 +3165,7 @@ function CommunityPage() {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch('/api/submit-community', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const res = await fetch('/api/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'community', ...form }) })
       const data = await res.json()
       if (data.success) { setSubmitted(true); setForm(EMPTY_CONTENT) }
       else setError(data.error || 'That did not save. Try again.')

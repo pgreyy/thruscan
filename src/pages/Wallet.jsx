@@ -33,6 +33,7 @@ import {
   importPhrase, exportPhrase, hasPhrase,
   transferToken, releaseName, claimNameFor, sendNativeThru, checkName,
 } from '../lib/wallet.js'
+import { displayDecimals } from '../lib/wthru.js'
 import { knownMints, ownedNames } from '../lib/holdings.js'
 import { onExternalChange, restoreExternal, isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
 import { customMints, addCustomMint, removeCustomMint, lookupToken, onCustomMintsChange } from '../lib/customTokens.js'
@@ -60,7 +61,7 @@ let state = {
   native: 0n,          // native THRU, which is what pays fees
   balances: {},        // mint -> { account, exists, amount (BigInt) }
   tickers: {},         // mint -> 'TCAT'. A balance without a name is not a balance.
-  decimals: {},        // mint -> 6. WTHRU is 8, so this cannot be assumed.
+  decimals: {},        // mint -> how many decimals to SHOW it with; see displayDecimals
 }
 
 function setState(patch) {
@@ -117,10 +118,10 @@ export function useWallet() {
           try {
             const decoded = decodeMintAccount(mints[i]?.data?.base64)
             tickers[m] = decoded?.ticker || null
-            decimals[m] = decoded?.decimals ?? 6
+            decimals[m] = displayDecimals(m, decoded?.decimals ?? 6)
           } catch {
             tickers[m] = null
-            decimals[m] = 6
+            decimals[m] = displayDecimals(m, 6)
           }
         })
       }

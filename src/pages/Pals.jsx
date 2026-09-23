@@ -17,7 +17,7 @@ import { signAndSend, waitForResult } from '../lib/wallet.js'
 import { palsInOrder, toSvg, GENESIS, palFor } from '../lib/pals/art.js'
 import { buildSend, buildClaim, palsError, nftAccountFor, WTHRU_MINT, PALS_PROGRAM } from '../lib/pals/chain.js'
 import { useMint } from '../lib/pals/useMint.js'
-import { useMarket } from '../lib/pals/useMarket.js'
+import { useMarket } from '../lib/pals/useMarket.jsx'
 import './nfts.css'
 
 const PAGE = 60
@@ -228,7 +228,7 @@ export function PalsPage() {
           <span className="nft-sweep-total mono">{picked.length ? `${fmt(total)} THRU` : 'Pick Pals or drag'}</span>
           {picked.length > 0 && <button className="linkish" onClick={() => setPicked([])}>Clear</button>}
           <button className="btn" disabled={!picked.length || market.busy !== null} onClick={() => market.buy(pickedListings)}>
-            {market.busy === 'wrapping' ? 'Wrapping THRU…' : market.busy === 'buy' ? 'Buying…' : picked.length > 1 ? `Buy ${picked.length}` : 'Buy'}
+            {market.busy === 'checking' ? 'Checking…' : market.busy === 'wrapping' ? 'Wrapping THRU…' : market.busy === 'buy' ? 'Buying…' : picked.length > 1 ? `Buy ${picked.length}` : 'Buy'}
           </button>
         </div>
       )}
@@ -404,7 +404,7 @@ function PalModal({ id, pal, total, owner, listing, mine, prize, vault, feeBps, 
                 <span className="nft-muted">Price</span>
                 <div className="nft-box-price mono">{fmt(listing.price)} THRU</div>
                 {!mine && <button className="btn full" onClick={() => market.buy([listing])} disabled={working}>
-                  {market.busy === 'wrapping' ? 'Wrapping THRU…' : market.busy === 'buy' ? 'Buying…' : 'Buy now'}
+                  {market.busy === 'checking' ? 'Checking…' : market.busy === 'wrapping' ? 'Wrapping THRU…' : market.busy === 'buy' ? 'Buying…' : 'Buy now'}
                 </button>}
               </>
             ) : (

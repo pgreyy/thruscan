@@ -1,6 +1,10 @@
-// api/_send.js
+// src/lib/sendLanded.js
 //
 // Sending a transaction from one key so that it actually lands.
+//
+// This lives here rather than in api/ because every file under api/ counts
+// against the deployment's function limit, and a helper with no handler in it
+// is not a function. It is imported by api/wallet.js.
 //
 // A Thru transaction names its fee payer's next nonce. Two transactions built
 // from the same key at the same moment carry the same nonce, the network keeps

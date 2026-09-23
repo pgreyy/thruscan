@@ -1,23 +1,31 @@
 // src/components/Confirm.jsx
 //
-// "Are you sure?", for the handful of things that cannot be taken back.
+// "Are you sure?", in two tempers.
 //
-// Deliberately awkward. The confirm button is the quiet one and the cancel
-// button is the loud one, because the default answer to an irreversible
-// question should be no. Escape and a click outside both cancel.
+// For something that cannot be taken back, it is deliberately awkward: the
+// confirm button is the quiet one and the cancel button is the loud one,
+// because the default answer to an irreversible question should be no.
+//
+// For something a person actually came here to do, such as buying, that would
+// be wrong. Passing `tone: 'go'` puts the weight on the confirm button and
+// leaves cancel as the quiet one. It is still a stop: nothing is signed until
+// it is answered, and it shows exactly what is about to happen, which is the
+// point of asking at all.
+//
+// Escape and a click outside both cancel, either way.
 //
 // Usage:
 //
 //   const confirm = useConfirm()
 //   ...
-//   if (!(await confirm.ask({ title, body, confirmLabel }))) return
+//   if (!(await confirm.ask({ title, body, detail, confirmLabel, tone: 'go' }))) return
 //   ...
 //   {confirm.modal}
 
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-function Dialog({ title, body, detail, confirmLabel, onYes, onNo }) {
+function Dialog({ title, body, detail, confirmLabel, cancelLabel, tone, onYes, onNo }) {
   useEffect(() => {
     const key = (e) => { if (e.key === 'Escape') onNo() }
     document.addEventListener('keydown', key)
@@ -42,8 +50,17 @@ function Dialog({ title, body, detail, confirmLabel, onYes, onNo }) {
         )}
 
         <div className="inline" style={{ marginTop: 16 }}>
-          <button className="btn" onClick={onNo} style={{ flex: 1 }}>Keep it</button>
-          <button className="btn ghost danger" onClick={onYes}>{confirmLabel}</button>
+          {tone === 'go' ? (
+            <>
+              <button className="btn ghost" onClick={onNo}>{cancelLabel ?? 'Cancel'}</button>
+              <button className="btn" onClick={onYes} style={{ flex: 1 }}>{confirmLabel}</button>
+            </>
+          ) : (
+            <>
+              <button className="btn" onClick={onNo} style={{ flex: 1 }}>{cancelLabel ?? 'Keep it'}</button>
+              <button className="btn ghost danger" onClick={onYes}>{confirmLabel}</button>
+            </>
+          )}
         </div>
       </div>
     </div>,
@@ -65,6 +82,8 @@ export function useConfirm() {
         body={pending.body}
         detail={pending.detail}
         confirmLabel={pending.confirmLabel ?? 'Yes, do it'}
+        cancelLabel={pending.cancelLabel}
+        tone={pending.tone}
         onYes={() => { pending.resolve(true); setPending(null) }}
         onNo={() => { pending.resolve(false); setPending(null) }}
       />

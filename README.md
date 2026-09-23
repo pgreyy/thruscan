@@ -30,8 +30,8 @@ browser (React + Vite)
    ├── /api/rpc      reads: accounts, transactions, history, blocks, events
    ├── /api/wallet   writes ThruScan pays for: creating wallets, opening
    │                 token accounts, the faucet, names, launch accounts
-   ├── /api/upload   pictures, stored under the hash of their own bytes
-   ├── /api/token-meta  a launched token's picture and links, which only its
+   ├── /api/media    pictures, stored under the hash of their own bytes, and
+   │                 a launched token's picture and links, which only its
    │                 creator can change: the write carries their signature and
    │                 is checked against the creator the registry holds on chain
    └── wallet in the browser signs everything the user does themselves:
@@ -67,7 +67,7 @@ The pages load, but anything that reads the chain needs the `api/` functions, wh
 | `THRU_SPONSOR_PRIVKEY` | `api/wallet.js` | Its private key, hex. Never commit this. |
 | `THRU_PAD_PROGRAM` | `api/wallet.js` | The launchpad program, if not the default |
 | `THRU_RPC_URL` | `api/rpc.js` | Optional: override the Thru node address |
-| `BLOB_READ_WRITE_TOKEN` | `api/upload.js`, `api/token-meta.js` | Set for you when a Blob store is connected to the project. Without it, uploads answer 501 and the pages offer pasting a link instead |
+| `BLOB_READ_WRITE_TOKEN` | `api/media.js` | Set for you when a Blob store is connected to the project. Without it, uploads answer 501 and the pages offer pasting a link instead |
 | `STATS_KEY` | `api/rpc.js` | Optional: a password for /stats |
 | `VITE_CF_BEACON` | `src/components/Counters.jsx` | Optional: a Cloudflare Web Analytics token. The beacon only loads when it is set |
 | `VITE_*` | `src/lib/addresses.js` | Optional: override program and account addresses after a redeploy |

@@ -1,36 +1,96 @@
-/* Profile page: the picture editor, and the tokens you have launched.
+/* Profile page: who you are at the top, then what you hold.
 
-   The square is the control. Dropping a file on it, or pressing the pencil in
-   its corner, is the whole interaction; there is no separate upload box taking
-   up a third of the card for something that happens once. */
+   The shape is borrowed from the marketplaces people already use: a picture, a
+   name, a line of facts, then rows of things. Editing is behind the pencil,
+   because a profile is looked at far more often than it is changed. */
 
+.profile { padding-bottom: 20px; }
+
+.phead {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 6px 0 20px;
+  min-width: 0;
+}
+
+.phead-pic { position: relative; flex: 0 0 auto; }
+
+.phead-id { min-width: 0; }
+.phead-id h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.phead-addr {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.phead-facts { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.phead-facts a { font-weight: 600; }
+.phead-dot { padding: 0 7px; opacity: 0.6; }
+
+/* A row of things, with its own heading and count. */
+.prow { margin-bottom: 26px; }
+.prow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.prow-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.prow-count {
+  margin-left: 8px; font-size: 12.5px; font-weight: 500; color: var(--muted);
+  font-family: var(--mono);
+}
+.prow-all { font-size: 12.5px; }
+.prow .fine { margin: 0; }
+
+/* Tokens: a card each, wrapping, the way a wallet shows them. */
+.ptiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+.ptile {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: inherit; text-decoration: none;
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+.ptile:hover { border-color: var(--signal-line); transform: translateY(-1px); }
+.ptile-id { min-width: 0; display: grid; }
+.ptile-id b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptile-id i { font-size: 12px; color: var(--muted); font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Items: the picture first and large, its name under it. */
+.pitems { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.pitem {
+  display: block; min-width: 0; color: inherit; text-decoration: none;
+  border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
+  background: var(--surface);
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+.pitem:hover { border-color: var(--signal-line); transform: translateY(-2px); }
+.pitem-art { display: block; aspect-ratio: 1; background: var(--soft); }
+.pitem-art svg { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.pitem-name { display: block; padding: 9px 11px 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pitem-sub { display: block; padding: 1px 11px 10px; font-size: 11.5px; color: var(--muted); }
+
+/* The editor, which is only ever here because the pencil was pressed. */
+.pic-editor { margin-bottom: 22px; }
+
+/* Drop a file anywhere on this row, not just on the picture: a 72 pixel
+   circle is a small target, and the whole row is obviously the place. */
 .pic-edit {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   margin-top: 14px;
-  flex-wrap: wrap;
-}
-
-.pic-drop {
-  position: relative;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-
-/* The drop target is bigger than the picture, and only shows itself while
-   something is being dragged over it. A dashed ring around a profile picture
-   at rest is noise. */
-.pic-drop::after {
-  content: '';
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
+  padding: 14px;
   border: 2px dashed transparent;
+  border-radius: var(--r-md);
+  background: var(--soft);
+  flex-wrap: wrap;
   transition: border-color 0.12s ease;
-  pointer-events: none;
 }
-.pic-drop.over::after { border-color: var(--signal); }
+.pic-edit.over { border-color: var(--signal); }
 
 .pic-pencil {
   position: absolute;
@@ -121,7 +181,23 @@
 .tmeta-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .tmeta-links a { font-size: 12px; }
 
+@media (max-width: 640px) {
+  .phead { gap: 14px; }
+  .phead-id h1 { font-size: 24px; }
+  .phead-facts { font-size: 12px; }
+  .phead-dot { padding: 0 5px; }
+}
+
 @media (max-width: 520px) {
   .pic-edit { gap: 14px; }
   .pic-say { flex-basis: 100%; }
+  .ptiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .pitems { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+}
+
+/* At the narrowest sizes the picture sits above the name rather than beside a
+   heading it would leave two words of room for. */
+@media (max-width: 400px) {
+  .phead { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .pitems { grid-template-columns: 1fr 1fr; }
 }

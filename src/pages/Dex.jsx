@@ -32,6 +32,7 @@ import {
 import { decodeMintAccount } from '../lib/token.js'
 import { useWallet, sendBuilt, TopUpCard, AddressChip, AddToken } from './Wallet.jsx'
 import { customMints, customMeta, onCustomMintsChange } from '../lib/customTokens.js'
+import { displayDecimals } from '../lib/wthru.js'
 import {
   deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
   burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances,
@@ -306,8 +307,8 @@ function useChainData(registry, decode, vaultsOf, mintsOf) {
         try {
           const d = decodeMintAccount(mintRes[i]?.data?.base64)
           tickers[m] = d?.ticker || null
-          decimals[m] = d?.decimals ?? DECIMALS
-        } catch { tickers[m] = null; decimals[m] = DECIMALS }
+          decimals[m] = displayDecimals(m, d?.decimals ?? DECIMALS)
+        } catch { tickers[m] = null; decimals[m] = displayDecimals(m, DECIMALS) }
       })
 
       setState({ loading: false, error: null, data, balances, tickers, decimals })
