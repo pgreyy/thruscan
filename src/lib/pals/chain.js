@@ -35,6 +35,13 @@ export const NFT_PROGRAM = 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5'
 export const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
 export const WTHRU_MINT = 'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb'
 
+/* Paying for a Pal out of native THRU means wrapping first, and doing that in
+   the same transaction as the mint needs all four of these. */
+export const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
+export const MULTICALL_PROGRAM = 'taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP'
+export const WTHRU_PROGRAM = 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm'
+export const WTHRU_VAULT = 'taEqcObTD3WldMGFOW28FBKF6_mQfSbci1TC77YyssQQhP'
+
 export const PALS_SITE = 'https://thruscan.vercel.app'
 export const PAL_URI_BASE = `${PALS_SITE}/api/rpc?action=pal&id=`
 
@@ -222,6 +229,91 @@ export async function buildMint({ payer, nftId, treasury, proof }) {
 }
 
 /**
+ * Wrapping and minting in one signature.
+ *
+ * A Pal is paid for in WTHRU, so a wallet holding only THRU had to sign twice:
+ * once to wrap and once to mint. Thru's multicall program runs several
+ * instructions in one transaction under one signature, all or nothing, which
+ * is what the wrap itself already uses to move THRU into the vault and mint
+ * WTHRU back without a gap in between.
+ *
+ * Three inner calls here: the transfer into the WTHRU vault, the deposit that
+ * mints WTHRU to the payer, and the Pal mint that spends it.
+ *
+ * Only one of them creates an account, and that matters. A creation carries a
+ * state proof valid against one state root, and the first creation in a
+ * transaction moves that root, so two creations can never share a transaction.
+ * The Pal mint creates the NFT account; the other two create nothing. The
+ * payer's WTHRU account is opened separately, by the sponsor, for the same
+ * reason.
+ *
+ * `wrap` is how much native THRU to wrap first. Zero means the wallet already
+ * holds enough WTHRU, and then this is a plain mint with no bundle at all.
+ */
+export async function buildMintPayingInThru({ payer, nftId, treasury, proof, wrap }) {
+  if (!wrap) return buildMint({ payer, nftId, treasury, proof })
+
+  const nft = await nftAccountFor(nftId)
+  const payFrom = await tokenAccountFor(WTHRU_MINT, payer)
+  const { rw, ro, at } = layout(
+    payer,
+    [PALS_CONFIG, PALS_NFT_MINT, nft, payFrom, treasury, WTHRU_VAULT, WTHRU_MINT],
+    [NFT_PROGRAM, TOKEN_PROGRAM, EOA_PROGRAM, WTHRU_PROGRAM, PALS_PROGRAM],
+  )
+
+  // EOA TRANSFER: [u32 1][u64 amount][u16 from = payer][u16 to = vault]
+  const transfer = new Uint8Array(16)
+  const t = new DataView(transfer.buffer)
+  t.setUint32(0, 1, true)
+  t.setBigUint64(4, BigInt(wrap), true)
+  t.setUint16(12, 0, true)
+  t.setUint16(14, at(WTHRU_VAULT), true)
+
+  // WTHRU DEPOSIT: [u32 1][token program][vault][mint][dest]
+  const deposit = new Uint8Array(12)
+  const d = new DataView(deposit.buffer)
+  d.setUint32(0, 1, true)
+  d.setUint16(4, at(TOKEN_PROGRAM), true)
+  d.setUint16(6, at(WTHRU_VAULT), true)
+  d.setUint16(8, at(WTHRU_MINT), true)
+  d.setUint16(10, at(payFrom), true)
+
+  // PALS MINT, the same instruction as buildMint, over this wider account list.
+  const head = new Uint8Array(15)
+  const m = new DataView(head.buffer)
+  head[0] = 0x02
+  m.setUint16(1, at(PALS_CONFIG), true)
+  m.setUint16(3, at(NFT_PROGRAM), true)
+  m.setUint16(5, at(PALS_NFT_MINT), true)
+  m.setUint16(7, at(nft), true)
+  m.setUint16(9, at(TOKEN_PROGRAM), true)
+  m.setUint16(11, at(payFrom), true)
+  m.setUint16(13, at(treasury), true)
+
+  const data = multicall([
+    [at(EOA_PROGRAM), transfer],
+    [at(WTHRU_PROGRAM), deposit],
+    [at(PALS_PROGRAM), concat(head, proof)],
+  ])
+  return { program: MULTICALL_PROGRAM, readWrite: rw, readOnly: ro, data, nft }
+}
+
+/** [count u16] then, per call, [program index u16][data length u64][data]. */
+function multicall(calls) {
+  const parts = calls.map(([programIdx, data]) => {
+    const out = new Uint8Array(10 + data.length)
+    const dv = new DataView(out.buffer)
+    dv.setUint16(0, programIdx, true)
+    dv.setBigUint64(2, BigInt(data.length), true)
+    out.set(data, 10)
+    return out
+  })
+  const count = new Uint8Array(2)
+  new DataView(count.buffer).setUint16(0, calls.length, true)
+  return concat(count, ...parts)
+}
+
+/**
  * GIFT reserved Pal `num` to the reserve wallet, as NFT id `nftId`. Signed by
  * the admin or the allower.
  *   [0x0A][cfg][nft_prog][nft_mint][nft_acct][reserve][num u32][proof]
@@ -370,6 +462,82 @@ export async function buildBuy({ payer, items, treasury }) {
   })
   return { program: PALS_PROGRAM, readWrite: rw, readOnly: ro, data }
 }
+
+/**
+ * The same BUY, with the wrapping folded in.
+ *
+ * The market settles in wrapped THRU, and almost nobody holds any: the money
+ * is sitting there as native THRU. Wrapping first and buying second worked,
+ * but it meant approving twice for one purchase, and a wallet that approved
+ * the first and walked away from the second was left holding WTHRU it never
+ * asked for. Both go in one transaction now, so it is one approval and either
+ * the whole purchase happens or none of it does.
+ *
+ * `wrap` is how much native THRU to wrap on the way through, 0n to pay
+ * entirely from a WTHRU balance that is already there.
+ */
+export async function buildBuyPayingInThru({ payer, items, treasury, wrap = 0n }) {
+  if (!wrap) return buildBuy({ payer, items, treasury })
+  if (!items.length || items.length > 8) throw new Error('Pick between 1 and 8 Pals.')
+
+  const payFrom = await tokenAccountFor(WTHRU_MINT, payer)
+  const nfts = await Promise.all(items.map((it) => nftAccountFor(it.nftId)))
+  const payouts = items.map((it) => it.payout)
+  const { rw, ro, at } = layout(
+    payer,
+    [PALS_CONFIG, PALS_MARKET, payFrom, treasury, ...nfts, ...payouts, WTHRU_VAULT, WTHRU_MINT],
+    [NFT_PROGRAM, PALS_NFT_MINT, TOKEN_PROGRAM, EOA_PROGRAM, WTHRU_PROGRAM, PALS_PROGRAM],
+  )
+
+  // EOA TRANSFER: [u32 1][u64 amount][u16 from = payer][u16 to = vault]
+  const transfer = new Uint8Array(16)
+  const t = new DataView(transfer.buffer)
+  t.setUint32(0, 1, true)
+  t.setBigUint64(4, BigInt(wrap), true)
+  t.setUint16(12, 0, true)
+  t.setUint16(14, at(WTHRU_VAULT), true)
+
+  // WTHRU DEPOSIT: [u32 1][token program][vault][mint][dest]
+  const deposit = new Uint8Array(12)
+  const d = new DataView(deposit.buffer)
+  d.setUint32(0, 1, true)
+  d.setUint16(4, at(TOKEN_PROGRAM), true)
+  d.setUint16(6, at(WTHRU_VAULT), true)
+  d.setUint16(8, at(WTHRU_MINT), true)
+  d.setUint16(10, at(payFrom), true)
+
+  // PALS BUY, the same instruction as buildBuy, over this wider account list.
+  const data = new Uint8Array(16 + items.length * 16)
+  const dv = new DataView(data.buffer)
+  data[0] = 0x0f
+  dv.setUint16(1, at(PALS_CONFIG), true)
+  dv.setUint16(3, at(PALS_MARKET), true)
+  dv.setUint16(5, at(NFT_PROGRAM), true)
+  dv.setUint16(7, at(PALS_NFT_MINT), true)
+  dv.setUint16(9, at(TOKEN_PROGRAM), true)
+  dv.setUint16(11, at(payFrom), true)
+  dv.setUint16(13, at(treasury), true)
+  data[15] = items.length
+  items.forEach((it, i) => {
+    const o = 16 + i * 16
+    dv.setUint16(o, at(nfts[i]), true)
+    dv.setUint16(o + 2, at(it.payout), true)
+    dv.setUint32(o + 4, it.id, true)
+    dv.setBigUint64(o + 8, BigInt(it.price), true)
+  })
+
+  return {
+    program: MULTICALL_PROGRAM,
+    readWrite: rw,
+    readOnly: ro,
+    data: multicall([
+      [at(EOA_PROGRAM), transfer],
+      [at(WTHRU_PROGRAM), deposit],
+      [at(PALS_PROGRAM), data],
+    ]),
+  }
+}
+
 
 /** What a transaction's user error code means, in words. */
 export function palsError(code) {

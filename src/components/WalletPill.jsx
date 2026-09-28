@@ -30,7 +30,10 @@ import { ownedNames, readName, knownMints } from '../lib/holdings.js'
 import { pfpForDomain, EMPTY_PFP } from '../lib/pfp.js'
 import { Pfp } from './Pfp.jsx'
 import { useDismiss } from '../lib/dismiss.js'
-import { isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
+import {
+  isExternal, externalConnected, externalName, hasProvider, connectExternal, disconnectExternal,
+  switchToBrowserWallet, switchToConnectedWallet, EXTENSION_URL,
+} from '../lib/external.js'
 
 const DECIMALS = 6
 
@@ -198,7 +201,23 @@ function Panel({ wallet, onClose }) {
 
       <div className="pill-divider" />
 
-      {!isExternal() && (hasProvider()
+      {/* Switching, not connecting.
+
+          Both wallets can be present at once: the extension stays connected
+          while the browser wallet signs, and going back costs nothing because
+          there is no second approval to sit through. Disconnecting is a
+          separate, deliberate row, because leaving and switching are different
+          intentions. */}
+      {externalConnected() && !isExternal() && (
+        <>
+          <button className="pill-row" onClick={() => { switchToConnectedWallet(); onClose() }}>
+            <span>Use {externalName()}</span><span className="fine">still connected</span>
+          </button>
+          <div className="pill-divider" />
+        </>
+      )}
+
+      {!externalConnected() && (hasProvider()
         ? (
           <button className="pill-row" onClick={() => connectExternal().then(onClose).catch(() => {})}>
             <span>Use ThruScan Wallet</span><span className="fine">extension</span>
@@ -209,13 +228,20 @@ function Panel({ wallet, onClose }) {
             <span>Get ThruScan Wallet</span><span>↗</span>
           </a>
         ))}
-
-      <div className="pill-divider" />
+      {!externalConnected() && <div className="pill-divider" />}
 
       {isExternal() ? (
-        <button className="pill-row" onClick={() => { disconnectExternal(); onClose() }}>
-          <span>Disconnect</span><span className="fine">{externalName()}</span>
-        </button>
+        <>
+          {storedWallet() && (
+            <button className="pill-row" onClick={() => { switchToBrowserWallet(); onClose() }}>
+              <span>Use the browser wallet</span>
+              <span className="fine mono">{short(storedWallet().address)}</span>
+            </button>
+          )}
+          <button className="pill-row" onClick={async () => { await disconnectExternal(); onClose() }}>
+            <span>Disconnect</span><span className="fine">{externalName()}</span>
+          </button>
+        </>
       ) : (
         <button
           className="pill-row"

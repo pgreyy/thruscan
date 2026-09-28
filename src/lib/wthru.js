@@ -15,69 +15,69 @@
 // Both verified on alphanet: 100 THRU wrapped to 100 WTHRU base units, then
 // 40 unwrapped back, with a wallet-paid WTHRU account.
 
-import { Pubkey } from '@thru/sdk'
+import { buildMulticall, sortAccounts } from './multicall.js'
 
 export const WTHRU_PROGRAM = 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm'
 export const WTHRU_VAULT = 'taEqcObTD3WldMGFOW28FBKF6_mQfSbci1TC77YyssQQhP'
 export const WTHRU_MINT_ADDRESS = 'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb'
-const MULTICALL = 'taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP'
 const TOKEN = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
 const EOA = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 
-const bytes = (a) => Pubkey.from(a).toBytes()
-function sort(list) {
-  return [...new Set(list)].sort((a, b) => {
-    const x = bytes(a), y = bytes(b)
-    for (let i = 0; i < 32; i++) if (x[i] !== y[i]) return x[i] - y[i]
-    return 0
-  })
+/**
+ * Wrapping, as a pair of steps that can stand alone or sit inside a larger
+ * bundle.
+ *
+ * The two have to be in one transaction whatever else is going on: the
+ * transfer puts THRU in the vault and the deposit mints against what the vault
+ * now holds, so anyone could claim the THRU in between. Returning them as
+ * steps lets the caller put a third thing after them, which is how buying a
+ * Pal went from two approvals to one.
+ */
+export function wrapSteps({ dest, amount }) {
+  return {
+    readWrite: [WTHRU_VAULT, WTHRU_MINT_ADDRESS, dest],
+    readOnly: [EOA, TOKEN, WTHRU_PROGRAM],
+    steps: [
+      {
+        // EOA TRANSFER: [u32 1][u64 amount][u16 from = payer][u16 to = vault]
+        program: EOA,
+        build: (at) => {
+          const d = new Uint8Array(16)
+          const dv = new DataView(d.buffer)
+          dv.setUint32(0, 1, true)
+          dv.setBigUint64(4, BigInt(amount), true)
+          dv.setUint16(12, 0, true)
+          dv.setUint16(14, at(WTHRU_VAULT), true)
+          return d
+        },
+      },
+      {
+        // WTHRU DEPOSIT: [u32 1][token program][vault][mint][dest]
+        program: WTHRU_PROGRAM,
+        build: (at) => {
+          const d = new Uint8Array(12)
+          const dv = new DataView(d.buffer)
+          dv.setUint32(0, 1, true)
+          dv.setUint16(4, at(TOKEN), true)
+          dv.setUint16(6, at(WTHRU_VAULT), true)
+          dv.setUint16(8, at(WTHRU_MINT_ADDRESS), true)
+          dv.setUint16(10, at(dest), true)
+          return d
+        },
+      },
+    ],
+  }
 }
 
-/** One multicall entry: [program_idx u16][data_size u64][data]. */
-function call(programIdx, data) {
-  const out = new Uint8Array(10 + data.length)
-  const dv = new DataView(out.buffer)
-  dv.setUint16(0, programIdx, true)
-  dv.setBigUint64(2, BigInt(data.length), true)
-  out.set(data, 10)
-  return out
-}
-
-/** Wrap `amount` THRU into the payer's WTHRU account `dest`. */
-export function buildWrap({ dest, amount }) {
-  const readWrite = sort([WTHRU_VAULT, WTHRU_MINT_ADDRESS, dest])
-  const readOnly = sort([EOA, TOKEN, WTHRU_PROGRAM])
-  const at = (a) => (readWrite.includes(a) ? 2 + readWrite.indexOf(a) : 2 + readWrite.length + readOnly.indexOf(a))
-
-  // EOA TRANSFER: [u32 1][u64 amount][u16 from = payer][u16 to = vault]
-  const transfer = new Uint8Array(16)
-  const t = new DataView(transfer.buffer)
-  t.setUint32(0, 1, true)
-  t.setBigUint64(4, BigInt(amount), true)
-  t.setUint16(12, 0, true)
-  t.setUint16(14, at(WTHRU_VAULT), true)
-
-  // WTHRU DEPOSIT: [u32 1][token_program][vault][mint][dest]
-  const deposit = new Uint8Array(12)
-  const d = new DataView(deposit.buffer)
-  d.setUint32(0, 1, true)
-  d.setUint16(4, at(TOKEN), true)
-  d.setUint16(6, at(WTHRU_VAULT), true)
-  d.setUint16(8, at(WTHRU_MINT_ADDRESS), true)
-  d.setUint16(10, at(dest), true)
-
-  const a = call(at(EOA), transfer)
-  const b = call(at(WTHRU_PROGRAM), deposit)
-  const data = new Uint8Array(2 + a.length + b.length)
-  new DataView(data.buffer).setUint16(0, 2, true)
-  data.set(a, 2)
-  data.set(b, 2 + a.length)
-  return { program: MULTICALL, readWrite, readOnly, data }
+/** Wrap `amount` THRU into the payer's WTHRU account `dest`, on its own. */
+export function buildWrap({ payer, dest, amount }) {
+  const w = wrapSteps({ dest, amount })
+  return buildMulticall({ payer, readWrite: w.readWrite, readOnly: w.readOnly, steps: w.steps })
 }
 
 /** Unwrap `amount` WTHRU from the payer's account `source` back to THRU. */
 export function buildUnwrap({ source, amount }) {
-  const readWrite = sort([WTHRU_MINT_ADDRESS, WTHRU_VAULT, source])
+  const readWrite = sortAccounts([WTHRU_MINT_ADDRESS, WTHRU_VAULT, source])
   const readOnly = [TOKEN]
   const at = (a) => (readWrite.includes(a) ? 2 + readWrite.indexOf(a) : 2 + readWrite.length + readOnly.indexOf(a))
   // WITHDRAW: [u32 2][token_program][vault][mint][token_account][owner][recipient][u64 amount]

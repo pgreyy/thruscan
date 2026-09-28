@@ -158,6 +158,20 @@ textarea { resize: none; }
 .words.blurred span { filter: blur(6px); user-select: none; }
 .words-cover { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; font-size: 13px; font-weight: 500; cursor: pointer; }
 
+/* Typing a phrase back: the same grid as the words above, so the two screens
+   line up and the numbers sit in the same place. */
+.words-in { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.words-in-cell {
+  display: flex; align-items: center; gap: 5px; padding: 6px 7px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+}
+.words-in-cell:focus-within { border-color: var(--ink); }
+.words-in-cell i { font-style: normal; color: var(--muted); font-size: 10px; min-width: 12px; }
+.words-in-cell input {
+  width: 100%; min-width: 0; border: 0; padding: 0; background: none; color: var(--ink);
+  font-family: var(--mono); font-size: 12.5px; outline: none;
+}
+
 .secret { word-break: break-all; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; user-select: all; }
 .addr { word-break: break-all; font-size: 12px; max-width: 290px; }
 

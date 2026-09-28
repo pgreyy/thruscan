@@ -16,10 +16,10 @@ import { useConfirm } from '../../components/Confirm.jsx'
 import { requestRefresh } from '../notify.js'
 import { hasProvider, connectExternal } from '../external.js'
 import {
-  hasWallet, currentAddress, signAndSend, waitForResult, wrapThru, nativeBalance, tokenBalances,
+  hasWallet, currentAddress, signAndSend, waitForResult, nativeBalance, tokenBalances,
   openTokenAccount, accountExists,
 } from '../wallet.js'
-import { buildBuy, buildList, buildDelist, palsError, WTHRU_MINT } from './chain.js'
+import { buildBuyPayingInThru, buildList, buildDelist, palsError, WTHRU_MINT } from './chain.js'
 
 const fmt = (n) => Number(n).toLocaleString('en-US')
 const UNITS = { computeUnits: 300_000_000, stateUnits: 4_096, memoryUnits: 60_000 }
@@ -106,7 +106,7 @@ export function useMarket({ onDone } = {}) {
       body: short
         ? `${short} Add some THRU first and try again.`
         : toWrap > 0n
-          ? `The market settles in wrapped THRU, so ${fmt(toWrap)} of yours is wrapped first. That is two signatures, one after the other.`
+          ? `The market settles in wrapped THRU, so ${fmt(toWrap)} of yours is wrapped on the way through. One signature covers both.`
           : 'Paid from your wrapped THRU balance. The Pal moves to this wallet as soon as it lands.',
       detail,
       confirmLabel: short ? 'Close' : `Pay ${fmt(total)} THRU`,
@@ -116,14 +116,20 @@ export function useMarket({ onDone } = {}) {
     if (!ok || short) return false
 
     return run('buy', async (who) => {
-      if (toWrap > 0n) {
-        setBusy('wrapping')
-        const w = await waitForResult(await wrapThru(toWrap), 30_000)
-        if (w.settled && !w.succeeded) throw new Error('Wrapping THRU failed. Nothing was bought.')
-        setBusy('buy')
-      }
+      // Wrapping mints WTHRU into this wallet's own token account, which has
+      // to exist before the purchase can pay out of it. Opening it is an
+      // account creation and so is nothing else in this transaction, but
+      // ThruScan pays for it either way, so it happens first and without an
+      // approval.
+      if (toWrap > 0n) await openTokenAccount(WTHRU_MINT, who)
       const now = await (await fetch('/api/rpc?action=pals&lite=1')).json()
-      return signAndSend({ ...(await buildBuy({ payer: who, items: items.map((l) => ({ ...l, price: BigInt(l.price) })), treasury: now.treasury })), ...UNITS })
+      const tx = await buildBuyPayingInThru({
+        payer: who,
+        items: items.map((l) => ({ ...l, price: BigInt(l.price) })),
+        treasury: now.treasury,
+        wrap: toWrap,
+      })
+      return signAndSend({ ...tx, ...UNITS })
     }, items.length > 1 ? `Bought ${items.length} Pals.` : `Bought Pixel Pal #${items[0].id}.`)
   }
 

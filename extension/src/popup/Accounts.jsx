@@ -5,7 +5,7 @@
 // All of them sit in the same encrypted vault behind the same password.
 
 import { useEffect, useMemo, useState } from 'react'
-import { bg, go, Header, Notice, useAction, short } from './ui.jsx'
+import { bg, go, Copy, Header, Notice, useAction, short } from './ui.jsx'
 
 export function Accounts({ onChanged }) {
   const [data, setData] = useState(null)
@@ -79,6 +79,11 @@ export function NewPhraseAccount({ onChanged }) {
           {words.map((w, i) => <span key={i}><i>{i + 1}</i>{w}</span>)}
           {!shown && <div className="words-cover">Click to show. Make sure nobody can see your screen.</div>}
         </div>
+        {/* Retyping twelve words into a password manager is where they get
+            mistyped, so the copy is offered once the words are showing. */}
+        {shown && phrase && (
+          <div className="inline"><Copy value={phrase} label="Copy the 12 words" /></div>
+        )}
         <label className="check">
           <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} disabled={!shown} />
           <span>I have written down all 12 words</span>

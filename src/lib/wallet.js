@@ -432,11 +432,25 @@ export async function registerAndFund(onStep = () => {}) {
   return { address }
 }
 
-/** Token accounts hold balances; the wallet address itself holds none. The
- *  sponsor opens them because creating an account needs a state proof, and
- *  ownership is recorded in the account rather than proved by a signature. */
+/**
+ * Token accounts hold balances; the wallet address itself holds none.
+ *
+ * Opening one is plumbing nobody sets out to do: it happens on the way to a
+ * swap, a purchase, a listing. It was costing a signature each time, which is
+ * most of the "why am I signing three times" in the flows that touch a token
+ * for the first time. The sponsor pays for it now, the way it already pays for
+ * account creation and the faucet. Nothing is given away by that: ownership
+ * lives in the account's own bytes, so an account the sponsor opened for a
+ * wallet is that wallet's, and only that wallet can move what is in it.
+ *
+ * The standard account (the wallet's own, at the zero seed) goes through the
+ * server. Anything else still has to be paid for here, because the server only
+ * knows how to make the standard one.
+ */
 export async function openTokenAccount(mint, owner = null, seed = new Uint8Array(32)) {
   const { address } = requireSession()
+  const standard = (owner ?? address) === address && seed.every((b) => b === 0)
+  if (standard) return api('open', { owner: address, mint })
   return openTokenAccountPaidByMe({ payer: address, mint, owner: owner ?? address, seed })
 }
 
@@ -480,7 +494,6 @@ async function openTokenAccountPaidByMe({ payer, mint, owner, seed }) {
   return { ok: true, already: false, account, signature }
 }
 
-function randomSeed() { return crypto.getRandomValues(new Uint8Array(32)) }
 
 /** A creation state proof for an account that does not exist yet, as bytes. */
 export async function requestProof(address) {
@@ -612,7 +625,7 @@ async function sendWithConnectedWallet(args) {
 /** Wrap `amount` native THRU into this wallet's WTHRU account. Returns the signature. */
 export async function wrapThru(amount) {
   const { account } = await openTokenAccount(WTHRU_MINT_ADDRESS)
-  return signAndSend(buildWrap({ dest: account, amount: BigInt(amount) }))
+  return signAndSend(buildWrap({ payer: currentAddress(), dest: account, amount: BigInt(amount) }))
 }
 
 /** Unwrap `amount` WTHRU base units back to native THRU. Returns the signature. */
@@ -804,22 +817,25 @@ export async function returnNativeThru(amount) {
 }
 
 /**
- * Make the three accounts a launch needs.
+ * Make the three accounts a launch needs: the new token's mint, with the
+ * launchpad as its mint authority, and the two vaults the launchpad holds.
  *
- * All three need creation state proofs, which a browser cannot produce, so
- * ThruScan makes them. It does not make the launch: that one is signed here,
- * because thrupad records the launch transaction's fee payer as the creator and
- * pays the fees to them.
- */
-/**
- * Everything a launch needs before the launch itself, all paid for and signed
- * by the launching wallet: the new token's mint (with the launchpad as its
- * mint authority), and the two vaults the launchpad holds (the new token, and
- * the asset it is priced in).
+ * ThruScan makes and pays for all three, which is why this is one call to the
+ * server rather than three signatures here.
  *
- *   INITIALIZE_MINT [0x00][mint u16][decimals u8][creator 32][mint authority 32]
- *                   [freeze authority 32][has_freeze u8][ticker_len u8][ticker 8][seed 32][proof]
- *   The creator must be the payer; the mint's address comes from (creator, seed).
+ * It used to be three. Each of the three is an account creation, and an
+ * account creation needs a state proof, which is only valid against the state
+ * root it was made for. The first creation moves that root, so a second
+ * creation built against the old one reverts. That is a runtime rule, not
+ * something a bundle can get around: two creations cannot share a transaction,
+ * in a multicall or otherwise. Measured on chain, twice.
+ *
+ * So the way to spend fewer signatures here is not to bundle them but to stop
+ * asking the wallet to sign them at all. Nothing about the launch depends on
+ * who paid for the plumbing: thrupad records the LAUNCH transaction's fee payer
+ * as the creator and pays the trading fees to a token account that wallet owns,
+ * and that transaction is still signed by the person launching. The wallet now
+ * signs once: the launch itself.
  */
 export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
   const { address } = requireSession()
@@ -828,36 +844,7 @@ export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
   if (!padProgram) return { ok: false, error: 'No launchpad program configured.' }
   if (!(await accountExists(address))) return { ok: false, error: 'Register your wallet on chain first.' }
 
-  const mintSeed = randomSeed()
-  const mint = deriveProgramAddress({
-    programAddress: TOKEN_PROGRAM,
-    seed: await sha256(concat(toBytes(address), mintSeed)),
-  }).address
-
-  const { proof } = await api('proof', { address: mint })
-  const head = new Uint8Array(1 + 2 + 1 + 32 + 32 + 32 + 1 + 1 + 8 + 32)
-  const dv = new DataView(head.buffer)
-  let o = 0
-  head[o] = 0x00; o += 1
-  dv.setUint16(o, 2, true); o += 2                // the mint, the only read-write account
-  head[o] = 6; o += 1                             // decimals
-  head.set(toBytes(address), o); o += 32          // creator: the payer
-  head.set(toBytes(padProgram), o); o += 32       // mint authority: the launchpad
-  o += 32                                         // freeze authority: none
-  head[o] = 0; o += 1
-  head[o] = ticker.length; o += 1
-  head.set(new TextEncoder().encode(ticker), o); o += 8
-  head.set(mintSeed, o)
-
-  const mintSig = await signAndSend({ program: TOKEN_PROGRAM, readWrite: [mint], data: concat(head, b64.decode(proof)) })
-  const r = await waitForResult(mintSig)
-  if (r.settled && !r.succeeded) return { ok: false, error: `The token could not be created (error ${r.userError || r.vmError}).` }
-  for (let i = 0; i < 10 && !(await accountExists(mint)); i++) await new Promise((res) => setTimeout(res, 1500))
-  if (!(await accountExists(mint))) return { ok: false, error: 'The token did not land. Try again in a moment.' }
-
-  const tokenVault = await openTokenAccountPaidByMe({ payer: address, mint, owner: padProgram, seed: randomSeed() })
-  const quoteVault = await openTokenAccountPaidByMe({ payer: address, mint: quoteMint, owner: padProgram, seed: randomSeed() })
-  return { ok: true, mint, tokenVault: tokenVault.account, quoteVault: quoteVault.account, signature: mintSig }
+  return api('pad-accounts', { owner: address, symbol: ticker, quoteMint, padProgram })
 }
 
 /* ---------- names ----------

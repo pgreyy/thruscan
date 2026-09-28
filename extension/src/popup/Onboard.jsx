@@ -6,7 +6,7 @@
 // away to write something down.
 
 import { useEffect, useMemo, useState } from 'react'
-import { bg, go, Header, Notice, PasswordField, useAction, inTab, openInTab } from './ui.jsx'
+import { bg, go, Copy, Header, Notice, PasswordField, WordInputs, useAction, inTab, openInTab } from './ui.jsx'
 
 export function Welcome() {
   const start = (path) => (inTab() ? go(path) : openInTab(path))
@@ -85,6 +85,14 @@ export function Create({ onReady }) {
               {words.map((w, i) => <span key={i}><i>{i + 1}</i>{w}</span>)}
               {!shown && <div className="words-cover">Click to show. Make sure nobody can see your screen.</div>}
             </div>
+            {/* Paper is safer, and plenty of people keep a phrase in a password
+                manager instead. Retyping twelve words into one is where they get
+                mistyped, so the copy is offered once the words are showing. */}
+            {shown && phrase && (
+              <div className="inline">
+                <Copy value={phrase} label="Copy the 12 words" />
+              </div>
+            )}
             <p className="fine">Anyone with these words controls the wallet. ThruScan never asks for them and cannot recover them.</p>
             <label className="check">
               <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} disabled={!shown} />
@@ -96,14 +104,8 @@ export function Create({ onReady }) {
 
         {step === 'check' && (
           <div className="stack">
-            <p>Type these words from your written copy.</p>
-            {checks.map((i) => (
-              <label className="field" key={i}>
-                <span>Word {i + 1}</span>
-                <input value={answers[i] ?? ''} autoComplete="off" spellCheck={false}
-                  onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })} />
-              </label>
-            ))}
+            <p>Type these words from your written copy. Space or Enter moves to the next one.</p>
+            <WordInputs slots={checks} values={answers} onChange={setAnswers} />
             <button className="btn" disabled={!checked} onClick={() => setStep('password')}>Continue</button>
           </div>
         )}

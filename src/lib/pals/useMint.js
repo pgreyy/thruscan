@@ -9,10 +9,10 @@ import { useState } from 'react'
 import { useUnlockGate, isDismissal } from '../../components/Unlock.jsx'
 import { hasProvider, connectExternal } from '../external.js'
 import {
-  hasWallet, currentAddress, signAndSend, waitForResult, wrapThru, nativeBalance, tokenBalances,
-  requestProof, palsAllow, accountExists,
+  hasWallet, currentAddress, signAndSend, waitForResult, nativeBalance, tokenBalances,
+  requestProof, palsAllow, accountExists, openTokenAccount,
 } from '../wallet.js'
-import { buildMint, palsError, nftAccountFor, WTHRU_MINT } from './chain.js'
+import { buildMintPayingInThru, palsError, nftAccountFor, WTHRU_MINT } from './chain.js'
 
 const fmt = (n) => Number(n).toLocaleString('en-US')
 const state = async (me) => (await fetch(`/api/rpc?action=pals&lite=1${me ? `&wallet=${me}` : ''}`)).json()
@@ -28,11 +28,6 @@ export function useMint({ price = 1000n, onMinted } = {}) {
     setError(null)
     try { await gate.ensure() } catch (e) { if (!isDismissal(e)) setError(String(e?.message ?? e)); return }
     const me = currentAddress()
-    const landed = async (sig, what) => {
-      const r = await waitForResult(sig, 30_000)
-      if (r.settled && !r.succeeded) throw new Error(`${what} failed (error ${r.userError || r.vmError}).`)
-      return r
-    }
     try {
       setStep('checking')
       if (!(await accountExists(me))) throw new Error('This wallet is not on chain yet. Set it up on the Wallet page first.')
@@ -40,15 +35,21 @@ export function useMint({ price = 1000n, onMinted } = {}) {
       if (first.mine?.minted) throw new Error('This wallet has already minted its Pal.')
       const cost = BigInt(first.price ?? price)
 
-      // Pay in WTHRU: wrap only what is missing.
+      // A Pal is paid for in WTHRU. Whatever is missing gets wrapped inside
+      // the mint transaction rather than before it, so this is one signature
+      // instead of two. See buildMintPayingInThru.
       const [row] = await tokenBalances([WTHRU_MINT], me)
       const have = BigInt(row?.amount ?? 0)
-      if (have < cost) {
-        const need = cost - have
+      const wrap = have < cost ? cost - have : 0n
+      if (wrap > 0n) {
         const native = await nativeBalance(me)
-        if (native < need + 3n) throw new Error(`You need ${fmt(cost)} THRU plus a few for fees. You have ${fmt(native + have)}.`)
-        setStep('wrapping')
-        await landed(await wrapThru(need), 'Wrapping THRU')
+        if (native < wrap + 3n) throw new Error(`You need ${fmt(cost)} THRU plus a few for fees. You have ${fmt(native + have)}.`)
+        // Wrapping mints WTHRU into the wallet's own token account, which has
+        // to exist first. Opening it is an account creation, and so is minting
+        // the Pal, and two creations cannot share a transaction, so ThruScan
+        // opens it separately and pays for it.
+        setStep('clearing')
+        await openTokenAccount(WTHRU_MINT, me)
       }
 
       setStep('clearing')
@@ -63,7 +64,7 @@ export function useMint({ price = 1000n, onMinted } = {}) {
         if ((now.publicLeft ?? 1) <= 0) throw new Error('Sold out.')
         const nftId = now.minted
         const proof = await requestProof(await nftAccountFor(nftId))
-        const tx = await buildMint({ payer: me, nftId, treasury: now.treasury, proof })
+        const tx = await buildMintPayingInThru({ payer: me, nftId, treasury: now.treasury, proof, wrap })
         const sig = await signAndSend({ ...tx, computeUnits: 300_000_000, stateUnits: 4_096, memoryUnits: 60_000 })
         const r = await waitForResult(sig, 30_000)
         if (r.settled && !r.succeeded && Number(r.userError) === 23) continue

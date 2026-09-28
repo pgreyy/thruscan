@@ -41,6 +41,8 @@
 // lists so the caller submits exactly what was encoded.
 
 import { Pubkey } from '@thru/sdk'
+import { buildMulticall } from './multicall.js'
+import { wrapSteps, WTHRU_MINT_ADDRESS } from './wthru.js'
 
 export const SWAP_VERSION = 1
 export const HEADER_SIZE = 37
@@ -246,6 +248,57 @@ export function buildSwapInstruction({
   w.u64(amountIn)
   w.u64(minOut)
   return { data: w.done(), readWrite, readOnly }
+}
+
+/**
+ * SWAP, with the wrapping folded in.
+ *
+ * Pools hold tokens, so selling THRU means wrapping it into WTHRU first. That
+ * was a signature of its own, and a wallet that approved the wrap and then
+ * changed its mind at the swap was left holding WTHRU it never wanted. Both go
+ * in one transaction now.
+ *
+ * Only this direction folds. Buying THRU ends in an unwrap, and the amount to
+ * unwrap is whatever the swap actually returns, which is not known until it
+ * runs; WITHDRAW takes an exact figure and treats 0 as "nothing" rather than
+ * "everything", checked on chain. So that direction stays two steps.
+ *
+ * `payer` is needed because the wrap moves native THRU out of the fee payer,
+ * and inside a bundle the payer is index 0 of a shared list.
+ */
+export function buildSwapPayingInThru({
+  payer, program, registry, poolId, vaultIn, vaultOut, userIn, userOut, amountIn, minOut = 1n, wrap,
+}) {
+  const w = wrapSteps({ dest: userIn, amount: wrap })
+  const swapAccounts = [registry, vaultIn, vaultOut, userIn, userOut]
+
+  return buildMulticall({
+    payer,
+    readWrite: [...swapAccounts, ...w.readWrite],
+    readOnly: [...w.readOnly, TOKEN_PROGRAM, WTHRU_MINT_ADDRESS],
+    steps: [
+      ...w.steps,
+      {
+        program,
+        build: (at) => {
+          const x = writer(35)
+          x.u8(OP_SWAP)
+          x.u16(at(TOKEN_PROGRAM))
+          x.u16(at(registry))
+          x.u16(poolId)
+          x.u16(at(vaultIn))
+          x.u16(at(vaultOut))
+          x.u16(at(userIn))
+          x.u16(at(userOut))
+          x.u16(0)          // lp_mint, unused by SWAP
+          x.u16(0)          // user_lp, unused by SWAP
+          x.u64(amountIn)
+          x.u64(minOut)
+          return x.done()
+        },
+      },
+    ],
+  })
 }
 
 /** ADD LIQUIDITY. Both sides go in, LP tokens come back. */

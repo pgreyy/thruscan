@@ -369,6 +369,49 @@ export function buildLaunchInstruction({
 }
 
 /**
+ * The same LAUNCH, as a step inside a multicall.
+ *
+ * Identical bytes, but the indices come from the bundle's shared account list
+ * rather than from a list this function builds. Everything a launch touches is
+ * declared by the caller, because in a bundle the mint and the vaults are
+ * created by earlier steps in the same transaction.
+ */
+export function launchStep({
+  program, registry, launchId, mint, tokenVault, quoteVault, quoteMint,
+  feeBps, supply, virtQuote, name, symbol,
+}) {
+  const enc = new TextEncoder()
+  const nameBytes = enc.encode(name.trim())
+  const symBytes = enc.encode(symbol.trim().toUpperCase())
+  if (nameBytes.length === 0 || nameBytes.length > NAME_MAX) throw new PadDecodeError('name must be 1 to 32 bytes')
+  if (symBytes.length === 0 || symBytes.length > SYMBOL_MAX) throw new PadDecodeError('symbol must be 1 to 8 bytes')
+  if (feeBps > CREATOR_BPS_MAX) throw new PadDecodeError('creator fee is capped at 10%')
+
+  return {
+    program,
+    build: (at) => {
+      const w = writer(35 + nameBytes.length + symBytes.length)
+      w.u8(OP_LAUNCH)
+      w.u16(at(TOKEN_PROGRAM))
+      w.u16(at(registry))
+      w.u16(launchId)
+      w.u16(at(mint))
+      w.u16(at(tokenVault))
+      w.u16(at(quoteVault))
+      w.u16(quoteMint ? at(quoteMint) : 0)
+      w.u16(feeBps)
+      w.u64(supply)
+      w.u64(virtQuote)
+      w.u8(nameBytes.length)
+      w.u8(symBytes.length)
+      w.bytes(nameBytes)
+      w.bytes(symBytes)
+      return w.done()
+    },
+  }
+}
+
+/**
  * CLAIM. Anyone may call it; the program checks the destination really is owned
  * by the recorded creator, so a third party paying the fee is a convenience
  * rather than a hole.

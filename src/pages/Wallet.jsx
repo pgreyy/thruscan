@@ -35,7 +35,10 @@ import {
 } from '../lib/wallet.js'
 import { displayDecimals } from '../lib/wthru.js'
 import { knownMints, ownedNames } from '../lib/holdings.js'
-import { onExternalChange, restoreExternal, isExternal, externalName, hasProvider, connectExternal, disconnectExternal, EXTENSION_URL } from '../lib/external.js'
+import {
+  onExternalChange, restoreExternal, isExternal, externalConnected, externalName, hasProvider,
+  connectExternal, disconnectExternal, switchToBrowserWallet, switchToConnectedWallet, EXTENSION_URL,
+} from '../lib/external.js'
 import { customMints, addCustomMint, removeCustomMint, lookupToken, onCustomMintsChange } from '../lib/customTokens.js'
 import { Activity } from '../components/Activity.jsx'
 import { useConfirm } from '../components/Confirm.jsx'
@@ -808,7 +811,15 @@ function LiveWallet({ wallet, mints }) {
           </div>
           <div className="inline">
             <Copyable text={wallet.address} label="Copy address" />
+            {/* Switching keeps the extension connected, so coming back is one
+                click rather than another approval. Disconnect really leaves. */}
+            {isExternal() && storedWallet() && (
+              <button className="btn ghost" onClick={() => switchToBrowserWallet()}>Use the browser wallet</button>
+            )}
             {isExternal() && <button className="btn ghost" onClick={() => disconnectExternal()}>Disconnect</button>}
+            {!isExternal() && externalConnected() && (
+              <button className="btn ghost" onClick={() => switchToConnectedWallet()}>Use {externalName()}</button>
+            )}
           </div>
         </div>
 
@@ -851,7 +862,7 @@ function LiveWallet({ wallet, mints }) {
         {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
       </section>
 
-      {!isExternal() && <ConnectCard title="Use ThruScan Wallet instead" />}
+      {!isExternal() && !externalConnected() && <ConnectCard title="Use ThruScan Wallet instead" />}
       {wallet.registered && <TopUpCard />}
       {wallet.registered && <Balances wallet={wallet} mints={mints} />}
       {/* Backing up, moving and forgetting belong to the wallet that holds the
@@ -1381,9 +1392,11 @@ export function WalletPage() {
  * The builders already sort the accounts and derive their indices from the
  * sorted order, so their readWrite and readOnly go straight through.
  */
+/** `program` may be left out when the built transaction already names one,
+ *  which is the case for anything built through the multicall helper. */
 export async function sendBuilt(program, built) {
   const signature = await signAndSend({
-    program,
+    program: program ?? built.program,
     readWrite: built.readWrite,
     readOnly: built.readOnly,
     data: built.data,

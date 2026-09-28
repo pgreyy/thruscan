@@ -3,7 +3,7 @@
 // Small shared pieces for the wallet's screens: talking to the background,
 // hash routing, number formatting, and a few components.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const EXPLORER = 'https://thruscan.vercel.app'
 
@@ -118,6 +118,85 @@ export function useAction() {
     try { return await fn() } catch (e) { setError(String(e?.message ?? e)); return undefined } finally { setBusy(false) }
   }, [])
   return { busy, error, setError, run }
+}
+
+/**
+ * One box per word, for typing a phrase back.
+ *
+ * A recovery phrase is twelve separate words, and the thing a person does
+ * between words is press space. In a set of one-word boxes that either does
+ * nothing or puts a space inside the box, and either way they have to reach for
+ * the mouse twelve times. Space, Enter and Tab all move on here, backspace on
+ * an empty box goes back, and pasting a whole phrase into any box fills the
+ * rest of them, because that is what someone with the phrase in a password
+ * manager is going to do.
+ *
+ * `slots` is the list of word positions to ask for, zero based, so the same
+ * component asks for three words or all twelve.
+ */
+export function WordInputs({ slots, values, onChange, autoFocus = true }) {
+  const refs = useRef([])
+
+  const focus = (n) => {
+    const el = refs.current[n]
+    if (el) { el.focus(); el.select?.() }
+  }
+
+  const set = (slot, text) => onChange({ ...values, [slot]: text })
+
+  const spread = (n, text) => {
+    // A pasted phrase fills this box and the ones after it, in order.
+    const words = String(text).trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (words.length < 2) return false
+    const next = { ...values }
+    slots.slice(n).forEach((slot, i) => { if (words[i]) next[slot] = words[i] })
+    onChange(next)
+    focus(Math.min(n + words.length, slots.length - 1))
+    return true
+  }
+
+  return (
+    <div className="words-in">
+      {slots.map((slot, n) => (
+        <label className="words-in-cell" key={slot}>
+          <i>{slot + 1}</i>
+          <input
+            ref={(el) => { refs.current[n] = el }}
+            value={values[slot] ?? ''}
+            autoFocus={autoFocus && n === 0}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            onPaste={(e) => {
+              if (spread(n, e.clipboardData.getData('text'))) e.preventDefault()
+            }}
+            onChange={(e) => {
+              const raw = e.target.value
+              if (/\s/.test(raw)) {
+                // Typing or dictating a space ends the word rather than
+                // entering one: a phrase word never contains whitespace.
+                const parts = raw.trim().split(/\s+/).filter(Boolean)
+                if (parts.length > 1) { spread(n, parts.join(' ')); return }
+                set(slot, (parts[0] ?? '').toLowerCase())
+                if (parts.length === 1) focus(Math.min(n + 1, slots.length - 1))
+                return
+              }
+              set(slot, raw.toLowerCase())
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                if ((values[slot] ?? '').trim()) focus(Math.min(n + 1, slots.length - 1))
+              } else if (e.key === 'Backspace' && !(values[slot] ?? '') && n > 0) {
+                e.preventDefault()
+                focus(n - 1)
+              }
+            }}
+          />
+        </label>
+      ))}
+    </div>
+  )
 }
 
 export function PasswordField({ value, onChange, placeholder = 'Password', autoFocus, onEnter }) {

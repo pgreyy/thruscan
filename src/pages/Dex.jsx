@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
-  decodeSwapRegistry, quoteSwap, buildSwapInstruction, toHex,
+  decodeSwapRegistry, quoteSwap, buildSwapInstruction, buildSwapPayingInThru, toHex,
   buildAddLiquidityInstruction, buildRemoveLiquidityInstruction,
 } from '../lib/swap.js'
 import {
@@ -949,12 +949,6 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
         accounts[key] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
       }
 
-      // Selling THRU: wrap it first, then trade the WTHRU.
-      if (fromMint === THRU) {
-        setStep('wrapping')
-        await landed(await wrapThru(amountIn), 'Wrapping THRU')
-      }
-
       // Buying THRU: note the WTHRU held now, so exactly what the trade brings
       // in is unwrapped afterwards and nothing already held is touched.
       const wthruBefore = toMint === THRU
@@ -962,12 +956,21 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
         : 0n
 
       setStep('signing')
-      const built = buildSwapInstruction({
-        registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
-        userIn: accounts.userIn, userOut: accounts.userOut,
-        amountIn, minOut: 1n,
-      })
-      const result = await sendBuilt(SWAP_PROGRAM, built)
+      // Selling THRU wraps it on the way through, in the same transaction, so
+      // it is one approval rather than two. Buying THRU cannot do the same in
+      // reverse: see buildSwapPayingInThru for why.
+      const result = fromMint === THRU
+        ? await sendBuilt(null, buildSwapPayingInThru({
+          payer: wallet.address, program: SWAP_PROGRAM,
+          registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
+          userIn: accounts.userIn, userOut: accounts.userOut,
+          amountIn, minOut: 1n, wrap: amountIn,
+        }))
+        : await sendBuilt(SWAP_PROGRAM, buildSwapInstruction({
+          registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
+          userIn: accounts.userIn, userOut: accounts.userOut,
+          amountIn, minOut: 1n,
+        }))
 
       if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
 
