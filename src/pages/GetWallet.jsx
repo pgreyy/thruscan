@@ -6,6 +6,12 @@ import { Link } from 'react-router-dom'
 
 const ZIP = '/downloads/thruscan-wallet.zip'
 
+/* Typed once, here, and typed again in the manifest is how a page ends up
+   offering "0.4.1" while the file behind the link is something else. The
+   manifest is the source; npm run pack:extension prints what it packed. */
+import manifest from '../../extension/public/manifest.json'
+const VERSION = manifest.version
+
 export function GetWalletPage() {
   return (
     <div className="wrap">
@@ -16,7 +22,7 @@ export function GetWalletPage() {
         <div className="card-head">
           <div>
             <h2 className="h2">Download</h2>
-            <p className="sub">Version 0.4.1 · zip</p>
+            <p className="sub">Version {VERSION} · zip</p>
           </div>
           <a className="btn" href={ZIP} download="thruscan-wallet.zip">Download</a>
         </div>

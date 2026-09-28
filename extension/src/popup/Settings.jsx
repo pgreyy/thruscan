@@ -3,7 +3,8 @@
 // Connected sites, backing up the wallet, auto-lock, network, and removal.
 
 import { useState } from 'react'
-import { bg, go, Header, Notice, Copy, PasswordField, useAction } from './ui.jsx'
+import { bg, go, Header, Notice, Copy, PasswordField, useAction, short } from './ui.jsx'
+import { PROGRAMS } from '../lib/chain.js'
 
 export function Settings({ state, onLock, reload }) {
   const [minutes, setMinutes] = useState(String(state.settings.autoLockMinutes))
@@ -66,7 +67,15 @@ export function Settings({ state, onLock, reload }) {
           <button className="btn danger ghost" onClick={() => go('/remove')}>Remove from this browser</button>
         </section>
 
-        <p className="fine center">ThruScan Wallet {chrome.runtime.getManifest().version}</p>
+        {/* The network moved its programs once and every wallet running an
+            older build broke in a way that looked like a network fault. The
+            token program's address is the cheapest thing to show that says
+            which generation this build belongs to. */}
+        <p className="fine center">
+          ThruScan Wallet {chrome.runtime.getManifest().version}
+          <br />
+          <span className="mono" style={{ fontSize: '10px' }}>token program {short(PROGRAMS.TOKEN)}</span>
+        </p>
       </div>
     </div>
   )

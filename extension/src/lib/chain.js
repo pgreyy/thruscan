@@ -430,10 +430,30 @@ export async function activate(url, signer) {
   const tx = await c.accounts.create({ publicKey: signer.address })
   tx.chainId = await c.chain.getChainId()
   const sig = await tx.sign(signer.privateKey)
-  await submit(url, tx.toWire(), sig)
+  const signature = await submit(url, tx.toWire(), sig)
   for (let i = 0; i < 15; i++) {
     await sleep(1000)
     if ((await accountInfo(url, signer.address)).exists) return true
+  }
+
+  // Fifteen seconds and nothing. "Try again in a moment" was the message here,
+  // and it was wrong in the case that actually happens: a build pointing at
+  // programs that have moved sends a transaction that reverts, or one the node
+  // never admits, and retrying that forever changes nothing. So ask the chain
+  // what became of it and say which it was.
+  const r = await waitFor(url, signature, 4000)
+  if (r.settled && !r.ok) {
+    throw new Error(
+      `The network rejected it (error ${r.userError || r.vmError}). `
+      + 'This usually means the extension is an older build than the network. '
+      + 'Update it and try again.',
+    )
+  }
+  if (!r.settled) {
+    throw new Error(
+      'The network never took the transaction. That usually means this build '
+      + 'is out of date with the network. Update the extension and try again.',
+    )
   }
   throw new Error('The account did not appear yet. Try again in a moment.')
 }
