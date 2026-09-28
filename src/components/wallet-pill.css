@@ -173,6 +173,16 @@
   .pill-panel { width: calc(100vw - 20px); }
 }
 
+/* On the narrowest phones the pill is over half the bar, and the bar reserves
+   exactly its width, so the controls on the left wrap onto a second row. The
+   avatar identifies the wallet on its own here: the address is a tap away in
+   the panel, which is where anyone reading it would go anyway. */
+@media (max-width: 413px) {
+  .wallet-pill .pill-strong,
+  .wallet-pill .pill-caret { display: none; }
+  .wallet-pill { padding: 6px 8px; gap: 6px; }
+}
+
 /* ===========================================================================
    The unlock prompt.
 

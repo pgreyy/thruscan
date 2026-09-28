@@ -64,7 +64,7 @@ export function useMint({ price = 1000n, onMinted } = {}) {
         const nftId = now.minted
         const proof = await requestProof(await nftAccountFor(nftId))
         const tx = await buildMint({ payer: me, nftId, treasury: now.treasury, proof })
-        const sig = await signAndSend({ ...tx, computeUnits: 300_000_000, stateUnits: 60_000, memoryUnits: 60_000 })
+        const sig = await signAndSend({ ...tx, computeUnits: 300_000_000, stateUnits: 4_096, memoryUnits: 60_000 })
         const r = await waitForResult(sig, 30_000)
         if (r.settled && !r.succeeded && Number(r.userError) === 23) continue
         if (r.settled && !r.succeeded) throw new Error(palsError(r.userError))

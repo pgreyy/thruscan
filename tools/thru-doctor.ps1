@@ -101,7 +101,7 @@ if ($n2.Maximum -gt $n1.Maximum) {
 Section "3. Do reads work"
 
 $readOk = Try-Step "Read your account" { thru --json getaccountinfo $KeyName --url $Url }
-[void](Try-Step "Read the genesis program" { thru --json getaccountinfo taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --url $Url })
+[void](Try-Step "Read the genesis program" { thru --json getaccountinfo taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr --url $Url })
 [void](Try-Step "Read your balance" { thru --json getbalance $KeyName --url $Url })
 
 # ---------------------------------------------------------------- layer 4

@@ -8,41 +8,41 @@ import { useEffect, useState } from 'react'
 import { bg, Notice, PasswordField, useAction, short } from './ui.jsx'
 
 const PROGRAM_NAMES = {
-  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA: 'Thru accounts (THRU transfer)',
-  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq: 'Thru token program',
-  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF: 'Thru name service',
-  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6: 'Thru faucet',
-  taanfNIPSm5OA3LDWSLFFAgo3iszZ1rOVsdJPYp4dzDfTg: 'ThruSwap',
-  taX1wTP2Zmfddk6T3VAbncDzeDRXtc9HUCwUamm6d8rmPu: 'ThruPad',
-  'taX-QuhkQ4-7zGh4emeIn3JMAy05aZnQwC7WWyuyUoDRCI': 'ThruScan wall',
-  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ: 'Thru multicall',
-  taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH: 'Wrapped THRU (WTHRU)',
-  taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03: 'Thru NFT program',
-  taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M: 'Pixel Pals',
+  taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr: 'Thru accounts (THRU transfer)',
+  taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE: 'Thru token program',
+  taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG: 'Thru name service',
+  taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16: 'Thru faucet',
+  taCXE0eEQbUHU90dyZ__Bz1yfQabjyaD4xaSHKUw3Q1M4N: 'ThruSwap',
+  tastnRlQL8RGYeByXK2QAzaqdnfvI6pVn0e89JSl6Hiu8I: 'ThruPad',
+  'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH': 'ThruScan wall',
+  taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP: 'Thru multicall',
+  taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm: 'Wrapped THRU (WTHRU)',
+  taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5: 'Thru NFT program',
+  taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH: 'Pixel Pals',
 }
 
 /** What we can say for sure about the instruction, from its bytes alone. */
 function explain(program, dataHex) {
   const b = Uint8Array.from((dataHex.match(/.{2}/g) ?? []).map((h) => parseInt(h, 16)))
   const dv = new DataView(b.buffer)
-  if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' && b.length >= 12 && dv.getUint32(0, true) === 1) {
+  if (program === 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr' && b.length >= 12 && dv.getUint32(0, true) === 1) {
     return `Sends ${dv.getBigUint64(4, true).toLocaleString()} THRU from this wallet`
   }
   // Wrapping: multicall of [EOA transfer to the WTHRU vault, WTHRU deposit].
-  if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ' && b.length >= 28 && dv.getUint16(0, true) === 2) {
+  if (program === 'taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP' && b.length >= 28 && dv.getUint16(0, true) === 2) {
     const size = Number(dv.getBigUint64(4, true))
     if (size === 16 && dv.getUint32(12, true) === 1) return `Wraps ${dv.getBigUint64(16, true).toLocaleString()} THRU into WTHRU`
   }
-  if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH' && b.length >= 24 && dv.getUint32(0, true) === 2) {
+  if (program === 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm' && b.length >= 24 && dv.getUint32(0, true) === 2) {
     return `Unwraps ${dv.getBigUint64(16, true).toLocaleString()} WTHRU base units back to THRU`
   }
-  if (program === 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03' && b.length >= 4) {
+  if (program === 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5' && b.length >= 4) {
     return ({ 1: 'Mints an NFT', 2: 'Sends an NFT from this wallet', 3: 'Burns an NFT' })[dv.getUint32(0, true)] ?? null
   }
-  if (program === 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M' && b.length >= 1) {
+  if (program === 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH' && b.length >= 1) {
     return ({ 2: 'Mints a Pixel Pal (pays its price in WTHRU)', 3: 'Sends a Pixel Pal from this wallet', 6: 'Claims what a Pixel Pal holds' })[b[0]] ?? null
   }
-  if (program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq') {
+  if (program === 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE') {
     if (b[0] === 2 && b.length >= 13) return `Moves ${dv.getBigUint64(5, true).toLocaleString()} base units of a token`
     return ({ 0: 'Creates a token', 1: 'Opens a token account', 3: 'Mints tokens', 4: 'Burns tokens' })[b[0]] ?? null
   }

@@ -46,7 +46,7 @@ export const SWAP_VERSION = 1
 export const HEADER_SIZE = 37
 export const POOL_SIZE = 179
 
-export const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
+export const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
 
 export const OP_INIT = 0x00
 export const OP_CREATE = 0x01

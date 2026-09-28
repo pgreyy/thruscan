@@ -13,6 +13,7 @@ import { GameIdentity } from './components/GameIdentity.jsx'
 import { NamePfp } from './components/Pfp.jsx'
 import { useDismissDetails } from './lib/dismiss.js'
 import { NotificationBell } from './components/Notifications.jsx'
+import { FaucetDrop } from './components/FaucetDrop.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
@@ -54,13 +55,29 @@ async function fetchAccountFromChain(address) {
 const STORAGE_KEY = 'thru_dev_account_pubkey'
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Unto-Labs/thru/releases?per_page=10'
 
-// Set in Vercel once the program and wall account exist. Until then the Wall
-// page renders an honest "not live yet" state instead of erroring.
-const WALL_PROGRAM = import.meta.env.VITE_THRU_WALL_PROGRAM || ''
-const WALL_ACCOUNT = import.meta.env.VITE_THRU_WALL_ACCOUNT || ''
-const WORDLE_BOARD = import.meta.env.VITE_THRU_WORDLE_BOARD || ''
-const G2048_BOARD = import.meta.env.VITE_THRU_2048_BOARD || ''
-const ID_REGISTRY = import.meta.env.VITE_THRU_ID_REGISTRY || ''
+/* The wall, the two game boards and the username registry.
+ *
+ * These used to be Vercel environment variables, which meant a genesis reset
+ * needed a browser trip to the dashboard as well as a deploy, and a stale
+ * variable would quietly win over a corrected default. They live in
+ * src/lib/addresses.js now, with every other address, so one edit moves the
+ * site to a new chain. The Vercel variables VITE_THRU_WALL_PROGRAM,
+ * VITE_THRU_WALL_ACCOUNT, VITE_THRU_WORDLE_BOARD, VITE_THRU_2048_BOARD and
+ * VITE_THRU_ID_REGISTRY are no longer read and can be deleted.
+ *
+ * Blank is still a state these pages handle: they say "not live yet" rather
+ * than erroring. */
+import {
+  WALL_PROGRAM as WALL_PROGRAM_ADDR, WALL_ACCOUNT as WALL_ACCOUNT_ADDR,
+  WORDLE_BOARD as WORDLE_BOARD_ADDR, G2048_BOARD as G2048_BOARD_ADDR,
+  ID_REGISTRY as ID_REGISTRY_ADDR,
+} from './lib/addresses.js'
+
+const WALL_PROGRAM = WALL_PROGRAM_ADDR
+const WALL_ACCOUNT = WALL_ACCOUNT_ADDR
+const WORDLE_BOARD = WORDLE_BOARD_ADDR
+const G2048_BOARD = G2048_BOARD_ADDR
+const ID_REGISTRY = ID_REGISTRY_ADDR
 
 const NAV = [
   { to: '/', label: 'Home', icon: 'home' },
@@ -768,7 +785,7 @@ function Shell({ children }) {
             </div>
           </details>
         </nav>
-        <div className="deskbar-right"><NotificationBell /><ThemeSwitch /><NetworkStatus /></div>
+        <div className="deskbar-right"><FaucetDrop /><NotificationBell /><ThemeSwitch /><NetworkStatus /></div>
         {/* Invisible copy of every top link, for measuring. */}
         <div className="deskbar-measure" aria-hidden="true">
           {TOP_NAV.map((l) => <span key={l.to}>{l.label}</span>)}
@@ -785,6 +802,7 @@ function Shell({ children }) {
             <span className="brand-mark">T</span>
             <span className="brand-name">ThruScan</span>
           </Link>
+          <FaucetDrop />
           <NotificationBell />
           <ThemeSwitch />
         </div>

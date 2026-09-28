@@ -141,10 +141,10 @@
 
 #define CFG_VERSION  ((uchar)3)
 
-/* Thru's NFT program, taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03. */
-static uchar const NFT_PROGRAM[ 32 ] = {
-  0x55,0x1b,0x7c,0x74,0xda,0xb7,0x07,0x52,0x06,0x5d,0x6a,0x58,0xc7,0x5e,0xc6,0x58,
-  0x47,0xc5,0x72,0x99,0x94,0xf0,0xb1,0x7d,0xb9,0x6c,0xbb,0xe5,0x72,0x08,0x70,0x0d };
+/* Thru's NFT program, taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5.
+   It moved here in v0.4.0 from taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03,
+   so the bytes come from the SDK header rather than being copied out again. */
+static uchar const NFT_PROGRAM[ 32 ] = TSDK_NFT_PROGRAM_ADDR_BYTES;
 #define INIT_IDX ((ushort)2)
 
 #define SUPPLY_MAX    (10000U)
@@ -400,10 +400,14 @@ require_admin_or_allower( cfg_hdr_t const * hdr ) {
   if( !same( payer, &hdr->admin ) && !same( payer, &hdr->allower ) ) tsdk_revert( ERR_NOT_ADMIN );
 }
 
+/* v0.4.0 moved the token program off its placeholder address; see the note in
+   thru_token.h. The bytes come from the SDK header so there is one source. */
+static uchar const pals_token_program_addr[ 32 ] = TSDK_TOKEN_PROGRAM_ADDR_BYTES;
+
 static int
 is_token_program_key( uchar const * k ) {
-  for( ulong i=0UL; i<31UL; i++ ) if( k[ i ] ) return 0;
-  return k[ 31 ] == (uchar)0xaa;
+  for( ulong i=0UL; i<32UL; i++ ) if( k[ i ] != pals_token_program_addr[ i ] ) return 0;
+  return 1;
 }
 
 /* A token account for the payment mint owned by `owner`. The token program

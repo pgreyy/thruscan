@@ -22,18 +22,18 @@ const env = (() => {
   return typeof process !== 'undefined' ? process.env : {}
 })()
 
-/** The Pixel Pals program (seed pxpals7Q1). */
-export const PALS_PROGRAM = env.VITE_PALS_PROGRAM || 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M'
-/** Its state account (seed palcfg7Q2 under the program). */
-export const PALS_CONFIG = env.VITE_PALS_CONFIG || 'tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa'
-/** The market: listings and recent sales (seed palmkt7Q1 under the program). */
-export const PALS_MARKET = env.VITE_PALS_MARKET || 'taRnEmml22MOTV8UN6Y4w3Qp8G_cHRF_ShM9xT7DcCSlyW'
-/** The collection, a mint of Thru's NFT program (seed palsmint7Q1), whose authority is PALS_PROGRAM. */
-export const PALS_NFT_MINT = env.VITE_PALS_NFT_MINT || 'ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv'
+/** The Pixel Pals program (seed thrupals). */
+export const PALS_PROGRAM = env.VITE_PALS_PROGRAM || 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH'
+/** Its state account (seed config under the program). */
+export const PALS_CONFIG = env.VITE_PALS_CONFIG || 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv'
+/** The market: listings and recent sales (seed market under the program). */
+export const PALS_MARKET = env.VITE_PALS_MARKET || 'ta3CGXulXRnwyrdgZnfb-_J3a-5nw6ff3ulfT-vTFZil--'
+/** The collection, a mint of Thru's NFT program (seed pixelpals), whose authority is PALS_PROGRAM. */
+export const PALS_NFT_MINT = env.VITE_PALS_NFT_MINT || 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr'
 
-export const NFT_PROGRAM = 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03'
-export const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
-export const WTHRU_MINT = 'tacdgTUGud8OgzN5HnVVv4u3x82UBe8ciZAtjOLJZE_SNg'
+export const NFT_PROGRAM = 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5'
+export const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
+export const WTHRU_MINT = 'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb'
 
 export const PALS_SITE = 'https://thruscan.vercel.app'
 export const PAL_URI_BASE = `${PALS_SITE}/api/rpc?action=pal&id=`

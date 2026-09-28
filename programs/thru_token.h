@@ -112,8 +112,14 @@ FD_STATIC_ASSERT( sizeof( tn_token_burn_ix_t     ) == 15UL, tn_token_burn_sz    
 
 /* ------------------------------------------------------- program identity */
 
-/* The token program's address: 31 zero bytes then 0xaa
-   (taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq).
+/* The token program's address, taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE.
+
+   Until Thru v0.4.0 this was 31 zero bytes then 0xaa, and the check below was
+   a loop over those zeros. v0.4.0 moved every bootstrap program to a real
+   address, so the old check accepted nothing and every token call in every one
+   of these programs reverted with "not the token program". The address now
+   comes from the SDK's own header, so the next move is a header update rather
+   than a hunt through our source.
 
    Every instruction that calls the token program takes its index from the
    caller, so a program MUST check that the account at that index really is the
@@ -121,13 +127,15 @@ FD_STATIC_ASSERT( sizeof( tn_token_burn_ix_t     ) == 15UL, tn_token_burn_sz    
    caller can name a program of their own that accepts the call and does
    nothing, and the calling program updates its books for a payment that never
    moved. */
+static uchar const tn_token_program_addr[ 32 ] = TSDK_TOKEN_PROGRAM_ADDR_BYTES;
+
 static inline int
 tn_token_is_program( ushort idx ) {
   tsdk_txn_t const * txn = tsdk_get_txn();
   if( idx >= tsdk_txn_account_cnt( txn ) ) return 0;
   uchar const * k = tsdk_txn_get_acct_addrs( txn )[ idx ].key;
-  for( ulong i=0UL; i<31UL; i++ ) if( k[ i ] ) return 0;
-  return k[ 31 ] == (uchar)0xaa;
+  for( ulong i=0UL; i<32UL; i++ ) if( k[ i ] != tn_token_program_addr[ i ] ) return 0;
+  return 1;
 }
 
 /* ----------------------------------------------------------- authorization */

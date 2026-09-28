@@ -1541,6 +1541,54 @@ textarea.field { resize: vertical; min-height: 84px; }
 .theme-menu button:hover { background: var(--hover); }
 .theme-menu button.on { font-weight: 600; background: var(--soft); }
 
+/* ---------- the faucet tap ----------
+   Third of the three round buttons in the bar, so it has to match them exactly:
+   any difference in size would move the nav, which is measured to the pixel. */
+.faucet-drop { position: relative; flex: 0 0 auto; }
+.faucet-btn {
+  width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.faucet-btn:hover { border-color: var(--muted); }
+
+.faucet-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 70;
+  width: 250px; max-width: calc(100vw - 24px); padding: 5px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+/* On the phone bar the tap sits near the left, so a menu hung from its right
+   edge would run off a 320px screen, and one hung from its left would still be
+   250px starting 90px in. Dropping the wrapper out of the positioned flow makes
+   the bar itself the containing block, so the menu can span it from edge to
+   edge and be right at every width. */
+.topbar .faucet-drop { position: static; }
+.topbar .faucet-menu { top: calc(100% + 6px); left: 12px; right: 12px; width: auto; }
+
+.faucet-claim {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 9px 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--ink); font-size: 14px; font-weight: 600;
+  text-align: left; cursor: pointer;
+}
+.faucet-claim:hover:not(:disabled) { background: var(--hover); }
+.faucet-claim:disabled { opacity: 0.55; cursor: default; }
+.faucet-claim .fine { font-weight: 400; }
+
+.faucet-none { margin: 0; padding: 9px 10px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.faucet-note {
+  margin: 2px 5px 4px; padding: 8px 9px; border-radius: 8px; background: var(--soft);
+  font-size: 12.5px; line-height: 1.55;
+}
+.faucet-note.bad { color: var(--signal); }
+
+.faucet-more {
+  display: block; padding: 8px 10px; margin-top: 2px; border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--muted); text-decoration: none;
+}
+.faucet-more:hover { color: var(--ink); }
+
 /* ---------- the bell ----------
    Same size and shape as the theme button beside it, so the two read as a pair
    rather than as two unrelated controls that happened to land together. */

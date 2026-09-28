@@ -28,6 +28,10 @@ import dns from 'node:dns'
 // the 0.3.x node rejects, which surfaces as "invalid transaction signature".
 import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
+import {
+  MAX_STATE_UNITS, ID_PROGRAM, ID_REGISTRY,
+  WORDLE_PROGRAM, WORDLE_BOARD, G2048_PROGRAM, G2048_BOARD,
+} from '../src/lib/addresses.js'
 
 export const config = { runtime: 'nodejs' }
 
@@ -36,15 +40,16 @@ dns.setDefaultResultOrder('ipv4first')
 const RPC_URL = process.env.THRU_RPC_URL || 'https://rpc.alphanet.thru.org'
 
 /* The live game programs and boards. They are public on chain (each board's
-   owner is its program), so they have working defaults here and the
-   environment variables only override them after a redeploy. */
+   owner is its program) and they now come from src/lib/addresses.js, the one
+   file a genesis reset edits. The THRU_* environment variables that used to
+   override them are no longer read; see the note in that file. */
 const GAMES = {
-  idProgram:     process.env.THRU_ID_PROGRAM     || 'taFoIdpH-VZkPOQf9k8miE7SWY1g1OGRhcBnm5gji9nNPs',
-  idRegistry:    process.env.THRU_ID_REGISTRY    || 'tae4puDMa2813e0NipKkOq9jgkS3d-PGfHz4EUBuyWcUQu',
-  wordleProgram: process.env.THRU_WORDLE_PROGRAM || 'taHL3huykk5Vqu3Im-dLZTA8dpOYQ7cDm4NESwBsGF_iBt',
-  wordleBoard:   process.env.THRU_WORDLE_BOARD   || 'taPSd8H3VPIcuZ66VeMbIllvD9y1a_8RFf3A95el29jT3E',
-  g2048Program:  process.env.THRU_2048_PROGRAM   || 'tanqCpW1ULxuVu5ENnXJUjynpb5p-cVPbq9EHeJdjxbL58',
-  g2048Board:    process.env.THRU_2048_BOARD     || 'taDhVDJRhsiMfC6-NA6rXQEmy3zo2lAPNCjwVy4WsXzmel',
+  idProgram:     ID_PROGRAM,
+  idRegistry:    ID_REGISTRY,
+  wordleProgram: WORDLE_PROGRAM,
+  wordleBoard:   WORDLE_BOARD,
+  g2048Program:  G2048_PROGRAM,
+  g2048Board:    G2048_BOARD,
 }
 
 const NAME_MIN = 3
@@ -261,7 +266,7 @@ export default async function handler(req, res) {
       accounts: { readWrite: [target.account] },
       // State and memory units default too low for a write, the same way they
       // did for account creation. Ask explicitly.
-      header: { nonce, computeUnits: 300_000_000, stateUnits: 60_000, memoryUnits: 60_000 },
+      header: { nonce, computeUnits: 300_000_000, stateUnits: Math.min(2_048, MAX_STATE_UNITS), memoryUnits: 60_000 },
       instructionData: target.data,
     })
 

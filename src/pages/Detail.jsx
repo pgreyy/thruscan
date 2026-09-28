@@ -19,8 +19,8 @@ import { WALL_PROGRAM } from '../lib/addresses.js'
 import './home.css'
 
 const num = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString())
-const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-const NAME_SERVICE = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
+const NAME_SERVICE = 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG'
 
 function pretty(label) {
   if (!label) return null

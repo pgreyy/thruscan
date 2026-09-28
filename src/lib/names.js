@@ -54,10 +54,10 @@
 
 import { Pubkey, deriveProgramAddress } from '@thru/sdk'
 
-export const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+export const NAME_SERVICE_PROGRAM = 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG'
 
 /** Our root. Every name registered through ThruScan is a child of this. */
-export const ROOT_REGISTRAR = 'taGEX4QNK_WjsknEK4kl0_ppCJUimoanrmFuU27t1gS3pw'
+export const ROOT_REGISTRAR = 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
 export const ROOT_SUFFIX = 'id'
 
 export const OP_INIT_ROOT = 0

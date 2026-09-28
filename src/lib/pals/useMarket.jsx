@@ -22,7 +22,7 @@ import {
 import { buildBuy, buildList, buildDelist, palsError, WTHRU_MINT } from './chain.js'
 
 const fmt = (n) => Number(n).toLocaleString('en-US')
-const UNITS = { computeUnits: 300_000_000, stateUnits: 60_000, memoryUnits: 60_000 }
+const UNITS = { computeUnits: 300_000_000, stateUnits: 4_096, memoryUnits: 60_000 }
 
 export function useMarket({ onDone } = {}) {
   const gate = useUnlockGate()

@@ -15,30 +15,33 @@ export const DEFAULT_RPC = 'https://rpc.alphanet.thru.org'
 export const EXPLORER = 'https://thruscan.vercel.app'
 
 export const PROGRAMS = {
-  EOA: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-  TOKEN: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq',
-  NAME_SERVICE: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF',
-  FAUCET: 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6',
+  EOA: 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr',
+  TOKEN: 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE',
+  NAME_SERVICE: 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG',
+  FAUCET: 'taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16',
   // Thru's own NFT program. Its ABI is published on chain through the ABI
   // manager; the layouts below were read from it and checked by minting and
   // transferring on alphanet.
-  NFT: 'taVRt8dNq3B1IGXWpYx17GWEfFcpmU8LF9uWy75XIIcA03',
+  NFT: 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5',
 }
-const FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
+const FAUCET_ACCOUNT = 'taTigKYAf5mNxUNUVXeXq1HQodKc07DBzF4Pl7tCi1iXxt'
 // Pixel Pals: its program is the collection's authority, so a Pal is sent
 // through that program's SEND, which checks that the signer holds it.
 export const PALS = {
-  program: 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M',
-  config: 'tajW5wGlaVs_sAhHH2v-RBc3NLeutgsE7VYCsDbTootFMa',
-  mint: 'ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv',
+  program: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
+  config: 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv',
+  mint: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr',
 }
 const FAUCET_MAX = 10_000n
+/* The chain's max_state_units_per_block. Read the live value with
+   `thru feature-gates list`; see the note in buildSigned for why it matters. */
+export const MAX_STATE_UNITS = 8_192
 // The .id names root on Thru's name service.
-const NAMES_ROOT = 'taGEX4QNK_WjsknEK4kl0_ppCJUimoanrmFuU27t1gS3pw'
+const NAMES_ROOT = 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
 // Tokens worth checking for on every wallet even before it has any history.
 export const KNOWN_MINTS = [
-  'tabAx2SejGxnH7qDY02xofs0rrhBV2Cdoxg0yeG0hv7Z0R', // tUSD
-  'tacdgTUGud8OgzN5HnVVv4u3x82UBe8ciZAtjOLJZE_SNg', // WTHRU
+  'ta4OJoJQcZRIx4Sm3MLdEUrn_j5gb4vFeFPhpSJraHZTeB', // tUSD
+  'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb', // WTHRU
 ]
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -154,17 +157,19 @@ export function describe(item, me) {
       return { label: ({ 0: 'Created a token', 1: 'Opened a token account', 2: byMe ? 'Sent tokens' : 'Received tokens', 3: 'Minted tokens', 4: 'Burned tokens' })[d[0]] ?? 'Token program' }
     case PROGRAMS.NAME_SERVICE:
       return { label: ({ 1: 'Registered a name', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[dv?.getUint32(0, true)] ?? 'Name service' }
-    case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ':
+    case 'taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP':
       return { label: 'Wrapped THRU' }
     case PALS.program:
       return { label: ({ 2: 'Minted a Pixel Pal', 3: byMe ? 'Sent a Pixel Pal' : 'Received a Pixel Pal', 6: 'Claimed a Pixel Pal prize' })[d[0]] ?? 'Pixel Pals' }
     case PROGRAMS.NFT:
       return { label: ({ 0: 'Created an NFT collection', 1: 'Minted an NFT', 2: byMe ? 'Sent an NFT' : 'Received an NFT', 3: 'Burned an NFT' })[dv?.getUint32(0, true)] ?? 'NFT program' }
-    case 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH':
+    case 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm':
       return { label: 'Unwrapped WTHRU' }
     default:
-      // The runtime's account-creation program ends in ...MD and takes no data.
-      return { label: item.program === 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMD' ? 'Account created' : 'App transaction' }
+      // Before Thru v0.4.0 there was a separate account-creation program, named
+      // here so its transactions read as "Account created". v0.4.0 dropped it;
+      // account creation now goes through the EOA program above.
+      return { label: 'App transaction' }
   }
 }
 
@@ -358,7 +363,7 @@ export async function resolveName(url, input) {
  * Build and sign a transaction paid for by `signer`. Accounts must already be
  * in the order the instruction's indices assume, which is sorted by raw bytes.
  */
-export async function buildSigned(url, signer, { program, readWrite = [], readOnly = [], data, computeUnits = 300_000_000, stateUnits = 60_000, memoryUnits = 60_000 }) {
+export async function buildSigned(url, signer, { program, readWrite = [], readOnly = [], data, computeUnits = 300_000_000, stateUnits = 2_048, memoryUnits = 60_000 }) {
   const c = client(url)
   const [me, height, chainId] = await Promise.all([accountInfo(url, signer.address), c.blocks.getBlockHeight(), c.chain.getChainId()])
   if (!me.exists) throw new Error('This account is not on chain yet. Activate it first.')
@@ -373,7 +378,14 @@ export async function buildSigned(url, signer, { program, readWrite = [], readOn
       startSlot: height.finalized,
       expiryAfter: 100,
       chainId,
-      computeUnits, stateUnits, memoryUnits,
+      computeUnits,
+      // State units are 4096-byte pages, and the chain admits only
+      // MAX_STATE_UNITS of them per block. A request above that is never
+      // admitted and never errors: the signature comes back and the
+      // transaction reads "not found" for ever. A dapp can ask for anything,
+      // so the ceiling is applied here rather than trusted.
+      stateUnits: Math.min(Number(stateUnits) || 0, MAX_STATE_UNITS),
+      memoryUnits,
     },
     instructionData: data,
   })
@@ -433,7 +445,7 @@ export async function claimThru(url, signer, amount = FAUCET_MAX) {
   dv.setUint32(0, 1, true)
   dv.setUint32(4, 2, true)
   dv.setBigUint64(8, amount > FAUCET_MAX ? FAUCET_MAX : amount, true)
-  return sendInstruction(url, signer, { program: PROGRAMS.FAUCET, readWrite: [FAUCET_ACCOUNT], data, computeUnits: 300_000, stateUnits: 10_000, memoryUnits: 10_000 })
+  return sendInstruction(url, signer, { program: PROGRAMS.FAUCET, readWrite: [FAUCET_ACCOUNT], data, computeUnits: 300_000, stateUnits: 1_024, memoryUnits: 10_000 })
 }
 
 export async function sendThru(url, signer, to, amount) {
@@ -443,7 +455,7 @@ export async function sendThru(url, signer, to, amount) {
   dv.setBigUint64(4, BigInt(amount), true)
   dv.setUint16(12, 0, true)
   dv.setUint16(14, 2, true)
-  return sendInstruction(url, signer, { program: PROGRAMS.EOA, readWrite: [to], data, computeUnits: 300_000, stateUnits: 10_000, memoryUnits: 10_000 })
+  return sendInstruction(url, signer, { program: PROGRAMS.EOA, readWrite: [to], data, computeUnits: 300_000, stateUnits: 1_024, memoryUnits: 10_000 })
 }
 
 /** Open the token account `owner` needs for `mint`, paid for by `signer`. */

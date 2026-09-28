@@ -49,7 +49,7 @@ export const PAD_VERSION = 2
 export const HEADER_SIZE = 77
 export const LAUNCH_SIZE = 253
 
-export const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
+export const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
 
 export const OP_INIT = 0x00
 export const OP_LAUNCH = 0x01

@@ -233,7 +233,7 @@ function Composer({ onPosted, fixedTo = null }) {
         readWrite: [WALL_ACCOUNT],
         data,
         computeUnits: 2_000_000,
-        stateUnits: 40_000,
+        stateUnits: 2_048,
         memoryUnits: 40_000,
       })
 

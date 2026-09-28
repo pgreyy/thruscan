@@ -17,12 +17,12 @@
 
 import { Pubkey } from '@thru/sdk'
 
-export const WTHRU_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcH'
-export const WTHRU_VAULT = 'tavBundQnIZaeuFuzQyydWytISqLWedn49iLRXsBj085lN'
-export const WTHRU_MINT_ADDRESS = 'tacdgTUGud8OgzN5HnVVv4u3x82UBe8ciZAtjOLJZE_SNg'
-const MULTICALL = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkJ'
-const TOKEN = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
-const EOA = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+export const WTHRU_PROGRAM = 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm'
+export const WTHRU_VAULT = 'taEqcObTD3WldMGFOW28FBKF6_mQfSbci1TC77YyssQQhP'
+export const WTHRU_MINT_ADDRESS = 'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb'
+const MULTICALL = 'taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP'
+const TOKEN = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
+const EOA = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 
 const bytes = (a) => Pubkey.from(a).toBytes()
 function sort(list) {
@@ -91,7 +91,7 @@ export function buildUnwrap({ source, amount }) {
   dv.setUint16(12, 0, true)   // owner: the payer
   dv.setUint16(14, 0, true)   // recipient: the payer
   dv.setBigUint64(16, BigInt(amount), true)
-  return { program: WTHRU_PROGRAM, readWrite, readOnly, data, computeUnits: 400_000, stateUnits: 10_000, memoryUnits: 10_000 }
+  return { program: WTHRU_PROGRAM, readWrite, readOnly, data, computeUnits: 400_000, stateUnits: 1_024, memoryUnits: 10_000 }
 }
 
 /**

@@ -38,6 +38,7 @@ import { createGrpcTransport } from '@connectrpc/connect-node'
 import { createHash } from 'node:crypto'
 import { sendLanded } from '../src/lib/sendLanded.js'
 import { decodeConfig, buildAllow, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
+import { MAX_STATE_UNITS } from '../src/lib/addresses.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -46,11 +47,11 @@ export const config = { runtime: 'nodejs', maxDuration: 60 }
 dns.setDefaultResultOrder('ipv4first')
 
 const RPC_URL = process.env.THRU_RPC_URL || 'https://rpc.alphanet.thru.org'
-const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
-const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
+const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 const ADDRESS_RE = /^ta[A-Za-z0-9_-]{44}$/
 
-const TUSD_MINT = process.env.THRU_TUSD_MINT || 'tabAx2SejGxnH7qDY02xofs0rrhBV2Cdoxg0yeG0hv7Z0R'
+const TUSD_MINT = process.env.THRU_TUSD_MINT || 'ta4OJoJQcZRIx4Sm3MLdEUrn_j5gb4vFeFPhpSJraHZTeB'
 
 /* 500 tUSD a day, and never more than 10,000 held at once.
    The daily figure is enough to trade with and to seed a small pool; the cap is
@@ -234,7 +235,7 @@ async function getAccount(c, address) {
 
 /** Sponsor-paid transaction. The fee is 1 here because the sponsor has a
  *  balance to pay it from; wallet-paid transactions use 0 instead. */
-async function sponsorSend(c, { program, readWrite = [], readOnly = [], data, stateUnits = 60_000 }) {
+async function sponsorSend(c, { program, readWrite = [], readOnly = [], data, stateUnits = 2_048 }) {
   const pub = process.env.THRU_SPONSOR_PUBKEY
   const priv = hexToBytes(process.env.THRU_SPONSOR_PRIVKEY)
   const chainId = await c.chain.getChainId()
@@ -255,7 +256,9 @@ async function sponsorSend(c, { program, readWrite = [], readOnly = [], data, st
           expiryAfter: 100,
           chainId,
           computeUnits: 300_000_000,
-          stateUnits,
+          // Above the chain's per-block budget a transaction is never admitted
+          // and never errors, so the cap is enforced here rather than trusted.
+          stateUnits: Math.min(stateUnits, MAX_STATE_UNITS),
           memoryUnits: 60_000,
         },
         instructionData: data,
@@ -463,7 +466,7 @@ async function faucet(c, { owner, account }) {
     program: TOKEN_PROGRAM,
     readWrite,
     data: new Uint8Array(data),
-    stateUnits: 20_000,
+    stateUnits: 2_048,
   })
   seenHere.set(dest, Date.now())
   return { ok: true, signature, amount: amount.toString(), account: dest, held: balance.toString() }
@@ -625,8 +628,8 @@ async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
    out. The trap worth repeating here: the name field is 64 bytes, and a 32-byte
    guess reverts with no user error code at all. */
 
-const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
-const ROOT_REGISTRAR = process.env.THRU_NAME_ROOT || 'taGEX4QNK_WjsknEK4kl0_ppCJUimoanrmFuU27t1gS3pw'
+const NAME_SERVICE_PROGRAM = 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG'
+const ROOT_REGISTRAR = process.env.THRU_NAME_ROOT || 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
 const NAME_FIELD = 64
 const KEY_FIELD = 32
 const VALUE_FIELD = 256

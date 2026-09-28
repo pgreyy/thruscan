@@ -52,10 +52,11 @@ import {
 import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
 import { isExternal, externalAddress, externalSend, provider } from './external.js'
 import { buildWrap, buildUnwrap, WTHRU_MINT_ADDRESS } from './wthru.js'
+import { MAX_STATE_UNITS } from './addresses.js'
 
 const STORE_KEY = 'thruscan.wallet.v1'
 const ENDPOINT = '/api/wallet'
-const TOKEN_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKqq'
+const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
 const SIGNATURE_DOMAIN_EOA_CREATE = 5
 
 /* Thru's own faucet, which hands out native THRU rather than a test token.
@@ -67,13 +68,24 @@ const SIGNATURE_DOMAIN_EOA_CREATE = 5
 
    Recovered by decoding a transaction the CLI produced, then confirmed against
    a second one with a different amount. */
-const NATIVE_FAUCET_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPr6'
-const NATIVE_FAUCET_ACCOUNT = 'taxoImN8fTEOxXYnvgC6JZ0lN0n0qvZERwz_vlOjX3MkIn'
+const NATIVE_FAUCET_PROGRAM = 'taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16'
+const NATIVE_FAUCET_ACCOUNT = 'taTigKYAf5mNxUNUVXeXq1HQodKc07DBzF4Pl7tCi1iXxt'
 const NATIVE_FAUCET_MAX = 10_000n
 
-/* The EOA program: account creation, deletion, and native THRU transfer. Its
-   address is thirty-two zero bytes. */
-const EOA_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+/* The EOA program: account creation, deletion, and native THRU transfer. */
+const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
+
+/* State units are 4096-byte pages of state growth, and the chain admits only
+   max_state_units_per_block of them per block. A transaction asking for more
+   than a whole block's budget can never be placed in a block, so it is neither
+   accepted nor rejected: the signature comes back and the transaction reads
+   "not found" for ever.
+
+   Every request here used to be 10,000 to 60,000, which was fine while the
+   chain had no such cap and fatal the moment it set one at 8192. Nothing the
+   site does grows state by more than a page or two, so the numbers below are
+   generous, and the clamp is the backstop if the chain lowers the cap again. */
+const clampState = (n) => Math.min(Number(n) || 0, MAX_STATE_UNITS)
 
 /* ---------- small helpers ---------- */
 
@@ -531,8 +543,9 @@ export function signAndSend(args) {
 
 async function signAndSendNow({
   program, readWrite = [], readOnly = [], data,
-  computeUnits = 300_000_000, stateUnits = 60_000, memoryUnits = 60_000,
+  computeUnits = 300_000_000, stateUnits = 2_048, memoryUnits = 60_000,
 }) {
+  stateUnits = clampState(stateUnits)
   if (isExternal()) return sendWithConnectedWallet({ program, readWrite, readOnly, data, computeUnits, stateUnits, memoryUnits })
   const { address, privateKey } = requireSession()
   const { nonce, startSlot, chainId, balance } = await api('prepare', { address })
@@ -634,7 +647,7 @@ export async function claimNativeThru(amount = NATIVE_FAUCET_MAX) {
     readWrite: [NATIVE_FAUCET_ACCOUNT],
     data,
     computeUnits: 300_000,
-    stateUnits: 10_000,
+    stateUnits: 1_024,
     memoryUnits: 10_000,
   })
 }
@@ -697,7 +710,7 @@ export async function burnToken(mint, amount) {
     readWrite,
     data,
     computeUnits: 1_000_000,
-    stateUnits: 20_000,
+    stateUnits: 2_048,
     memoryUnits: 20_000,
   })
 }
@@ -780,7 +793,7 @@ export async function sendNativeThru(to, amount) {
     readWrite: [to],
     data,
     computeUnits: 300_000,
-    stateUnits: 10_000,
+    stateUnits: 1_024,
     memoryUnits: 10_000,
   })
 }
@@ -854,7 +867,7 @@ export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
    name. That split is a feature. It means ThruScan can hand out names it cannot
    afterwards edit. */
 
-const NAME_SERVICE_PROGRAM = 'taAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUF'
+const NAME_SERVICE_PROGRAM = 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG'
 const KEY_FIELD = 32
 const VALUE_FIELD = 256
 

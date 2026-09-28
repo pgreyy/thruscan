@@ -45,6 +45,7 @@ const NONCE_TAKEN = -511
 export function sendLanded(c, { build, nonceOf, attempts = 3 }) {
   const run = queue.then(async () => {
     let lastError = null
+    let last = null
     for (let attempt = 0; attempt < attempts; attempt++) {
       const nonce = await nonceOf()
       const { rawTransaction, signature: sigBytes } = await build(nonce)
@@ -62,8 +63,18 @@ export function sendLanded(c, { build, nonceOf, attempts = 3 }) {
       const landed = await lookup(c, signature, moved ? 4 : 2)
       if (landed && landed.executionResult?.vmError !== NONCE_TAKEN) return signature
       // Missing, or beaten to the nonce. Build again with the nonce as it is now.
+      last = { attempt, moved, found: landed !== null, vmError: landed?.executionResult?.vmError ?? null }
     }
-    throw lastError ?? new Error('The network did not take the transaction. Try again in a moment.')
+    // A transaction the node never admits looks exactly like one that was
+    // never sent, so say which it was. The usual cause is a header asking for
+    // more state units than a block can hold: see MAX_STATE_UNITS in
+    // src/lib/addresses.js.
+    if (lastError) throw lastError
+    throw new Error(
+      'The network did not take the transaction. Try again in a moment.'
+      + ` (attempts ${attempts}, nonce moved: ${last?.moved}, transaction found: ${last?.found}`
+      + `${last?.vmError != null ? `, vmError ${last.vmError}` : ''})`,
+    )
   })
   queue = run.catch(() => {})
   return run

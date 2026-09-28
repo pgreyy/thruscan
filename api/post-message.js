@@ -20,6 +20,7 @@
 import dns from 'node:dns'
 import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
+import { MAX_STATE_UNITS } from '../src/lib/addresses.js'
 
 export const config = { runtime: 'nodejs' }
 
@@ -154,7 +155,7 @@ export default async function handler(req, res) {
       accounts: { readWrite: [THRU_WALL_ACCOUNT] },
       // State and memory units default low enough to fail on a write, the
       // same way INIT did. Ask explicitly rather than hoping.
-      header: { nonce, computeUnits: 300_000_000, stateUnits: 60_000, memoryUnits: 60_000 },
+      header: { nonce, computeUnits: 300_000_000, stateUnits: Math.min(2_048, MAX_STATE_UNITS), memoryUnits: 60_000 },
       instructionData,
     })
 

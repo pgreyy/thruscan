@@ -10,7 +10,7 @@ import {
 } from './ui.jsx'
 
 // Pixel Pals are sent through the collection's own program (see lib/chain.js).
-const PALS = { program: 'taxb0oMEdQIZKaL2CxCI98QnPIOvuxVBNqVhflRfB1jT4M', mint: 'ta9l4qt8fTyuAofmu1oi3Hy_jc31vWCxLEXyaNEpuGEnMv' }
+const PALS = { program: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH', mint: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr' }
 
 /** The overview, refreshed every few seconds while the wallet is open. */
 export function useOverview() {
