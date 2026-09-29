@@ -31,7 +31,7 @@ const other = (await keys.generateKeyPair()).address
 
 /* A transaction as the SDK hands one back: pubkeys wrapped, signature 64
    bytes, instruction data raw. */
-function txn({ program, data, rw = [], ro = [], userError = 0, vmError = 0, slot = 100, blockOffset = 168 }) {
+function txn({ program, data, rw = [], ro = [], userError = 0, vmError = 0, slot = 100, blockOffset = 168, flags = 0 }) {
   const sig = new Uint8Array(64)
   sig.set(new TextEncoder().encode(`${program.slice(0, 6)}:${slot}:${blockOffset}`))
   return {
@@ -40,6 +40,7 @@ function txn({ program, data, rw = [], ro = [], userError = 0, vmError = 0, slot
     readWriteAccounts: rw.map((a) => Pubkey.from(a)),
     readOnlyAccounts: ro.map((a) => Pubkey.from(a)),
     instructionData: data,
+    flags,
     signature: sig,
     executionResult: { userErrorCode: userError, vmError },
     slot,
@@ -140,4 +141,63 @@ test('an empty instruction does not crash the decoder', () => {
   const r = decode(txn({ program: A.THRUPAD_PROGRAM, data: new Uint8Array(0) }))
   assert.equal(r.op, null)
   assert.equal(r.label, 'Launchpad')
+})
+
+/* ---------- bundles, which is what nearly every write actually is ---------- */
+
+function bundle(calls, accounts) {
+  // [count u16] then per call [program_idx u16][size u64][data]
+  const size = 2 + calls.reduce((n, c) => n + 10 + c.data.length, 0)
+  const out = new Uint8Array(size)
+  const dv = new DataView(out.buffer)
+  let o = 0
+  dv.setUint16(o, calls.length, true); o += 2
+  for (const c of calls) {
+    dv.setUint16(o, accounts.indexOf(c.program), true); o += 2
+    dv.setBigUint64(o, BigInt(c.data.length), true); o += 8
+    out.set(c.data, o); o += c.data.length
+  }
+  return out
+}
+
+test('a bundle is named after the most interesting thing in it', () => {
+  // A launchpad buy really arrives as: open a token account, wrap some THRU,
+  // then buy. Naming it after the first step would be true and useless.
+  const accounts = [payer, A.MULTICALL_PROGRAM, A.TOKEN_PROGRAM, A.THRUPAD_PROGRAM]
+  const data = bundle([
+    { program: A.TOKEN_PROGRAM, data: bytes(1) },     // open an account
+    { program: A.THRUPAD_PROGRAM, data: bytes(2) },   // the buy
+  ], accounts)
+  const r = decode(txn({ program: A.MULTICALL_PROGRAM, data, ro: [A.TOKEN_PROGRAM, A.THRUPAD_PROGRAM] }))
+  assert.equal(r.kind, 'buy')
+  assert.equal(r.label, 'Bought on the launchpad')
+})
+
+test('a bundle of nothing but infrastructure is infrastructure', () => {
+  // The oracle posts its updates bundled. Left as "bundled transaction" they
+  // slip past the filter that hides them and fill the feed.
+  const accounts = [payer, A.MULTICALL_PROGRAM, A.ORACLE_PROGRAM]
+  const data = bundle([
+    { program: A.ORACLE_PROGRAM, data: bytes(1) },
+    { program: A.ORACLE_PROGRAM, data: bytes(1) },
+  ], accounts)
+  assert.equal(decode(txn({ program: A.MULTICALL_PROGRAM, data, ro: [A.ORACLE_PROGRAM] })).kind, 'oracle')
+})
+
+test('a truncated bundle returns what it could read', () => {
+  // This runs over whatever is on chain. One malformed transaction must not
+  // stop a feed.
+  const accounts = [payer, A.MULTICALL_PROGRAM, A.THRUPAD_PROGRAM]
+  const good = bundle([{ program: A.THRUPAD_PROGRAM, data: bytes(1) }], accounts)
+  const cut = good.subarray(0, good.length - 1)
+  const r = decode(txn({ program: A.MULTICALL_PROGRAM, data: cut, ro: [A.THRUPAD_PROGRAM] }))
+  assert.ok(r, 'still produced a row')
+  assert.equal(r.kind, 'bundle', 'and did not invent a reading of it')
+})
+
+test('the do-nothing program is read by the flag, not the program', () => {
+  // The same program is both a wallet's first transaction and the node filling
+  // an empty slot. Only the create-fee-payer flag tells them apart.
+  assert.equal(decode(txn({ program: A.NOOP_PROGRAM, data: new Uint8Array(0), flags: 1 })).kind, 'account')
+  assert.equal(decode(txn({ program: A.NOOP_PROGRAM, data: new Uint8Array(0), flags: 0 })).kind, 'noop')
 })

@@ -30,20 +30,22 @@ function when(ns) {
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-/* What to say when there is nothing, which is not one message but four. A
-   feed that says "no activity" when the real answer is "no indexer is running"
-   sends somebody looking for a bug in the wrong place. */
+/* What to say when there is nothing.
+ *
+ * Empty and broken look identical from here and only one of them is worth
+ * anybody's attention, so they get different words. Nothing about the indexer
+ * appears in any of them: the feed reads the chain directly when there is no
+ * indexer behind it, so an empty list means the chain is quiet, which on a
+ * freshly reset network it genuinely is. */
 function emptyMessage(problem, group) {
   switch (problem) {
-    case 'no-indexer':
-      return 'No activity database yet. The indexer fills it, and it has to be running somewhere before anything shows here.'
     case 'offline':
       return 'Could not reach the site. Check your connection and try again.'
     case 'error':
     case 'unreadable':
-      return 'The activity service is not answering right now.'
+      return 'The chain is not answering right now.'
     default:
-      return group === 'all' ? 'Nothing on the chain yet.' : 'Nothing of this kind yet.'
+      return group === 'all' ? 'Nothing has happened on chain yet.' : 'Nothing of this kind yet.'
   }
 }
 
@@ -107,7 +109,7 @@ export function Feed({ address = null, title = 'Activity', limit = 30, showFilte
       {items.length === 0 && (
         <p className="fine feed-empty">
           {loading ? 'Loading.' : emptyMessage(problem, group)}
-          {!loading && detail && problem === 'no-indexer' && (
+          {!loading && detail && problem && problem !== 'offline' && (
             <span className="feed-detail">{detail}</span>
           )}
         </p>

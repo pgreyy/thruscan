@@ -455,13 +455,22 @@ function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) 
   const [image, setImage] = useState(null)        // { url, preview } once uploaded
   const [uploading, setUploading] = useState(false)
   const [over, setOver] = useState(false)
-  const [quote, setQuote] = useState('tusd')
+  /* WTHRU, and only WTHRU.
+   *
+   * tUSD was the other choice and it does not exist any more: it was a token
+   * we minted, the network was reset, and it is not coming back, because the
+   * quote asset for this pad is THRU. Leaving the picker up with a dead option
+   * selected by default meant every launch failed on its first transaction. */
+  const [quote] = useState('wthru')
   const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
 
-  const quoteMint = quote === 'wthru' ? WTHRU_MINT : TUSD_MINT
-  const quoteTicker = quote === 'wthru' ? 'WTHRU' : 'tUSD'
+  const quoteMint = WTHRU_MINT
+  const quoteTicker = 'WTHRU'
+  /* WTHRU is one base unit per native THRU, so its amounts are whole numbers.
+     Formatting them with six decimal places turned 50,000 into 0.05. */
+  const quoteDecimals = 0
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const setSoc = (k) => (e) => setSocial((s) => ({ ...s, [k]: e.target.value }))
@@ -636,10 +645,7 @@ function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) 
           <div className="lf-pair">
             <div className="lf">
               <span>Priced in</span>
-              <div className="seg">
-                <button type="button" onClick={() => setQuote('tusd')} aria-pressed={quote === 'tusd'}>tUSD</button>
-                <button type="button" onClick={() => setQuote('wthru')} aria-pressed={quote === 'wthru'}>WTHRU</button>
-              </div>
+              <div className="lf-fixed"><b>{quoteTicker}</b><span className="fine">wrapped THRU</span></div>
             </div>
             <label className="lf">
               <span>Opening liquidity, {quoteTicker}</span>
@@ -702,7 +708,7 @@ function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) 
             <div><span>Supply</span><b className="mono">{Number(form.supply || 0).toLocaleString('en-US')}</b></div>
             <div><span>Opening liquidity</span><b className="mono">{Number(form.virtQuote || 0).toLocaleString('en-US')} {quoteTicker}</b></div>
             <div><span>Your fee</span><b className="mono">{(feeBps / 100).toFixed(2)}%</b></div>
-            {threshold ? <div><span>Graduates at</span><b className="mono">{fmt(threshold)} {quoteTicker}</b></div> : null}
+            {threshold ? <div><span>Graduates at</span><b className="mono">{fmt(threshold, quoteDecimals)} {quoteTicker}</b></div> : null}
             <div><span>Mint authority</span><b>Burned to the curve</b></div>
           </div>
           <p className="fine">
@@ -1917,7 +1923,10 @@ export function LaunchDetail({ id }) {
     PAD_REGISTRY,
     decodePadRegistry,
     (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
-    (d) => d.launches.map((l) => l.quoteMint),
+    /* The registry's own default quote mint is in here too. Without it, a pad
+       with no launches yet has nothing to read a ticker from, and the heading
+       falls back to whatever was hardcoded. */
+    (d) => [d.quoteMint, ...d.launches.map((l) => l.quoteMint)],
   )
 
   useEffect(() => {
@@ -1958,7 +1967,7 @@ export function LaunchDetail({ id }) {
         <section className="card">
           <h2 className="h2">Not found</h2>
           <p className="fine" style={{ marginTop: 10 }}>No launch with that id.</p>
-          <p style={{ marginTop: 12 }}><Link to="/launchpad">Back to the launchpad</Link></p>
+          <p style={{ marginTop: 12 }}><Link to="/">Back to the launchpad</Link></p>
         </section>
       </div>
     )
@@ -1975,7 +1984,7 @@ export function LaunchDetail({ id }) {
 
   return (
     <div className="wrap wrap-top">
-      <p style={{ marginBottom: 12 }}><Link className="linkish" to="/launchpad">← All launches</Link></p>
+      <p style={{ marginBottom: 12 }}><Link className="linkish" to="/">← All launches</Link></p>
 
       <section className="card">
         <div className="card-head">
@@ -2228,7 +2237,10 @@ export function LaunchpadPage() {
     // v2 lets each launch choose its quote asset, so the tickers have to be
     // read rather than assumed. A WTHRU curve labelled tUSD would be a lie
     // about what the buyer is spending.
-    (d) => d.launches.map((l) => l.quoteMint),
+    /* The registry's own default quote mint is in here too. Without it, a pad
+       with no launches yet has nothing to read a ticker from, and the heading
+       falls back to whatever was hardcoded. */
+    (d) => [d.quoteMint, ...d.launches.map((l) => l.quoteMint)],
   )
 
   // The anti-snipe tax decays by slot, so the page needs the current height to
@@ -2286,7 +2298,7 @@ export function LaunchpadPage() {
           <h1 className="h1">Launchpad</h1>
           <p className="sub">
             {data
-              ? `${data.launches.length} of ${data.capacity} slots · graduates at ${fmt(data.gradThreshold)} tUSD`
+              ? `${data.launches.length} of ${data.capacity} slots · graduates at ${fmt(data.gradThreshold, decimals?.[data.quoteMint] ?? 0)} ${tickers?.[data.quoteMint] || ''}`.trimEnd()
               : 'Fixed-supply tokens on a bonding curve'}
           </p>
         </div>

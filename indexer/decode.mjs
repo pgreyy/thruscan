@@ -64,6 +64,47 @@ function registeredName(b) {
  * the wrong set is the one way to get this quietly wrong, which is why it is
  * an argument instead of a global.
  */
+/* How interesting each kind is, most first. Used to name a bundle after its
+   most recognisable part rather than its first one, since the plumbing tends
+   to come first: a token account is opened before the thing it is opened for.
+   Anything not listed sorts last. */
+const RANK = [
+  'launch', 'graduate', 'migrate', 'buy', 'sell', 'swap', 'claim',
+  'pool', 'liquidity', 'nft', 'name', 'wall', 'mint', 'burn', 'transfer',
+  'faucet', 'token', 'account', 'bundle', 'other', 'oracle', 'noop',
+]
+const rank = (k) => { const i = RANK.indexOf(k); return i < 0 ? RANK.length : i }
+
+/**
+ * The calls inside a multicall bundle.
+ *
+ *   [count u16] then count x [program_idx u16][data_size u64][data]
+ *
+ * `program_idx` points into the transaction's own account list, which starts
+ * with the fee payer, then the program being called, then the read-write
+ * accounts and then the read-only ones. Every inner instruction resolves its
+ * indices against that same shared list, which is what makes one bundle one
+ * transaction rather than several.
+ *
+ * Malformed input returns what it managed to read rather than throwing: this
+ * runs over whatever is on chain, and one odd transaction must not stop a feed.
+ */
+export function innerCalls(data, accounts) {
+  const out = []
+  if (!data || data.length < 2) return out
+  const dv = new DataView(data.buffer, data.byteOffset, data.length)
+  let off = 0
+  const count = dv.getUint16(off, true); off += 2
+  for (let i = 0; i < count && off + 10 <= data.length; i++) {
+    const idx = dv.getUint16(off, true); off += 2
+    const size = Number(dv.getBigUint64(off, true)); off += 8
+    if (size < 0 || off + size > data.length) break
+    out.push({ program: accounts[idx] ?? null, data: data.subarray(off, off + size) })
+    off += size
+  }
+  return out
+}
+
 export function makeDecoder(addresses) {
   const A = addresses
   const named = {
@@ -74,6 +115,7 @@ export function makeDecoder(addresses) {
     [A.NATIVE_FAUCET_PROGRAM]: 'Faucet',
     [A.WTHRU_PROGRAM]: 'WTHRU',
     [A.NFT_PROGRAM]: 'NFT',
+    [A.ORACLE_PROGRAM]: 'Oracle',
     [A.AMM_PROGRAM]: 'AMM',
     [A.CLOB_PROGRAM]: 'Order book',
     [A.THRUPAD_PROGRAM]: 'Launchpad',
@@ -105,16 +147,14 @@ export function makeDecoder(addresses) {
     4: ['swap', 'Swapped'],
   }
 
-  return function decode(txn) {
-    const program = addr(txn.program)
-    const feePayer = addr(txn.feePayer)
-    if (!program || !feePayer) return null
-
-    const rw = (txn.readWriteAccounts ?? []).map(addr).filter(Boolean)
-    const ro = (txn.readOnlyAccounts ?? []).map(addr).filter(Boolean)
-    const data = txn.instructionData ?? new Uint8Array(0)
-    const op = data.length ? data[0] : null
-
+  /* What one call to one program is, read from its first byte.
+   *
+   * Separated out because a multicall bundle's inner calls are ordinary calls
+   * to ordinary programs, and reading them with a second, similar-looking
+   * copy of this is how the two drift apart. `flags` is only ever set on the
+   * transaction itself, so it is passed rather than looked up. */
+  function labelFor(program, data, flags) {
+    const op = data?.length ? data[0] : null
     let kind = 'other'
     let label = `${named[program] ?? 'Program'} call`
 
@@ -184,8 +224,61 @@ export function makeDecoder(addresses) {
         label = 'Bundled transaction'
         break
       }
+      case A.ORACLE_PROGRAM: {
+        kind = 'oracle'
+        label = 'Price update'
+        break
+      }
+      case A.NOOP_PROGRAM: {
+        /* Two different things wear this program.
+         *
+         * A wallet's very first transaction is a call to NOOP carrying a proof
+         * that its address is empty and the flag that asks the runtime to
+         * create the fee payer. That is how anybody gets onto the chain at
+         * all, and it is worth showing.
+         *
+         * Every other NOOP is the node talking to itself, and there is one
+         * per slot, so a feed that shows them shows nothing else. */
+        if (flags === 1) { kind = 'account'; label = 'Account created' }
+        else { kind = 'noop'; label = 'Chain keepalive' }
+        break
+      }
       default:
         break
+    }
+    return { kind, label, op }
+  }
+
+  return function decode(txn) {
+    const program = addr(txn.program)
+    const feePayer = addr(txn.feePayer)
+    if (!program || !feePayer) return null
+
+    const rw = (txn.readWriteAccounts ?? []).map(addr).filter(Boolean)
+    const ro = (txn.readOnlyAccounts ?? []).map(addr).filter(Boolean)
+    const data = txn.instructionData ?? new Uint8Array(0)
+    const flags = Number(txn.flags ?? 0)
+
+    let { kind, label, op } = labelFor(program, data, flags)
+
+    /* A bundle is not an action, it is a container for several. Almost every
+       write the site makes is one now, so a feed that stops at "bundled
+       transaction" describes nothing that happened. Read what is inside and
+       report the part somebody would recognise. */
+    if (program === A.MULTICALL_PROGRAM) {
+      const read = innerCalls(data, [feePayer, program, ...rw, ...ro])
+        .map((c) => labelFor(c.program, c.data, 0))
+      /* The bundle is named after the most interesting thing in it. A buy
+         wrapped with a token-account creation and a deposit is a buy; saying
+         "opened a token account" would be true and useless. */
+      const best = [...read].sort((a, b) => rank(a.kind) - rank(b.kind))[0]
+      /* Whatever is inside wins, even when it is infrastructure: a bundle of
+         oracle updates is an oracle update, and calling it a bundled
+         transaction only hides that from the filter that would drop it. */
+      if (best) {
+        kind = best.kind
+        label = best.label
+      }
     }
 
     const x = txn.executionResult ?? {}

@@ -7,9 +7,9 @@
 // browser, every time a page loads. This asks for rows that were decoded once,
 // when they happened, and never again.
 //
-// The endpoint answers with an empty list and a reason when there is no
-// indexer behind it, rather than an error, so a page can say something true
-// instead of spinning.
+// The endpoint answers from the indexer when there is one and from the chain
+// when there is not, so this does not need to know or care which. An empty
+// list here means the chain is quiet, never that something is unconfigured.
 
 const KIND_GROUPS = [
   { id: 'all', label: 'All', kinds: null },
@@ -58,7 +58,7 @@ export async function fetchFeed({ group = 'all', address = null, before = null, 
     return {
       items: [],
       next: null,
-      problem: body.error === 'no activity database' ? 'no-indexer' : 'error',
+      problem: 'error',
       detail: body.detail ?? body.error ?? 'Something went wrong.',
     }
   }

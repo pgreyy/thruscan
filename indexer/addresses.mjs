@@ -25,6 +25,15 @@ export const SYSTEM = {
   /* Betanet ships these two; alphanet did not. Harmless to carry on both,
      because an address that is not there simply never appears in a block. */
   AMM_PROGRAM: 'taAMMx8gG44RcOyRqNYZ55pDaAJoGS0R8kPYxBN96sO8kD',
+  /* The do-nothing program. It is how a wallet with no account gets its
+     first transaction accepted, and it is also what the node fills empty
+     slots with, so the decoder tells those apart by the transaction's
+     create-fee-payer flag rather than by the program. */
+  NOOP_PROGRAM: 'taNOOPV4A7S3WTsirr149To2GoGZ9q8zllQaBrbekHfkJT',
+  /* The price oracle. It posts updates continuously, bundled through the
+     multicall program, and on a quiet chain those are most of the traffic.
+     Infrastructure rather than anybody's activity, so the feed hides it. */
+  ORACLE_PROGRAM: 'taORCLOkTSYq5enR2XOGoSDmzMc0P5NlqjP8nKpfd3vgps',
   CLOB_PROGRAM: 'taCLOBcFk1PT8JTHQM1LzsyK6HLv1YkSJKZ2ZyIxo8fiTe',
 }
 

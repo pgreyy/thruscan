@@ -123,3 +123,8 @@
   .lcards { grid-template-columns: 1fr 1fr; gap: 10px; }
   .lcard-art .lcard-icon { font-size: 34px !important; }
 }
+
+/* The quote asset, now that there is only one of it. Reads as a stated fact
+   rather than a control nobody can change. */
+.lf-fixed { display: flex; align-items: baseline; gap: 8px; padding: 9px 0; }
+.lf-fixed b { font-weight: 600; }
