@@ -314,8 +314,9 @@ export function LandingPage() {
           phones, so a third one on the page was the same field twice. */}
       <div className="lp-grid">
         <div className="lp-main">
-          <Banner pals={pals} reload={() => reloadPals()} />
-
+          {/* The Pixel Pals mint used to open this page. It is at /pixelpals
+              now and linked from nowhere: this is the explorer, and a mint
+              banner on it was an advert on a page nobody came to for one. */}
           <Tokens tokens={markets ? series : null} />
 
           <div className="lp-stats">
@@ -355,51 +356,10 @@ export function LandingPage() {
           </div>
         </div>
 
-        <aside className="lp-side">
-          <section className="lp-panel">
-            <header><h3>Launchpad</h3><span className="dim lp-when-wide">Market cap</span></header>
-            {launches.slice(0, 7).map((l) => {
-              // Coloured by where the price has been, not by the size of the
-              // number: green is "worth more than it was", which is the only
-              // thing a colour can honestly mean here.
-              const c = change(moves[l.mint])
-              const tone = c === null || Math.abs(c) < 0.05 ? '' : c >= 0 ? ' up' : ' down'
-              return (
-                <Link key={l.id} to={`/token/${l.mint}`} className="lp-tr lp-side-row">
-                  <span className="lp-coin">{l.symbol.slice(0, 2)}</span>
-                  <span className="lp-side-name">
-                    <b>{l.symbol}</b>
-                    <span className="dim lp-when-wide">{l.graduated ? 'Graduated' : 'Bonding curve'}</span>
-                    <span className={`mono lp-when-narrow${tone}`}>{l.cap === null ? '–' : `${compact(l.cap)} ${l.unit}`}</span>
-                  </span>
-                  <span className={`lp-side-cap lp-when-wide${tone}`}>
-                    <b className="mono">{l.cap === null ? '–' : `${price(l.cap)} ${l.unit}`}</b>
-                    {c !== null && Math.abs(c) >= 0.05 && <i className="mono">{pct(c)}</i>}
-                  </span>
-                </Link>
-              )
-            })}
-            {!markets && <p className="lp-empty">Reading the chain</p>}
-            {markets && launches.length === 0 && <p className="lp-empty">No launches yet.</p>}
-          </section>
-
-          <section className="lp-panel">
-            <header><h3>On ThruScan</h3></header>
-            {[
-              ['Swap', 'THRU and every Thru token', '/swap'],
-              ['Names', 'A readable name for your wallet', '/names'],
-              ['Wall', 'Posts on chain', '/wall'],
-              ['Games', 'Wordle and 2048', '/games'],
-              ['Faucet', 'Test THRU and tUSD', '/faucet'],
-              ['ThruScan Wallet', 'Browser extension', '/get-wallet'],
-            ].map(([name, sub, to]) => (
-              <Link key={to} to={to} className="lp-tr lp-side-row">
-                <span className="lp-side-name"><b>{name}</b><span className="dim">{sub}</span></span>
-                <span className="dim">›</span>
-              </Link>
-            ))}
-          </section>
-        </aside>
+        {/* The sidebar is gone. It held a launchpad list, which is now the
+            front page of the site, and a list of links to Swap, Wall, Games
+            and the rest, which are the pages we have just taken out of the
+            menus. Keeping either would be pointing at them again. */}
       </div>
     </div>
   )

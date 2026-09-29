@@ -34,6 +34,7 @@ import {
   isExternal, externalConnected, externalName, hasProvider, connectExternal, disconnectExternal,
   switchToBrowserWallet, switchToConnectedWallet, EXTENSION_URL,
 } from '../lib/external.js'
+import { ThemeRow } from './ThemeSwitch.jsx'
 
 const DECIMALS = 6
 
@@ -142,6 +143,11 @@ function Panel({ wallet, onClose }) {
           {busy ? 'Unlocking' : 'Unlock'}
         </button>
         {error && <p className="notice bad" style={{ marginTop: 10 }}>{error}</p>}
+        {/* Here as well as in the unlocked panel. The bar's theme button is
+            hidden once there is a wallet, so without this a locked wallet
+            leaves somebody with no way to change the theme at all. */}
+        <div className="pill-divider" style={{ marginTop: 12 }} />
+        <ThemeRow />
         {hasProvider() && (
           <button className="btn ghost" style={{ marginTop: 8, width: '100%' }}
             onClick={() => connectExternal().then(onClose).catch((e) => setError(String(e?.message ?? e)))}>
@@ -184,6 +190,13 @@ function Panel({ wallet, onClose }) {
         </span>
         <CopyDot value={wallet.address} />
       </Link>
+
+      <div className="pill-divider" />
+
+      {/* The theme lives here rather than as its own icon in the bar. The bar
+          had four icons before the wallet button and this was the one nobody
+          presses twice a day. */}
+      <ThemeRow />
 
       <div className="pill-divider" />
 
@@ -381,15 +394,6 @@ export function WalletPill() {
             {/* Straight to the wallet page. Opening a menu to find a link to
                 the thing the menu is about is one click too many for the page
                 people go to most. */}
-            <Link
-              to="/wallet"
-              className="pill-jump"
-              title="Open your wallet"
-              aria-label="Open your wallet"
-              onClick={(e) => { e.stopPropagation(); setOpen(false) }}
-            >
-              <WalletGlyph />
-            </Link>
             <Avatar address={address} pfp={pfp} />
             <span className={label.endsWith('.id') ? 'pill-strong' : 'pill-strong mono'}>{label}</span>
             <span className="pill-caret" aria-hidden="true">▾</span>

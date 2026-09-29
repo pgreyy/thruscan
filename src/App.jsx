@@ -4,7 +4,7 @@ import { CloudflareBeacon, usePageViews } from './components/Counters.jsx'
 import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
-import { WalletPage } from './pages/Wallet.jsx'
+import { WalletPage, useWallet } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
@@ -92,28 +92,29 @@ const ID_REGISTRY = ID_REGISTRY_ADDR
 const NAV = [
   { to: '/', label: 'Launchpad', icon: 'rocket', exact: true },
   { to: '/activity', label: 'Activity', icon: 'pulse' },
-  { to: '/explorer', label: 'Explorer', icon: 'search' },
   { to: '/collections', label: 'Collections', icon: 'pal' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
-  { to: '/archives', label: 'Archives', icon: 'box' },
 ]
 
 const TOP_NAV = [
   { to: '/', label: 'Launchpad', exact: true, also: ['/token', '/launch'] },
   { to: '/activity', label: 'Activity' },
-  { to: '/explorer', label: 'Explore' },
-  { to: '/collections', label: 'Collections', also: ['/pals'] },
+  { to: '/collections', label: 'Collections' },
   { to: '/names', label: 'Names' },
 ]
 /* The faucet stays reachable while we are on a testnet, because it is how
    anybody gets anything to trade with. It goes when there is no faucet to
-   show. Everything under Archives still works and is still linked from
-   /archives; it is only off the menus. */
+   show.
+ *
+ * Nothing else is here. The explorer, the archives and the Pixel Pals mint are
+ * all still running and still work if you have the link, and none of them is
+ * in a menu: every one of them is a reason to be on this site doing something
+ * other than launching or buying a token. The explorer in particular is
+ * temporary by design, since Thru will ship its own for mainnet. */
 const MORE_NAV = [
   { to: '/faucet', label: 'Faucet' },
   { to: '/get-wallet', label: 'ThruScan Wallet' },
-  { to: '/archives', label: 'Archives' },
 ]
 
 /* Inline rather than an icon package: seven glyphs is not worth a dependency,
@@ -655,6 +656,19 @@ function Brand() {
   )
 }
 
+/* The theme control, in the bar only when there is no wallet.
+ *
+ * It lives in the wallet panel now, which is the right home for it: it is a
+ * setting, and settings belong behind the button that is already about you.
+ * But the panel only exists once you have a wallet, and a visitor reading the
+ * site in the wrong theme still has to be able to fix that, so the bar keeps
+ * it until there is somewhere better to put it. */
+function BarTheme() {
+  const wallet = useWallet()
+  if (wallet.address) return null
+  return <ThemeSwitch />
+}
+
 function Shell({ children }) {
   const { pathname } = useLocation()
 
@@ -802,7 +816,7 @@ function Shell({ children }) {
             </div>
           </details>
         </nav>
-        <div className="deskbar-right"><FaucetDrop /><NotificationBell /><ThemeSwitch /><NetworkStatus /></div>
+        <div className="deskbar-right"><FaucetDrop /><NotificationBell /><BarTheme /><NetworkStatus /></div>
         {/* Invisible copy of every top link, for measuring. */}
         <div className="deskbar-measure" aria-hidden="true">
           {TOP_NAV.map((l) => <span key={l.to}>{l.label}</span>)}
@@ -821,7 +835,7 @@ function Shell({ children }) {
           </Link>
           <FaucetDrop />
           <NotificationBell />
-          <ThemeSwitch />
+          <BarTheme />
         </div>
       </header>
 
@@ -2933,16 +2947,10 @@ function HomeRoute() {
     else if (q.get('tab')) navigate(`/explorer?tab=${q.get('tab')}`, { replace: true })
   }, [navigate])
 
-  return (
-    <>
-      <LaunchpadPage />
-      {/* wrap-wide, not wrap: the launchpad above it is 940 wide and a feed
-          centred at 720 under it reads as two pages stacked. */}
-      <div className="wrap-wide home-feed">
-        <Feed title="Latest on chain" limit={12} showFilters={false} compact />
-      </div>
-    </>
-  )
+  /* The launchpad, on its own. A feed sat under it for a day and it was the
+     same list as /activity one click away, which made the front page longer
+     without making it say more. */
+  return <LaunchpadPage />
 }
 
 /* Everything ThruScan built before it was a launchpad.
@@ -3406,7 +3414,11 @@ export default function App() {
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/get-wallet" element={<GetWalletPage />} />
-          <Route path="/pals" element={<PalsPage />} />
+          {/* The Pixel Pals mint, off every menu and every page. It still
+              works for anyone holding the link, and it is the only place the
+              mint exists now that the front of the site is about tokens. */}
+          <Route path="/pixelpals" element={<PalsPage />} />
+          <Route path="/pals" element={<Navigate to="/pixelpals" replace />} />
           <Route path="/collections" element={<NftsPage />} />
           <Route path="/nfts" element={<Navigate to="/collections" replace />} />
           {/* Not linked anywhere: ThruScan's own numbers. */}

@@ -18,6 +18,44 @@ function Glyph({ name }) {
   return <svg {...p}><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
 }
 
+/**
+ * The same choice, as a row rather than a button that opens a menu.
+ *
+ * For the wallet panel, which is already a dropdown. A dropdown inside a
+ * dropdown is a thing people learn to distrust, and there are only three
+ * options, so all three fit on one line with the current one marked.
+ */
+export function ThemeRow() {
+  const [choice, setLocal] = useState(getChoice)
+  useEffect(() => watchSystem(), [])
+  useEffect(() => {
+    const on = (e) => setLocal(e.detail)
+    window.addEventListener('thruscan-theme', on)
+    return () => window.removeEventListener('thruscan-theme', on)
+  }, [])
+
+  return (
+    <div className="pill-row theme-row" style={{ cursor: 'default' }}>
+      <span>Theme</span>
+      <span className="theme-seg" role="radiogroup" aria-label="Theme">
+        {CHOICES.map((c) => (
+          <button
+            key={c}
+            role="radio"
+            aria-checked={c === choice}
+            aria-label={LABEL[c]}
+            title={LABEL[c]}
+            className={c === choice ? 'on' : ''}
+            onClick={(e) => { e.stopPropagation(); setChoice(c); setLocal(c) }}
+          >
+            <Glyph name={c} />
+          </button>
+        ))}
+      </span>
+    </div>
+  )
+}
+
 export default function ThemeSwitch() {
   const [choice, setLocal] = useState(getChoice)
   const [open, setOpen] = useState(false)

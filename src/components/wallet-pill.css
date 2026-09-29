@@ -1359,3 +1359,14 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
   .feed-row { grid-template-columns: 6px 1fr auto; }
   .feed-who { display: none; }
 }
+
+/* The theme choice inside the wallet panel. Three segments rather than a menu,
+   because a menu inside a menu is a thing people press once and distrust. */
+.theme-row .theme-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; }
+.theme-row .theme-seg button {
+  appearance: none; border: 0; background: transparent; color: var(--muted);
+  width: 26px; height: 22px; border-radius: 999px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.theme-row .theme-seg button:hover { color: var(--ink); }
+.theme-row .theme-seg button.on { background: var(--signal-soft); color: var(--signal); }
