@@ -49,6 +49,18 @@ function emptyMessage(problem, group) {
   }
 }
 
+/* The word in the Event column. The kind is already a word, so this mostly
+   capitalises it; the few that differ are the ones whose internal name would
+   read oddly in a table. */
+const EVENT_WORD = {
+  pad: 'Pad', launch: 'Launch', buy: 'Buy', sell: 'Sell', claim: 'Claim',
+  graduate: 'Graduate', migrate: 'Migrate', swap: 'Swap',
+  pool: 'Pool', liquidity: 'Liquidity', nft: 'NFT', name: 'Name',
+  wall: 'Post', mint: 'Mint', burn: 'Burn', transfer: 'Transfer',
+  faucet: 'Faucet', token: 'Token', account: 'Account',
+  bundle: 'Bundle', oracle: 'Oracle', noop: 'Idle', other: 'Call',
+}
+
 export function Feed({ address = null, title = 'Activity', limit = 30, showFilters = true, compact = false }) {
   const [group, setGroup] = useState('all')
   const [items, setItems] = useState([])
@@ -115,20 +127,43 @@ export function Feed({ address = null, title = 'Activity', limit = 30, showFilte
         </p>
       )}
 
+      {/* A table, because that is what this is: the same handful of facts
+          about each of many rows, scanned down a column rather than read
+          across. The event column carries a coloured word rather than an icon
+          set, since the kinds are words and inventing a glyph for "graduated"
+          helps nobody. */}
       {items.length > 0 && (
-        <ol className="feed">
-          {items.map((i) => (
-            <li className="feed-row" key={i.signature}>
-              <span className={`feed-dot feed-${toneOf(i)}`} aria-hidden="true" />
-              <Link className="feed-what" to={`/tx/${i.signature}`}>
-                <b>{i.label}</b>
-                {!i.ok && <span className="feed-failed">failed</span>}
-              </Link>
-              <Link className="feed-who mono fine" to={`/account/${i.who}`}>{shortId(i.who)}</Link>
-              <span className="feed-when fine" title={`slot ${i.slot}`}>{when(i.time) || `#${i.slot}`}</span>
-            </li>
-          ))}
-        </ol>
+        <div className="feed-scroll">
+          <table className="feed-table">
+            <thead>
+              <tr>
+                <th className="fc-event">Event</th>
+                <th className="fc-what">Detail</th>
+                <th className="fc-who">Wallet</th>
+                <th className="fc-block">Block</th>
+                <th className="fc-when">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((i) => (
+                <tr key={i.signature} className={i.ok ? undefined : 'feed-failed-row'}>
+                  <td className="fc-event">
+                    <span className={`feed-tag feed-${toneOf(i)}`}>{EVENT_WORD[i.kind] ?? i.kind}</span>
+                  </td>
+                  <td className="fc-what">
+                    <Link to={`/tx/${i.signature}`}>{i.label}</Link>
+                    {!i.ok && <span className="feed-failed">failed</span>}
+                  </td>
+                  <td className="fc-who">
+                    <Link className="mono" to={`/account/${i.who}`}>{shortId(i.who)}</Link>
+                  </td>
+                  <td className="fc-block mono">{i.slot.toLocaleString()}</td>
+                  <td className="fc-when">{when(i.time) || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {next && (

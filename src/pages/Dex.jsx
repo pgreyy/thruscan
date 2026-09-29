@@ -250,10 +250,6 @@ function Execute({ program, needs, buildWith, cli, label, spend, onDone }) {
           Done. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
         </p>
       )}
-      <details style={{ marginTop: 12 }}>
-        <summary className="fine">Run it from the terminal instead</summary>
-        <CopyBlock text={cli} />
-      </details>
     </div>
   )
 }
@@ -481,7 +477,7 @@ function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) 
     if (!form.name.trim()) return 'Give it a name.'
     if (!/^[A-Z0-9]{2,8}$/.test(symbol)) return 'A ticker is 2 to 8 letters or digits.'
     if (toUnits(form.supply) <= 0n) return 'Supply has to be more than zero.'
-    if (toUnits(form.virtQuote) <= 0n) return 'Opening liquidity has to be more than zero.'
+    if (toUnits(form.virtQuote, quoteDecimals) <= 0n) return 'Opening liquidity has to be more than zero.'
     return null
   })()
 
@@ -516,7 +512,14 @@ function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) 
         quoteMint,
         feeBps,
         supply: toUnits(form.supply),
-        virtQuote: toUnits(form.virtQuote),
+        /* In the QUOTE's units, not the token's.
+         *
+         * This defaulted to six decimal places, which is right for the token
+         * being created and wrong for WTHRU, which has none. A launch asking
+         * for 3,000 WTHRU of opening liquidity was writing three billion into
+         * the curve, so its opening price came out a million times too high
+         * and its market cap read in billions before anybody had traded. */
+        virtQuote: toUnits(form.virtQuote, quoteDecimals),
         name: form.name,
         symbol,
       })
@@ -718,14 +721,16 @@ function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) 
         </aside>
       </div>
 
-      <details style={{ marginTop: 14 }}>
-        <summary className="fine">Do it from the terminal instead</summary>
-        <p className="fine" style={{ marginTop: 8, lineHeight: 1.65 }}>Substitute your key name and the addresses each step prints.</p>
-        <CopyBlock text={manual} label="Copy the setup commands" />
-      </details>
     </section>
   )
 }
+
+/* Nothing on this page offers to do the job from a terminal any more.
+ *
+ * Those panels were written for a testnet where the site could not always be
+ * trusted to land a transaction and a command line was the honest fallback.
+ * Nobody arriving to buy a token has a terminal open, and showing them one
+ * says the buttons might not work. */
 
 /* ---------- the swap panel ----------
  *
@@ -1108,16 +1113,6 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
         </p>
       )}
 
-      {pool && amountIn > 0n && !blocker && (
-        <details style={{ marginTop: 14 }}>
-          <summary className="fine">Run it from the terminal instead</summary>
-          <CopyBlock text={cliCommand(SWAP_PROGRAM, buildSwapInstruction({
-            registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
-            userIn: 'YOUR_TOKEN_ACCOUNT_IN', userOut: 'YOUR_TOKEN_ACCOUNT_OUT',
-            amountIn, minOut: 1n,
-          }))} />
-        </details>
-      )}
     </section>
   )
 }

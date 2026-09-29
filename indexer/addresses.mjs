@@ -43,6 +43,12 @@ export const SYSTEM = {
 export const OURS = {
   alphanet: {
     THRUPAD_PROGRAM: 'tastnRlQL8RGYeByXK2QAzaqdnfvI6pVn0e89JSl6Hiu8I',
+    /* Not a program: the launchpad's registry account. Every launch, buy and
+       sell touches it, so asking for its transactions gives the whole history
+       of the pad in one call, however far back it goes. That is what lets the
+       feed show a launch from this morning without reading the last ten
+       thousand transactions on the chain. */
+    THRUPAD_REGISTRY: 'takPPySUoh_Vew_AoHfDaCIm0X5vf2vpgRgW5TR0aVkYbJ',
     THRUSWAP_PROGRAM: 'taCXE0eEQbUHU90dyZ__Bz1yfQabjyaD4xaSHKUw3Q1M4N',
     PALS_PROGRAM: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
     WALL_PROGRAM: 'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH',
@@ -71,7 +77,7 @@ export async function addressesFor(rpcUrl) {
     console.warn('indexer: set THRU_NETWORK, or the program addresses directly, to see ours.')
   }
   const out = { ...SYSTEM, ...ours }
-  for (const key of ['THRUPAD_PROGRAM', 'THRUSWAP_PROGRAM', 'PALS_PROGRAM', 'WALL_PROGRAM', 'AMM_PROGRAM', 'CLOB_PROGRAM']) {
+  for (const key of ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'PALS_PROGRAM', 'WALL_PROGRAM', 'AMM_PROGRAM', 'CLOB_PROGRAM']) {
     if (process.env[key]) out[key] = process.env[key]
   }
   return out

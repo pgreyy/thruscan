@@ -5,6 +5,7 @@ import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage, useWallet } from './pages/Wallet.jsx'
+import { EXTENSION_URL, EXTENSION_IS_EXTERNAL } from './lib/external.js'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
@@ -114,7 +115,7 @@ const TOP_NAV = [
  * temporary by design, since Thru will ship its own for mainnet. */
 const MORE_NAV = [
   { to: '/faucet', label: 'Faucet' },
-  { to: '/get-wallet', label: 'ThruScan Wallet' },
+  { to: EXTENSION_URL, label: 'ThruScan Wallet', external: EXTENSION_IS_EXTERNAL },
 ]
 
 /* Inline rather than an icon package: seven glyphs is not worth a dependency,
@@ -812,7 +813,9 @@ function Shell({ children }) {
           <details className="deskbar-more" ref={moreRef}>
             <summary>More</summary>
             <div className="deskbar-menu">
-              {moreNav.map((l) => <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>)}
+              {moreNav.map((l) => (l.external
+                ? <a key={l.to} href={l.to} target="_blank" rel="noreferrer" onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label} ↗</a>
+                : <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>))}
             </div>
           </details>
         </nav>
@@ -824,29 +827,24 @@ function Shell({ children }) {
         </div>
       </header>
 
+      {/* The phone bar: one row.
+       *
+       * The mark is the menu. There was a hamburger next to it doing that job
+       * and a wordmark next to that doing nothing, which spent a third of a
+       * 320px bar on decoration while the search field sat on a second row
+       * underneath. One tap target, in the place people already tap, and the
+       * row that search was exiled to is gone. */}
       <header className="topbar">
-        <div className="inline" style={{ gap: 6 }}>
-          <button className="nav-toggle" onClick={toggle} aria-label="Open menu">
-            <Icon name="menu" size={19} />
-          </button>
-          <Link to="/" className="brand">
-            <span className="brand-mark">T</span>
-            <span className="brand-name">ThruScan</span>
-          </Link>
+        <button className="topbar-mark" onClick={toggle} aria-label="Menu" aria-expanded={open}>
+          <span className="brand-mark">T</span>
+        </button>
+        <div className="topbar-search"><Search compact /></div>
+        <div className="topbar-right">
           <FaucetDrop />
           <NotificationBell />
           <BarTheme />
         </div>
       </header>
-
-      {/* Search on small screens.
-       *
-       * The desktop bar has it built in; the phone bar has no room for it
-       * beside the wallet button. It used to live on the old home page, which
-       * meant that the moment the launchpad became home, phones lost search
-       * entirely. A row of its own on every page, scrolling with the content
-       * rather than pinned, costs nothing and is where people look. */}
-      <div className="topsearch"><Search compact /></div>
 
       <main className="main" data-nav={open}>{children}</main>
     </div>
@@ -2922,9 +2920,11 @@ function GuideDetail({ guide, onBack }) {
  * all: assembling this from direct chain reads would mean fetching and
  * decoding every transaction on every visit. */
 function ActivityPage() {
+  /* wrap-wide: this is a table with five columns and it wants the room. */
   return (
-    <div className="wrap">
+    <div className="wrap-wide">
       <h1 className="h1">Activity</h1>
+      <p className="lede">Everything happening on Thru, newest first.</p>
       <Feed title="On chain" limit={50} />
     </div>
   )

@@ -386,10 +386,13 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
    Without this, a page title with an action beside it sits underneath.
    =========================================================================== */
 
-.wrap { padding-top: 56px; }
+/* Clear of the floating wallet button, plus the page's own top margin. It was
+   exactly the button's height, so every page title started where the button
+   ended, touching it. */
+.wrap, .wrap-wide { padding-top: 76px; padding-bottom: var(--s-6); }
 
 @media (max-width: 720px) {
-  .wrap { padding-top: 52px; }
+  .wrap, .wrap-wide { padding-top: 22px; }
   .swap-amount { font-size: 24px; }
   .picker-menu { right: auto; left: 0; }
 }
@@ -1265,22 +1268,19 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 
 /* ------------------------------------------------------------------ feed
  *
- * The chain's activity, everyone's, one line each. Deliberately close to
- * .activity-row above rather than a new look: they are the same idea seen
- * from two distances, and two different treatments of one list would read as
- * two different products.
+ * A table, laid out like a marketplace's activity tab: uppercase column
+ * headers, hairline rows, and the event as a coloured word at the left so the
+ * column can be scanned without reading it.
  *
- * Four columns at full width, two on a phone. What goes when the screen
- * narrows is the address and then nothing else: what happened and how long
- * ago are the two things somebody is actually scanning for.
+ * Columns drop rather than squash as the screen narrows. Wallet goes first,
+ * then the block number: what happened and how long ago are the two things
+ * somebody is actually looking for.
  */
-.feed-card .card-head { align-items: center; }
-
 .feed-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-bottom: var(--s-3);
 }
 .feed-chip {
   appearance: none;
@@ -1290,7 +1290,7 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
   font: inherit;
   font-size: 12px;
   line-height: 1;
-  padding: 6px 10px;
+  padding: 7px 12px;
   border-radius: 999px;
   cursor: pointer;
 }
@@ -1301,72 +1301,66 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
   color: var(--signal);
 }
 
-.feed {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
-}
-.feed-row {
-  display: grid;
-  grid-template-columns: 6px 1fr auto auto;
-  align-items: baseline;
-  gap: 10px;
-  padding: 9px 0;
-  border-top: 1px solid var(--line);
-}
-.feed-row:first-child { border-top: 0; }
+/* The table can scroll sideways rather than crush its columns, but at the
+   widths we care about the columns drop instead and this never triggers. */
+.feed-scroll { overflow-x: auto; margin: 0 calc(var(--s-4) * -1) calc(var(--s-4) * -1); padding: 0 var(--s-4) var(--s-2); }
+.feed-compact .feed-scroll { margin-bottom: 0; }
 
-/* The dot carries one distinction, not a colour per kind: whether it worked,
-   and whether it is a moment in a token's life worth noticing. */
-.feed-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--line);
-  align-self: center;
-}
-.feed-mark { background: var(--signal); }
-.feed-bad { background: var(--bad); }
-
-.feed-what {
-  min-width: 0;
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  color: inherit;
-  text-decoration: none;
-}
-.feed-what b {
-  font-weight: 550;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.feed-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.feed-table th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 var(--s-3) var(--s-2) 0;
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-.feed-what:hover b { color: var(--signal); }
-.feed-failed { color: var(--bad); font-size: 12px; white-space: nowrap; }
+.feed-table td {
+  padding: 11px var(--s-3) 11px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.feed-table tr:last-child td { border-bottom: 0; }
+.feed-table th:last-child, .feed-table td:last-child { padding-right: 0; text-align: right; }
+.feed-table a { color: inherit; text-decoration: none; }
+.feed-table a:hover { color: var(--signal); }
 
-.feed-who { color: var(--muted); text-decoration: none; white-space: nowrap; }
-.feed-who:hover { color: var(--signal); }
-.feed-when { white-space: nowrap; min-width: 34px; text-align: right; }
+/* The event word. One colour for something that failed, one for a moment in a
+   token's life worth noticing, and plain for everything else. A colour per
+   kind would read as decoration. */
+.feed-tag {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.feed-tag.feed-mark { color: var(--signal); border-color: var(--signal-line); background: var(--signal-soft); }
+.feed-tag.feed-bad { color: var(--bad); border-color: var(--bad-line); }
 
-.feed-empty { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.fc-what { width: 99%; }
+.fc-what a { font-weight: 500; }
+.fc-who, .fc-block { color: var(--muted); white-space: nowrap; }
+.fc-when { color: var(--muted); white-space: nowrap; }
+.feed-failed { color: var(--bad); font-size: 11px; margin-left: 8px; }
+.feed-failed-row .fc-what a { color: var(--muted); }
+
+.feed-empty { margin: var(--s-2) 0 0; display: flex; flex-direction: column; gap: 6px; }
 .feed-detail { color: var(--muted); }
-.feed-more { width: 100%; margin-top: 12px; }
+.feed-more { width: 100%; margin-top: var(--s-3); }
 
-.feed-compact .feed-row { padding: 7px 0; }
-
-@media (max-width: 560px) {
-  .feed-row { grid-template-columns: 6px 1fr auto; }
-  .feed-who { display: none; }
+@media (max-width: 720px) {
+  .feed-table .fc-who { display: none; }
 }
-
-/* The theme choice inside the wallet panel. Three segments rather than a menu,
-   because a menu inside a menu is a thing people press once and distrust. */
-.theme-row .theme-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; }
-.theme-row .theme-seg button {
-  appearance: none; border: 0; background: transparent; color: var(--muted);
-  width: 26px; height: 22px; border-radius: 999px; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
+@media (max-width: 520px) {
+  .feed-table .fc-block { display: none; }
+  .feed-table td { padding: 10px var(--s-2) 10px 0; }
+  .feed-table th { padding-right: var(--s-2); }
 }
-.theme-row .theme-seg button:hover { color: var(--ink); }
-.theme-row .theme-seg button.on { background: var(--signal-soft); color: var(--signal); }

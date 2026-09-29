@@ -22,7 +22,18 @@ const ACTIVE_KEY = 'thruscan.wallet.active.v1'
 
 /** Where to get the extension: ThruScan's own download page (desktop and phone).
     Swap for the Chrome Web Store link once it is listed. */
-export const EXTENSION_URL = '/get-wallet'
+/* Where "get the wallet" sends somebody.
+ *
+ * The extension is in the Chrome Web Store now, and the store page is one
+ * click from installed, where our own page is a step on the way to it. Set
+ * VITE_EXTENSION_URL to the store listing and every link across the site
+ * follows. Until it is set this keeps pointing at our page, because a link to
+ * a store item id I do not have would be worse than a working detour. */
+export const EXTENSION_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EXTENSION_URL) || '/get-wallet'
+
+/** True when EXTENSION_URL leaves the site, so links can open a new tab. */
+export const EXTENSION_IS_EXTERNAL = /^https?:/i.test(EXTENSION_URL)
 
 let state = null            // the live provider connection: { address, name }
 let active = read(ACTIVE_KEY) === 'browser' ? 'browser' : 'external'

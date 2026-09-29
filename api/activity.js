@@ -42,7 +42,7 @@ const DEFAULT_LIMIT = 50
 /* Kinds the indexer writes. Anything else in the query string is refused
    rather than passed through, because this value reaches a query. */
 const KINDS = new Set([
-  'launch', 'buy', 'sell', 'claim', 'graduate', 'migrate',
+  'pad', 'launch', 'buy', 'sell', 'claim', 'graduate', 'migrate',
   'pool', 'liquidity', 'swap',
   'token', 'account', 'transfer', 'mint', 'burn',
   'faucet', 'name', 'nft', 'wall', 'bundle', 'noop', 'oracle', 'other',
@@ -165,41 +165,66 @@ const MAX_TIME_READS = 30
 
 async function queryChain({ kind, address, cursor, limit }) {
   const { client, url } = await resolveClient()
-  const decode = makeDecoder(await addressesFor(url))
-
+  const A = await addressesFor(url)
+  const decode = makeDecoder(A)
   const { PageRequest } = await import('@thru/sdk')
-  const out = []
-  let pageToken
 
-  for (let page = 0; page < MAX_PAGES && out.length < limit; page++) {
-    const req = new PageRequest({ pageSize: 200, pageToken })
-    let listed
-    try {
-      listed = await withTimeout(
-        address
-          ? client.transactions.listForAccount(address, { page: req })
-          : client.transactions.list({ page: req }),
-        CALL_MS,
-      )
-    } catch {
-      break
+  /* Walk one listing, newest first, and keep what survives the filters. */
+  const walk = async (fetchPage, pages) => {
+    const rows = []
+    let pageToken
+    for (let i = 0; i < pages && rows.length < limit; i++) {
+      let listed
+      try {
+        listed = await withTimeout(fetchPage(new PageRequest({ pageSize: 200, pageToken })), CALL_MS)
+      } catch {
+        break
+      }
+      for (const txn of listed.transactions ?? []) {
+        const row = decode(txn)
+        if (!row?.signature) continue
+        if (kind ? row.kind !== kind : HIDDEN_KINDS.includes(row.kind)) continue
+        /* "Show older" means strictly before a row, and the chain hands back
+           everything newest first, so the cursor is a filter rather than a
+           seek. Less efficient than the database path, invisible at this
+           size. */
+        if (cursor && !(row.slot < cursor.slot || (row.slot === cursor.slot && row.blockOffset < cursor.offset))) continue
+        rows.push(row)
+      }
+      pageToken = listed.page?.nextPageToken
+      if (!pageToken) break
     }
-
-    for (const txn of listed.transactions ?? []) {
-      const row = decode(txn)
-      if (!row?.signature) continue
-      if (kind ? row.kind !== kind : HIDDEN_KINDS.includes(row.kind)) continue
-      /* "Show older" means strictly before a row, and the chain hands back
-         everything newest first, so the cursor is a filter rather than a seek.
-         Less efficient than the database path and invisible at this size. */
-      if (cursor && !(row.slot < cursor.slot || (row.slot === cursor.slot && row.blockOffset < cursor.offset))) continue
-      out.push(row)
-      if (out.length >= limit) break
-    }
-
-    pageToken = listed.page?.nextPageToken
-    if (!pageToken) break
+    return rows
   }
+
+  let out
+  if (address) {
+    out = await walk((page) => client.transactions.listForAccount(address, { page }), MAX_PAGES)
+  } else {
+    /* Two listings rather than one, and the second is the point.
+     *
+     * The global listing only reaches back as far as the pages we are willing
+     * to read, which on a chain filling every slot with keepalive traffic is
+     * about a quarter of an hour. A token launched this morning would simply
+     * not be in it, and a launchpad whose front page cannot show the last
+     * launch is not much of a launchpad.
+     *
+     * Asking the pad's registry for its own transactions costs one more call
+     * and reaches all the way back, because everything the launchpad has ever
+     * done touches that account. The indexer removes the need for this; until
+     * it is running, this is what keeps the feed honest. */
+    const [recent, pad] = await Promise.all([
+      walk((page) => client.transactions.list({ page }), MAX_PAGES),
+      A.THRUPAD_REGISTRY
+        ? walk((page) => client.transactions.listForAccount(A.THRUPAD_REGISTRY, { page }), 2)
+        : Promise.resolve([]),
+    ])
+    const seen = new Set()
+    out = [...recent, ...pad]
+      .filter((r) => (seen.has(r.signature) ? false : seen.add(r.signature)))
+      .sort((a, b) => (b.slot - a.slot) || (b.blockOffset - a.blockOffset))
+  }
+  out = out.slice(0, limit)
 
   /* One block read per distinct slot, in parallel, for the newest few. A feed
      that can only say "slot 2751" is a feed nobody reads twice. */

@@ -69,7 +69,7 @@ function registeredName(b) {
    to come first: a token account is opened before the thing it is opened for.
    Anything not listed sorts last. */
 const RANK = [
-  'launch', 'graduate', 'migrate', 'buy', 'sell', 'swap', 'claim',
+  'launch', 'graduate', 'migrate', 'buy', 'sell', 'swap', 'claim', 'pad',
   'pool', 'liquidity', 'nft', 'name', 'wall', 'mint', 'burn', 'transfer',
   'faucet', 'token', 'account', 'bundle', 'other', 'oracle', 'noop',
 ]
@@ -125,6 +125,7 @@ export function makeDecoder(addresses) {
   }
 
   const PAD = {
+    0: ['pad', 'Opened the launchpad'],
     1: ['launch', 'Launched a token'],
     2: ['buy', 'Bought on the launchpad'],
     3: ['sell', 'Sold on the launchpad'],

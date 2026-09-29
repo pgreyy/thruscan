@@ -2,7 +2,14 @@
    Two colors carry everything: ink (near-black) and signal (blue).
    Everything else is a neutral derived from the warm canvas. */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* Archivo and IBM Plex Mono.
+ *
+ * Inter Tight was here and it is the face every new product has worn for the
+ * last three years, which is exactly why it reads as generic. Archivo is an
+ * American grotesque: slightly narrow, sturdy terminals, and it holds up at
+ * 12px in a dense table, which is most of what this site is. Plex Mono has
+ * more character than the usual monospace and does not fight it. */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
   --canvas: #f1f0ed;
@@ -32,8 +39,17 @@
   --bad-line: #f0c8c0;
   color-scheme: light;
 
-  --sans: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* One vertical rhythm for the whole site. Before this every page invented
+     its own gap and headings ended up sitting on the card below them. */
+  --s-1: 6px;
+  --s-2: 10px;
+  --s-3: 16px;
+  --s-4: 24px;
+  --s-5: 34px;
+  --s-6: 48px;
 }
 
 /* Dark theme. Chosen in the top bar (light, dark, or follow the system);
@@ -221,19 +237,45 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .topbar .theme-switch { margin-left: 6px; }
 .topbar .theme-menu { left: 0; right: auto; }
 .topbar {
-  /* Leaves exactly the wallet button's width free (measured in App.jsx). */
-  padding-right: calc(var(--pill-w, 150px) + 22px) !important;
+  /* Leaves the wallet button's width free (measured in App.jsx) plus a real
+     gap. At exactly the button's width the icons finished one pixel inside
+     it, which is not a collision anybody would name but is what makes a bar
+     look badly made. */
+  padding-right: calc(var(--pill-w, 150px) + 26px) !important;
   position: sticky;
   top: 0;
   z-index: 20;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 10px 12px;
   background: var(--glass);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
+}
+
+/* The mark, which is also the menu button. */
+.topbar-mark {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar-mark .brand-mark { margin: 0; }
+
+/* Search takes whatever is left, and is allowed to get quite small: even a
+   narrow field is somewhere to paste a contract address into. */
+.topbar-search { flex: 1 1 auto; min-width: 0; }
+.topbar-search .home-search { margin: 0; width: 100%; }
+.topbar-right { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
+
+@media (max-width: 380px) {
+  .topbar { gap: 6px; padding-left: 10px; }
+  .topbar-right { gap: 0; }
 }
 
 
@@ -258,15 +300,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   .main[data-nav='false'] { margin-left: 62px; }
 
   .topbar { display: none; }
-  .topsearch { display: none; }
   .scrim { display: none; }
 }
-
-/* The phone's search row, under the top bar on every page. The desktop bar
-   carries its own, so this is hidden above 900 by the block just above. */
-.topsearch { padding: 10px 16px 0; }
-.topsearch .home-search { margin: 0; width: 100%; }
-@media (max-width: 420px) { .topsearch { padding: 8px 12px 0; } }
 
 /* ---------- status ---------- */
 
@@ -296,18 +331,18 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 }
 
 .h1 {
-  margin: 0 0 6px;
+  margin: 0 0 var(--s-1);
   font-size: clamp(26px, 6vw, 34px);
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.12;
 }
 
-.lede { margin: 0 0 26px; color: var(--muted); font-size: 15px; max-width: 52ch; }
+.lede { margin: var(--s-1) 0 var(--s-4); color: var(--muted); font-size: 15px; max-width: 52ch; }
 
 .h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 
-.sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.sub { margin: var(--s-1) 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
 
 .fine { font-size: 12px; color: var(--muted); }
 
@@ -317,8 +352,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   background: var(--surface);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow);
-  padding: 18px;
-  margin-bottom: 14px;
+  padding: var(--s-4);
+  margin-bottom: var(--s-3);
 }
 
 .card-head {
@@ -327,7 +362,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: var(--s-3);
 }
 
 .card-actions { display: flex; gap: 6px; flex-shrink: 0; }
@@ -1430,12 +1465,16 @@ textarea.field { resize: vertical; min-height: 84px; }
 
 /* A page title with an action beside it. Wraps on narrow screens so the button
    drops under the heading instead of crushing it. */
+/* A page's title, its one line of explanation, and whatever buttons belong to
+   the page rather than to a card. It had no bottom margin, so every page put
+   its first card directly under the subtitle. */
 .page-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--s-3);
   flex-wrap: wrap;
+  margin-bottom: var(--s-4);
 }
 .page-head .h1 { margin-bottom: 0; }
 
