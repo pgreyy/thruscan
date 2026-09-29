@@ -258,8 +258,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   .main[data-nav='false'] { margin-left: 62px; }
 
   .topbar { display: none; }
+  .topsearch { display: none; }
   .scrim { display: none; }
 }
+
+/* The phone's search row, under the top bar on every page. The desktop bar
+   carries its own, so this is hidden above 900 by the block just above. */
+.topsearch { padding: 10px 16px 0; }
+.topsearch .home-search { margin: 0; width: 100%; }
+@media (max-width: 420px) { .topsearch { padding: 8px 12px 0; } }
 
 /* ---------- status ---------- */
 
@@ -1659,3 +1666,27 @@ textarea.field { resize: vertical; min-height: 84px; }
 }
 .tok-star:hover { color: var(--ink); border-color: var(--muted); }
 .tok-star.on { color: var(--signal); border-color: var(--signal-line); background: var(--signal-soft); }
+
+/* ------------------------------------------------------------- archives
+ *
+ * A plain list of the pages that are still running but off the menus. It is
+ * deliberately unadorned: this is a cupboard, not a feature.
+ */
+.archive-list { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.archive-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 16px; border-top: 1px solid var(--line);
+  color: inherit; text-decoration: none; background: var(--surface);
+}
+.archive-row:first-child { border-top: 0; }
+.archive-row:hover { background: var(--surface-2, var(--surface)); }
+.archive-row:hover b { color: var(--signal); }
+.archive-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.archive-text b { font-weight: 550; }
+.archive-text .dim { font-size: 13px; line-height: 1.45; }
+.archive-go { flex: 0 0 auto; font-size: 18px; }
+
+/* The feed under the launchpad on the front page. It follows a page rather
+   than starting one, so it drops the top padding a page container carries and
+   sets its own gap instead. */
+.home-feed { padding-top: 0; margin-top: 28px; }

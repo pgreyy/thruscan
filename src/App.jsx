@@ -2,7 +2,7 @@ import ThemeSwitch from './components/ThemeSwitch.jsx'
 import { Analytics } from '@vercel/analytics/react'
 import { CloudflareBeacon, usePageViews } from './components/Counters.jsx'
 import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext, useCallback } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation, useParams, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
 import { NamesPage } from './pages/Names.jsx'
@@ -17,6 +17,7 @@ import { FaucetDrop } from './components/FaucetDrop.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
+import { Feed } from './components/Feed.jsx'
 import { HomePage, Search } from './pages/Home.jsx'
 import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
@@ -79,33 +80,40 @@ const WORDLE_BOARD = WORDLE_BOARD_ADDR
 const G2048_BOARD = G2048_BOARD_ADDR
 const ID_REGISTRY = ID_REGISTRY_ADDR
 
+/* The site is a launchpad now, so the launchpad is the front door rather than
+ * a tab you find your way to. The explorer is still here and still complete;
+ * it is simply not the first thing anybody sees, because a list of blocks is
+ * not what somebody arrives wanting.
+ *
+ * `exact` matters for '/' and only for '/'. Active state elsewhere is a prefix
+ * match so that /token/abc lights the launchpad, but a prefix match on '/'
+ * matches every page on the site.
+ */
 const NAV = [
-  { to: '/', label: 'Home', icon: 'home' },
+  { to: '/', label: 'Launchpad', icon: 'rocket', exact: true },
+  { to: '/activity', label: 'Activity', icon: 'pulse' },
   { to: '/explorer', label: 'Explorer', icon: 'search' },
-  { to: '/swap', label: 'Swap', icon: 'swap' },
-  { to: '/launch', label: 'Launchpad', icon: 'rocket' },
   { to: '/collections', label: 'Collections', icon: 'pal' },
-  { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/names', label: 'Names', icon: 'tag' },
-  { to: '/builders', label: 'Builders', icon: 'book' },
-  { to: '/games', label: 'Games', icon: 'game' },
-  { to: '/updates', label: 'Updates', icon: 'bell' },
+  { to: '/faucet', label: 'Faucet', icon: 'drop' },
+  { to: '/archives', label: 'Archives', icon: 'box' },
 ]
 
 const TOP_NAV = [
+  { to: '/', label: 'Launchpad', exact: true, also: ['/token', '/launch'] },
+  { to: '/activity', label: 'Activity' },
   { to: '/explorer', label: 'Explore' },
-  { to: '/swap', label: 'Swap' },
-  { to: '/launch', label: 'Launchpad' },
   { to: '/collections', label: 'Collections', also: ['/pals'] },
   { to: '/names', label: 'Names' },
 ]
+/* The faucet stays reachable while we are on a testnet, because it is how
+   anybody gets anything to trade with. It goes when there is no faucet to
+   show. Everything under Archives still works and is still linked from
+   /archives; it is only off the menus. */
 const MORE_NAV = [
-  { to: '/games', label: 'Games' },
   { to: '/faucet', label: 'Faucet' },
-  { to: '/wall', label: 'Wall' },
-  { to: '/builders', label: 'Builders' },
-  { to: '/updates', label: 'Updates' },
   { to: '/get-wallet', label: 'ThruScan Wallet' },
+  { to: '/archives', label: 'Archives' },
 ]
 
 /* Inline rather than an icon package: seven glyphs is not worth a dependency,
@@ -127,6 +135,7 @@ const ICON_PATHS = {
   home: 'M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z',
   pal: 'M8 4h8v2h2v2h2v9h-2v2h-2v2h-2v-2h-4v2H8v-2H6v-2H4V8h2V6h2zM9 11h2M13 11h2M10 15h4',
   rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
+  pulse: 'M3 12h3.5l2-6 3.5 13 3-9 1.8 4H21',
 }
 
 function Icon({ name, size = 17 }) {
@@ -648,7 +657,15 @@ function Brand() {
 
 function Shell({ children }) {
   const { pathname } = useLocation()
-  const current = (to) => (pathname === to ? 'page' : undefined)
+
+  /* Whether a nav link is the page you are on. A prefix match is what makes
+     /token/abc light up Launchpad, but '/' is a prefix of everything, so the
+     link that points at the root has to ask for an exact match instead. */
+  const active = (l) =>
+    (l.exact ? pathname === l.to : pathname === l.to || pathname.startsWith(l.to + '/')) ||
+    (l.also ?? []).some((t) => pathname === t || pathname.startsWith(t + '/'))
+      ? 'page'
+      : undefined
 
   // Desktop bar: as many top links as fit, the rest move into More. The bar
   // measures itself (and the wallet button, see below) on every resize, so
@@ -757,7 +774,7 @@ function Shell({ children }) {
         </div>
 
         {NAV.map((l) => (
-          <Link key={l.to} to={l.to} className="rail-link" aria-current={current(l.to)} onClick={follow} title={l.label}>
+          <Link key={l.to} to={l.to} className="rail-link" aria-current={active(l)} onClick={follow} title={l.label}>
             <Icon name={l.icon} />
             <span>{l.label}</span>
           </Link>
@@ -776,7 +793,7 @@ function Shell({ children }) {
         <div className="deskbar-search"><Search compact /></div>
         <nav className="deskbar-nav">
           {shownNav.map((l) => (
-            <Link key={l.to} to={l.to} aria-current={[l.to, ...(l.also ?? [])].some((t) => pathname === t || pathname.startsWith(t + '/')) ? 'page' : undefined}>{l.label}</Link>
+            <Link key={l.to} to={l.to} aria-current={active(l)}>{l.label}</Link>
           ))}
           <details className="deskbar-more" ref={moreRef}>
             <summary>More</summary>
@@ -807,6 +824,15 @@ function Shell({ children }) {
           <ThemeSwitch />
         </div>
       </header>
+
+      {/* Search on small screens.
+       *
+       * The desktop bar has it built in; the phone bar has no room for it
+       * beside the wallet button. It used to live on the old home page, which
+       * meant that the moment the launchpad became home, phones lost search
+       * entirely. A row of its own on every page, scrolling with the content
+       * rather than pinned, costs nothing and is where people look. */}
+      <div className="topsearch"><Search compact /></div>
 
       <main className="main" data-nav={open}>{children}</main>
     </div>
@@ -2876,6 +2902,84 @@ function GuideDetail({ guide, onBack }) {
   )
 }
 
+/* Everything happening on the chain, in one place.
+ *
+ * Reads the indexer, not the chain, which is why it can show a mixed feed at
+ * all: assembling this from direct chain reads would mean fetching and
+ * decoding every transaction on every visit. */
+function ActivityPage() {
+  return (
+    <div className="wrap">
+      <h1 className="h1">Activity</h1>
+      <Feed title="On chain" limit={50} />
+    </div>
+  )
+}
+
+/* The front door.
+ *
+ * The launchpad, then a short feed of what the chain has been doing. The
+ * explorer used to be here and is one click away; it is a fine thing to have
+ * and a strange thing to greet somebody with.
+ *
+ * It also catches the query links the old home page understood. Those are in
+ * people's messages and bookmarks and cost one effect to keep working. */
+function HomeRoute() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('tx')) navigate(`/tx/${q.get('tx')}`, { replace: true })
+    else if (q.get('account')) navigate(`/account/${q.get('account')}`, { replace: true })
+    else if (q.get('tab')) navigate(`/explorer?tab=${q.get('tab')}`, { replace: true })
+  }, [navigate])
+
+  return (
+    <>
+      <LaunchpadPage />
+      {/* wrap-wide, not wrap: the launchpad above it is 940 wide and a feed
+          centred at 720 under it reads as two pages stacked. */}
+      <div className="wrap-wide home-feed">
+        <Feed title="Latest on chain" limit={12} showFilters={false} compact />
+      </div>
+    </>
+  )
+}
+
+/* Everything ThruScan built before it was a launchpad.
+ *
+ * None of it is deleted and none of it is broken. It is off the menus because
+ * a launchpad with a games tab in the header reads as a site that has not
+ * decided what it is. Anyone with a link still lands where they expect. */
+const ARCHIVED = [
+  ['Swap', 'Trade any Thru token. Buying and selling on the launchpad now happens on each token’s own page.', '/swap'],
+  ['Wall', 'Messages posted on chain, kept forever.', '/wall'],
+  ['Games', 'Wordle and 2048, both scored on chain.', '/games'],
+  ['Builders', 'Projects and people building on Thru.', '/builders'],
+  ['Updates', 'What shipped, and when.', '/updates'],
+  ['Guides', 'How the chain and the wallet work.', '/guides'],
+  ['tUSD', 'The test dollar, and where to get some.', '/faucet'],
+]
+
+function ArchivesPage() {
+  return (
+    <div className="wrap">
+      <h1 className="h1">Archives</h1>
+      <p className="lede">
+        Parts of ThruScan that are still running but no longer in the menus, while the
+        launchpad is being built.
+      </p>
+      <div className="archive-list">
+        {ARCHIVED.map(([name, sub, to]) => (
+          <Link key={to} to={to} className="archive-row">
+            <span className="archive-text"><b>{name}</b><span className="dim">{sub}</span></span>
+            <span className="dim archive-go" aria-hidden="true">›</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function GuidesPage() {
   const [active, setActive] = useState(null)
   const guide = GUIDES.find((g) => g.id === active)
@@ -3284,16 +3388,20 @@ export default function App() {
         <WalletPill />
         <Counted />
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<HomeRoute />} />
           <Route path="/explorer" element={<Tabs tabs={[
-            { key: 'explorer', label: 'Explorer', el: <HomePage /> },
-            { key: 'wall', label: 'Wall', el: <WallV2 /> },
-          ]} />} />          <Route path="/wall" element={<WallV2 />} />
+            { key: 'overview', label: 'Overview', el: <LandingPage /> },
+            { key: 'explorer', label: 'Blocks and transactions', el: <HomePage /> },
+          ]} />} />
+          {/* The launchpad is the front door now. Every link anybody has
+              shared still lands in the right place. */}
+          <Route path="/launch" element={<Navigate to="/" replace />} />
+          <Route path="/archives" element={<ArchivesPage />} />
+          <Route path="/wall" element={<WallV2 />} />
           <Route path="/tx/:id" element={<TxPage />} />
           <Route path="/account/:id" element={<AccountPage />} />
           <Route path="/token/:mint" element={<TokenPage />} />
           <Route path="/swap" element={<SwapPage />} />
-          <Route path="/launch" element={<LaunchpadPage />} />
           <Route path="/launch/:id" element={<LaunchDetailPage />} />
           <Route path="/faucet" element={<FaucetPage />} />
           <Route path="/wallet" element={<WalletPage />} />
@@ -3302,6 +3410,7 @@ export default function App() {
           <Route path="/collections" element={<NftsPage />} />
           <Route path="/nfts" element={<Navigate to="/collections" replace />} />
           {/* Not linked anywhere: ThruScan's own numbers. */}
+          <Route path="/activity" element={<ActivityPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/names" element={<NamesPage />} />

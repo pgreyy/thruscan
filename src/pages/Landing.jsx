@@ -12,7 +12,6 @@ import { decodeSwapRegistry } from '../lib/swap.js'
 import { decodePadRegistry } from '../lib/pad.js'
 import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY, TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
 import { palFor, toSvg, GENESIS } from '../lib/pals/art.js'
-import { Search } from './Home.jsx'
 import { withFavouritesFirst, onFavouritesChange } from '../lib/favourites.js'
 import { useMint } from '../lib/pals/useMint.js'
 import './landing.css'
@@ -310,8 +309,9 @@ export function LandingPage() {
 
   return (
     <div className="lp">
-      <div className="lp-search"><Search compact /></div>
-
+      {/* No search box here any more. This page is a tab under /explorer now,
+          and search moved into the bar on desktop and into a row under it on
+          phones, so a third one on the page was the same field twice. */}
       <div className="lp-grid">
         <div className="lp-main">
           <Banner pals={pals} reload={() => reloadPals()} />

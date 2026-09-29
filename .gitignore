@@ -33,3 +33,8 @@ envcheck.txt
 token-abi*.txt
 cpi-test*.txt
 swap-*.txt
+
+# the indexer's local database, never the repo's
+indexer/index.db
+indexer/index.db-shm
+indexer/index.db-wal

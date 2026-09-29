@@ -13,6 +13,7 @@ import { decodePadRegistry } from '../lib/pad.js'
 import { checkName } from '../lib/wallet.js'
 import { decodeDomain, ROOT_REGISTRAR, ROOT_SUFFIX } from '../lib/names.js'
 import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY } from '../lib/addresses.js'
+import { tokenByMint, tokenByText, looksLikeSignature, looksLikeAddress } from '../lib/findToken.js'
 import './home.css'
 
 const REFRESH_MS = 5000
@@ -98,20 +99,39 @@ export function Search({ compact = false }) {
      you have finished with it, and the next search starts by clearing it. */
   useEffect(() => { setQ(''); setError(null) }, [pathname])
 
+  /* One field, four kinds of thing.
+   *
+   * Signatures are unambiguous, so they go first and cost nothing. An address
+   * is where it gets interesting: a token's mint is an address like any other,
+   * and sending somebody who pasted a contract address to the raw account page
+   * is answering a different question than the one they asked. So an address
+   * is checked against the launchpad first, and only then treated as a wallet.
+   *
+   * Anything else is a ticker, a token name, or a .id name, tried in that
+   * order. The token lookup reads one cached account; if the chain is
+   * unreachable it answers "no" rather than failing, and the name lookup still
+   * gets its turn. */
   const go = async (e) => {
     e?.preventDefault()
     const v = q.trim()
     if (!v) return
     setError(null)
-    if (v.startsWith('ts')) return navigate(`/tx/${v}`)
-    if (v.startsWith('ta') && v.length >= 40) return navigate(`/account/${v}`)
 
-    // Anything else is treated as a name.
-    const name = v.toLowerCase().replace(new RegExp(`\\.${ROOT_SUFFIX}$`), '')
+    if (looksLikeSignature(v)) return navigate(`/tx/${v}`)
+
     setBusy(true)
     try {
+      if (looksLikeAddress(v)) {
+        const token = await tokenByMint(v)
+        return navigate(token ? `/token/${v}` : `/account/${v}`)
+      }
+
+      const token = await tokenByText(v)
+      if (token) return navigate(`/token/${token.mint}`)
+
+      const name = v.toLowerCase().replace(new RegExp(`\\.${ROOT_SUFFIX}$`), '')
       const r = await checkName(name)
-      if (!r.ok || !r.taken) throw new Error(`${name}.${ROOT_SUFFIX} is not registered.`)
+      if (!r.ok || !r.taken) throw new Error(`Nothing found for "${v}".`)
       const domain = decodeDomain(bytesOf(r.data))
       navigate(`/account/${domain.owner}`)
     } catch (err) {
@@ -126,7 +146,7 @@ export function Search({ compact = false }) {
       <input
         value={q}
         onChange={(e) => { setQ(e.target.value); setError(null) }}
-        placeholder={`Address, transaction or name.${ROOT_SUFFIX}`}
+        placeholder={`Token, address, transaction or name.${ROOT_SUFFIX}`}
         spellCheck={false}
         autoComplete="off"
       />

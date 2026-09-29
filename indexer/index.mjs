@@ -93,9 +93,15 @@ async function main() {
 
     const rows = []
     for (let slot = next; slot <= target; slot++) {
-      for (const txn of await transactionsInSlot(slot)) {
+      const found = await transactionsInSlot(slot)
+      if (!found.length) continue
+      /* The time lives on the block, not the transaction, so it costs one
+         extra read per slot that actually has something in it. Worth it: a
+         feed that can only say "slot 18500" is a feed nobody reads twice. */
+      const blockTimeNs = await blockTimeOf(slot)
+      for (const txn of found) {
         const row = decode({ ...txn, slot: txn.slot ?? slot })
-        if (row?.signature) rows.push(row)
+        if (row?.signature) rows.push({ ...row, blockTimeNs })
       }
     }
 
@@ -144,6 +150,17 @@ async function transactionsInSlot(slot) {
     out.push(...(listed.transactions ?? []))
     pageToken = listed.page?.nextPageToken
     if (!pageToken) return out
+  }
+}
+
+/** When a slot happened, in nanoseconds, or null if the node will not say. */
+async function blockTimeOf(slot) {
+  try {
+    const b = await client.blocks.get({ slot })
+    const t = b?.blockTimeNs
+    return t === undefined || t === null ? null : String(t)
+  } catch {
+    return null
   }
 }
 
