@@ -406,7 +406,6 @@ export function NamesPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Names</h1>
-      <p className="lede">A readable <span className="mono">.{ROOT_SUFFIX}</span> name for your address, on Thru's name service.</p>
 
       <Claim wallet={wallet} onClaimed={claimed} />
 

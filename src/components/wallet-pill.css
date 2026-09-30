@@ -1364,3 +1364,17 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
   .feed-table td { padding: 10px var(--s-2) 10px 0; }
   .feed-table th { padding-right: var(--s-2); }
 }
+
+/* Rows that belong in the wallet panel only on phones, because on a desktop
+   bar there is room for them as their own controls. */
+.pill-phone-only { display: none; }
+@media (max-width: 899px) { .pill-phone-only { display: block; } }
+
+/* A disclosure inside the panel. Not a dropdown inside a dropdown: it opens in
+   place and pushes the rest of the menu down. */
+.pill-fold > summary { list-style: none; cursor: pointer; }
+.pill-fold > summary::-webkit-details-marker { display: none; }
+.pill-fold[open] > summary { color: var(--ink); }
+.pill-fold-body { padding: 2px 0 8px; }
+.pill-fold-body .bell-list { max-height: 240px; overflow-y: auto; }
+.pill-fold-body .bell-none { padding: 6px 2px 2px; }

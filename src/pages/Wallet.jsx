@@ -561,7 +561,6 @@ function Balances({ wallet, mints }) {
           <h2 className="h2">Balances</h2>
           <p className="sub">One account per token</p>
         </div>
-        <button className="btn ghost" onClick={() => wallet.refresh(mints.map((m) => m.mint))}>Refresh</button>
       </div>
 
       <div className="rows" style={{ marginTop: 12 }}>
@@ -787,6 +786,17 @@ function LiveWallet({ wallet, mints }) {
     knownMints().then((all) => wallet.refresh(all)).catch(() => {})
     /* eslint-disable-next-line */
   }, [])
+
+  /* Balances keep themselves current. There used to be a Refresh button here
+     and a line telling people to press it after a deposit, which is a page
+     asking to be operated rather than read. Paused while the tab is hidden. */
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!document.hidden) wallet.refresh(mints.map((m) => m.mint)).catch(() => {})
+    }, 8000)
+    return () => clearInterval(id)
+    /* eslint-disable-next-line */
+  }, [mints.length])
 
 
   const register = async () => {
@@ -1340,7 +1350,6 @@ export function WalletPage() {
       </div>
       {quick === 'send' && <QuickModal title="Send" onClose={() => setQuick(null)}><SendForm wallet={wallet} /></QuickModal>}
       {quick === 'receive' && <QuickModal title="Receive" onClose={() => setQuick(null)}><ReceiveBody address={wallet.address} /></QuickModal>}
-      <p className="lede">{isExternal() ? `Connected with ${externalName()}.` : 'A browser wallet for Thru, or connect your own.'}</p>
       {showActivity && (
         <ActivityDrawer
           addresses={[wallet.address, ...Object.values(wallet.balances).filter((b) => b?.exists && b.account).map((b) => b.account)].slice(0, 6)}

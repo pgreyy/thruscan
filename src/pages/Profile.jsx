@@ -440,7 +440,6 @@ export function ProfilePage() {
     return (
       <div className="wrap">
         <h1 className="h1">Profile</h1>
-        <p className="lede">Your name, picture, balances and launches.</p>
         <section className="card">
           <h2 className="h2">No wallet yet</h2>
           <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>

@@ -69,9 +69,12 @@ export function Feed({ address = null, title = 'Activity', limit = 30, showFilte
   const [problem, setProblem] = useState(null)
   const [detail, setDetail] = useState(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true)
     const r = await fetchFeed({ group, address, limit })
+    /* A failed poll leaves the rows that are already there. An empty list
+       where a list was is worse than a list a few seconds old. */
+    if (quiet && r.problem) { setLoading(false); return }
     setItems(r.items)
     setNext(r.next)
     setProblem(r.problem)
@@ -80,6 +83,14 @@ export function Feed({ address = null, title = 'Activity', limit = 30, showFilte
   }, [group, address, limit])
 
   useEffect(() => { load() }, [load])
+
+  /* Keeps itself current rather than offering a Refresh button. Quiet, so the
+     list does not blank out every few seconds, and paused while the tab is
+     hidden. */
+  useEffect(() => {
+    const id = setInterval(() => { if (!document.hidden) load(true) }, 10000)
+    return () => clearInterval(id)
+  }, [load])
 
   const more = async () => {
     if (!next) return
@@ -97,9 +108,6 @@ export function Feed({ address = null, title = 'Activity', limit = 30, showFilte
     <section className={compact ? 'card feed-card feed-compact' : 'card feed-card'}>
       <div className="card-head">
         <h2 className="h2">{title}</h2>
-        <button className="btn ghost" onClick={load} disabled={loading}>
-          {loading ? 'Loading' : 'Refresh'}
-        </button>
       </div>
 
       {showFilters && (

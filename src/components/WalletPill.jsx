@@ -35,6 +35,8 @@ import {
   switchToBrowserWallet, switchToConnectedWallet, EXTENSION_URL,
 } from '../lib/external.js'
 import { ThemeRow } from './ThemeSwitch.jsx'
+import { NotificationRows } from './Notifications.jsx'
+import { FaucetRows } from './FaucetDrop.jsx'
 
 const DECIMALS = 6
 
@@ -145,8 +147,16 @@ function Panel({ wallet, onClose }) {
         {error && <p className="notice bad" style={{ marginTop: 10 }}>{error}</p>}
         {/* Here as well as in the unlocked panel. The bar's theme button is
             hidden once there is a wallet, so without this a locked wallet
-            leaves somebody with no way to change the theme at all. */}
+            leaves somebody with no way to change the theme at all. The same
+            goes for the faucet and the notifications on a phone: this menu is
+            the only place they exist there, and a locked wallet is exactly
+            when somebody is looking for the faucet. */}
         <div className="pill-divider" style={{ marginTop: 12 }} />
+        <div className="pill-phone-only">
+          <FaucetRows />
+          <NotificationRows onNavigate={onClose} />
+          <div className="pill-divider" />
+        </div>
         <ThemeRow />
         {hasProvider() && (
           <button className="btn ghost" style={{ marginTop: 8, width: '100%' }}
@@ -192,6 +202,18 @@ function Panel({ wallet, onClose }) {
       </Link>
 
       <div className="pill-divider" />
+
+      {/* The faucet and the notifications, on phones only.
+       *
+       * The phone bar carries the mark, the search box and this button, and
+       * nothing else fits beside them without the bar becoming a row of icons
+       * with a search field squeezed between. On a desktop bar there is room,
+       * so they stay up there and these are hidden. */}
+      <div className="pill-phone-only">
+        <FaucetRows />
+        <NotificationRows onNavigate={onClose} />
+        <div className="pill-divider" />
+      </div>
 
       {/* The theme lives here rather than as its own icon in the bar. The bar
           had four icons before the wallet button and this was the one nobody

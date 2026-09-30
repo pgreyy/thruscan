@@ -88,6 +88,56 @@ export function useMarketWatch(address) {
 
 /* ---------- the bell ---------- */
 
+/**
+ * The same list, flat, for somewhere that is already a menu.
+ *
+ * The phone bar carries three things now and this is not one of them, so the
+ * wallet panel shows it instead. A dropdown inside a dropdown is a thing
+ * people press once and then distrust, so this is a disclosure: a row with a
+ * count that opens in place.
+ */
+export function NotificationRows({ onNavigate }) {
+  const [address, setAddress] = useState(() => currentAddress())
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setAddress((a) => (currentAddress() === a ? a : currentAddress())), 2000)
+    return () => clearInterval(t)
+  }, [])
+  useEffect(() => notes.subscribe(() => bump((n) => n + 1)), [])
+
+  const list = notes.items(address)
+  const unread = list.filter((n) => !n.read).length
+
+  return (
+    <details
+      className="pill-fold"
+      onToggle={(e) => { if (e.currentTarget.open && unread) setTimeout(() => notes.markAllRead(address), 900) }}
+    >
+      <summary className="pill-row">
+        <span>Notifications</span>
+        <span className="fine">{unread ? `${unread} new` : list.length ? `${list.length}` : 'none'}</span>
+      </summary>
+      <div className="pill-fold-body">
+        {!address ? (
+          <p className="fine bell-none">Open a wallet and anything that happens to it shows up here.</p>
+        ) : list.length === 0 ? (
+          <p className="fine bell-none">Nothing yet.</p>
+        ) : (
+          <div className="bell-list">
+            {list.slice(0, 8).map((n) => (
+              <Link key={n.id} to={n.to ?? '/'} className={`bell-item${n.read ? '' : ' new'}`} onClick={onNavigate}>
+                <span className={`bell-kind bell-${n.kind}`} aria-hidden="true" />
+                <span><b>{n.title}</b><i>{n.body}</i></span>
+                <span className="bell-when">{ago(n.at)}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
+  )
+}
+
 export function NotificationBell() {
   const [address, setAddress] = useState(() => currentAddress())
   const [open, setOpen] = useState(false)

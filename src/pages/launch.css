@@ -128,3 +128,96 @@
    rather than a control nobody can change. */
 .lf-fixed { display: flex; align-items: baseline; gap: 8px; padding: 9px 0; }
 .lf-fixed b { font-weight: 600; }
+
+/* ---------------------------------------------------------- trade panel
+ *
+ * Two boxes with a flip between them, the shape every swap interface has
+ * settled on, because it shows both sides of the trade at once. The old panel
+ * had a Buy tab, a Sell tab and one input, which meant the number you were
+ * getting only appeared after you had typed the number you were giving.
+ */
+.trade-card { display: flex; flex-direction: column; }
+
+.curve-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.curve-note { margin-top: 8px; line-height: 1.6; }
+
+.tp-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2, var(--surface));
+}
+.tp-box-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+.tp-box-main { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+
+.tp-amount {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0;
+  outline: none;
+  width: 100%;
+}
+.tp-amount.dim { color: var(--muted); }
+.tp-amount::placeholder { color: var(--muted); opacity: 0.6; }
+
+.tp-asset {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.tp-box-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; min-height: 22px; }
+.tp-max {
+  appearance: none; border: 1px solid var(--signal-line); background: var(--signal-soft);
+  color: var(--signal); font: inherit; font-size: 12px; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+}
+.tp-max:hover { filter: brightness(1.06); }
+
+/* The flip sits between the boxes, overlapping both, which is what makes them
+   read as two halves of one trade rather than two separate fields. */
+.tp-flip {
+  align-self: center;
+  margin: -12px 0;
+  z-index: 1;
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--muted);
+  cursor: pointer;
+}
+.tp-flip:hover { color: var(--ink); border-color: var(--ink-2, var(--muted)); }
+
+.tp-pcts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.tp-pct {
+  appearance: none; border: 1px solid var(--line); background: transparent;
+  color: var(--muted); font: inherit; font-size: 13px; padding: 9px 0;
+  border-radius: 999px; cursor: pointer;
+}
+.tp-pct:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+.tp-pct:disabled { opacity: 0.45; cursor: default; }
+
+.tp-lines { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+.tp-lines > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+
+.tp-note { margin-top: 14px; }
+.tp-action { margin-top: 16px; }
+.tp-action .btn, .tp-cta { width: 100%; }
+.tp-cta { margin-top: 16px; }
+
+@media (max-width: 420px) {
+  .tp-amount { font-size: 26px; }
+  .tp-box { padding: 12px 14px; }
+}

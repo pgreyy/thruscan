@@ -20,6 +20,51 @@ import { claimTusd, claimNativeThru } from '../lib/wallet.js'
 
 const fmtUsd = (units) => (Number(units) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })
 
+/**
+ * The claim, flat, for the wallet panel.
+ *
+ * Only THRU. tUSD was the other button and that mint no longer exists, so
+ * offering it was offering a transaction that cannot succeed. THRU is what
+ * pays fees and what turns into the WTHRU every curve here is priced in.
+ */
+export function FaucetRows() {
+  const wallet = useWallet()
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState(null)
+  const [error, setError] = useState(null)
+
+  const ready = wallet.unlocked && wallet.registered
+
+  const claim = async () => {
+    setBusy(true); setError(null); setNote(null)
+    try {
+      await claimNativeThru()
+      setNote('10,000 THRU on the way.')
+      await new Promise((r) => setTimeout(r, 2500))
+      await wallet.refresh()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!ready) {
+    return (
+      <Link className="pill-row" to="/wallet">
+        <span>Faucet</span><span className="fine">open a wallet first</span>
+      </Link>
+    )
+  }
+
+  return (
+    <button className="pill-row" onClick={claim} disabled={busy}>
+      <span>{busy ? 'Claiming THRU' : 'Claim 10,000 THRU'}</span>
+      <span className="fine">{error ? 'failed' : note ? 'sent' : 'faucet'}</span>
+    </button>
+  )
+}
+
 export function FaucetDrop() {
   const wallet = useWallet()
   const [open, setOpen] = useState(false)

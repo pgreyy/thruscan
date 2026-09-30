@@ -66,7 +66,6 @@ export function Activity({ addresses, me, title = 'Activity' }) {
     <section className="card">
       <div className="card-head">
         <h2 className="h2">{title}</h2>
-        <button className="btn ghost" onClick={load} disabled={loading}>{loading ? 'Loading' : 'Refresh'}</button>
       </div>
 
       {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}

@@ -85,6 +85,18 @@ function fmt(units, decimals = DECIMALS, maxFrac = 4) {
 }
 
 /** Readable figure back to base units, as BigInt, with no float drift. */
+/* Base units back to the text a person would type. The inverse of toUnits,
+   and needed by the percentage buttons: a quarter of a balance is a number
+   somebody has to be able to see in the box and edit. */
+function fromUnits(units, decimals = DECIMALS) {
+  const neg = units < 0n
+  const v = neg ? -units : units
+  const base = 10n ** BigInt(decimals)
+  const whole = v / base
+  const frac = (v % base).toString().padStart(decimals, '0').replace(/0+$/, '')
+  return `${neg ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`
+}
+
 function toUnits(text, decimals = DECIMALS) {
   const clean = String(text ?? '').trim()
   if (!clean || !/^\d*\.?\d*$/.test(clean)) return 0n
@@ -275,9 +287,13 @@ function NotLive({ what }) {
 function useChainData(registry, decode, vaultsOf, mintsOf) {
   const [state, setState] = useState({ loading: true, error: null, data: null, balances: {}, tickers: {}, decimals: {} })
 
-  const load = useCallback(async () => {
+  /* `quiet` is a poll rather than a first load. It leaves the last good data
+     on screen instead of flashing a loading state every few seconds, which is
+     the whole difference between a page that keeps itself current and one that
+     blinks at you. */
+  const load = useCallback(async (quiet = false) => {
     if (!registry) { setState({ loading: false, error: null, data: null, balances: {}, tickers: {}, decimals: {} }); return }
-    setState((s) => ({ ...s, loading: true, error: null }))
+    if (!quiet) setState((s) => ({ ...s, loading: true, error: null }))
     try {
       const acc = await getAccount(registry)
       const data = decode(acc.data?.base64)
@@ -310,11 +326,25 @@ function useChainData(registry, decode, vaultsOf, mintsOf) {
 
       setState({ loading: false, error: null, data, balances, tickers, decimals })
     } catch (err) {
+      /* A failed poll keeps what is on screen. Prices that were right ten
+         seconds ago beat an error where the page was. */
+      if (quiet) return
       setState({ loading: false, error: String(err?.message ?? err), data: null, balances: {}, tickers: {}, decimals: {} })
     }
   }, [registry])
 
   useEffect(() => { load() }, [load])
+
+  /* This is a trading page, so it keeps itself current instead of offering a
+     Refresh button. Paused while the tab is hidden, because a background tab
+     polling a chain is just someone else's bandwidth. */
+  useEffect(() => {
+    const id = setInterval(() => { if (!document.hidden) load(true) }, 8000)
+    const onShow = () => { if (!document.hidden) load(true) }
+    document.addEventListener('visibilitychange', onShow)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onShow) }
+  }, [load])
+
   return { ...state, reload: load }
 }
 
@@ -1218,13 +1248,10 @@ function Positions({ pools, balances, tickers, decimalsOf }) {
             {mine.length ? `${mine.length} pool${mine.length === 1 ? '' : 's'}` : 'Nothing deposited yet'}
           </p>
         </div>
-        <button className="btn ghost" onClick={() => wallet.refresh(pools.flatMap((p) => [p.lpMint, p.mintA, p.mintB]))}>
-          Refresh
-        </button>
       </div>
 
       {mine.length === 0 ? (
-        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>Just deposited? It can take a few seconds. Press Refresh.</p>
+        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>Nothing deposited yet. A new deposit shows here within a few seconds.</p>
       ) : (
         mine.map(({ pool, lp, shareA, shareB, pct }) => (
           <div className="position" key={pool.id}>
@@ -1542,7 +1569,6 @@ export function SwapPage() {
     return (
       <div className="wrap">
         <h1 className="h1">Swap</h1>
-        <p className="lede">A constant product market maker, running on chain.</p>
         <NotLive what="thruswap" />
       </div>
     )
@@ -1579,7 +1605,6 @@ export function SwapPage() {
             <h2 className="h2">Pools</h2>
             <p className="sub">{data ? `${pools.length} of ${data.capacity} slots in use` : 'reading the chain'}</p>
           </div>
-          <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
         </div>
         {!error && data && pools.length === 0 && (
           <p className="fine" style={{ marginTop: 12 }}>No pools have been created yet.</p>
@@ -1597,7 +1622,6 @@ export function SwapPage() {
   return (
     <Tabs
       title="Swap"
-      lede="Constant-product pools on Thru."
       tabs={[
         { key: 'swap', label: 'Swap', el: swapTab },
         { key: 'liquidity', label: 'Liquidity', el: liquidityTab },
@@ -2122,75 +2146,116 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
     } catch { return null }
   }, [side, launch, amountIn, out])
 
+  /* Percentages of what you hold, which is how people actually size a trade:
+     "half of my THRU", not "0.0374". Max is the whole balance. */
+  const setPct = (pct) => {
+    if (!holding || holding <= 0n) return
+    const units = pct === 100 ? holding : (holding * BigInt(pct)) / 100n
+    setAmount(fromUnits(units, inDecimals))
+  }
+
+  const payTicker = side === 'buy' ? quote : launch.symbol
+  const getTicker = side === 'buy' ? launch.symbol : quote
+  const getMint = side === 'buy' ? launch.mint : quoteMint
+  const getHeld = wallet.balances?.[getMint]
+  const getHolding = getHeld?.exists ? getHeld.amount : (getHeld ? 0n : null)
+
   return (
-    <section className="card">
-      <div style={{ marginBottom: 14 }}>
-        <div className="row" style={{ borderBottom: 0, padding: 0, marginBottom: 8 }}>
-          <span className="fine">Bonding curve</span>
-          <span className="fine">{(progress * 100).toFixed(0)}% to graduation</span>
-        </div>
-        <div className="progress-track">
-          <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
-        </div>
-        <p className="fine" style={{ marginTop: 8, lineHeight: 1.6 }}>{fmt(raised, quoteDecimals)} of {fmt(threshold, quoteDecimals)} {quote} raised</p>
+    <section className="card trade-card">
+      <div className="curve-head">
+        <span className="fine">Bonding curve</span>
+        <span className="fine">{(progress * 100).toFixed(0)}% to graduation</span>
       </div>
+      <div className="progress-track">
+        <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
+      </div>
+      <p className="fine curve-note">
+        {fmt(raised, quoteDecimals)} of {fmt(threshold, quoteDecimals)} {quote} raised.
+        At the threshold the curve closes and the liquidity moves into a pool.
+      </p>
 
       {launch.graduated ? (
         <p className="notice">Graduated. Trade it on the swap page.</p>
       ) : (
         <>
-          <div className="inline" style={{ marginBottom: 12 }}>
-            <button className="btn ghost" onClick={() => setSide('buy')} aria-current={side === 'buy'}>Buy</button>
-            <button className="btn ghost" onClick={() => setSide('sell')} aria-current={side === 'sell'}>Sell</button>
+          {/* Two boxes and a flip, rather than a Buy tab and a Sell tab.
+              Buying and selling on a curve is one trade read in two
+              directions, and showing both sides at once is what makes the
+              price legible without doing arithmetic. */}
+          <div className="tp-box">
+            <div className="tp-box-head"><span>You pay</span></div>
+            <div className="tp-box-main">
+              <input
+                className="tp-amount mono"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0"
+                inputMode="decimal"
+                aria-label={`Amount of ${payTicker} to pay`}
+              />
+              <span className="tp-asset">{payTicker}</span>
+            </div>
+            <div className="tp-box-foot">
+              <span className="fine">
+                {wallet.address ? `${holding === null ? '—' : fmt(holding, inDecimals)} available` : 'no wallet'}
+              </span>
+              {holding > 0n && <button className="tp-max" onClick={() => setPct(100)}>Max</button>}
+            </div>
           </div>
 
-          <div className="swap-side">
-            <div className="swap-side-head">
-              <span className="fine">{side === 'buy' ? `Spend ${quote}` : `Sell ${launch.symbol}`}</span>
-              {wallet.address && (
-                <span className="fine">
-                  Balance {holding === null ? '—' : fmt(holding, inDecimals)} {side === 'buy' ? quote : launch.symbol}
-                  {holding > 0n && (
-                    <button
-                      className="linkish"
-                      onClick={() => setAmount(String(Number(holding) / 10 ** inDecimals))}
-                    >MAX</button>
-                  )}
-                </span>
+          <button
+            className="tp-flip"
+            onClick={() => { setSide(side === 'buy' ? 'sell' : 'buy'); setAmount('') }}
+            aria-label={side === 'buy' ? 'Switch to selling' : 'Switch to buying'}
+            title="Flip"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7 4v13M4 14l3 3 3-3M17 20V7M20 10l-3-3-3 3" />
+            </svg>
+          </button>
+
+          <div className="tp-box">
+            <div className="tp-box-head"><span>You receive</span></div>
+            <div className="tp-box-main">
+              <span className={`tp-amount mono${out > 0n ? '' : ' dim'}`}>
+                {amountIn > 0n && out > 0n ? fmt(out, outDecimals) : '0'}
+              </span>
+              <span className="tp-asset">{getTicker}</span>
+            </div>
+            <div className="tp-box-foot">
+              <span className="fine">
+                {wallet.address ? `${getHolding === null ? '—' : fmt(getHolding, outDecimals)} available` : ''}
+              </span>
+            </div>
+          </div>
+
+          <div className="tp-pcts">
+            {[25, 50, 75].map((n) => (
+              <button key={n} className="tp-pct" onClick={() => setPct(n)} disabled={!holding || holding <= 0n}>{n}%</button>
+            ))}
+            <button className="tp-pct" onClick={() => setPct(100)} disabled={!holding || holding <= 0n}>Max</button>
+          </div>
+
+          {amountIn > 0n && out <= 0n && (
+            <p className="notice bad tp-note">Cannot quote: {q.reason}.</p>
+          )}
+
+          {amountIn > 0n && out > 0n && (
+            <div className="tp-lines">
+              <div><span>Creator fee</span><span className="mono">{fmt(q.creatorFee, quoteDecimals)} {quote}</span></div>
+              {side === 'buy' && q.snipeTax > 0n && (
+                <div><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax, quoteDecimals)} {quote}</span></div>
               )}
             </div>
-            <input
-              className="swap-amount mono"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              inputMode="decimal"
-            />
-          </div>
-
-          {amountIn > 0n && (
-            out > 0n ? (
-              <div className="rows" style={{ marginTop: 12 }}>
-                <div className="row">
-                  <span>You receive</span>
-                  <b className="mono">{fmt(out, outDecimals)} {side === 'buy' ? launch.symbol : quote}</b>
-                </div>
-                <div className="row"><span>Creator fee</span><span className="mono">{fmt(q.creatorFee, quoteDecimals)} {quote}</span></div>
-                {side === 'buy' && q.snipeTax > 0n && (
-                  <div className="row"><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax, quoteDecimals)} {quote}</span></div>
-                )}
-              </div>
-            ) : (
-              <p className="notice bad" style={{ marginTop: 12 }}>Cannot quote: {q.reason}.</p>
-            )
           )}
 
           {tax > 0n && (
-            <p className="notice" style={{ marginTop: 12 }}>Anti-snipe tax {(Number(tax) / 100).toFixed(1)}%, falling to zero in seconds.</p>
+            <p className="notice tp-note">Anti-snipe tax {(Number(tax) / 100).toFixed(1)}%, falling to zero in seconds.</p>
           )}
 
-          {built && (
-            <div style={{ marginTop: 12 }}>
+          {built ? (
+            <div className="tp-action">
               <Execute
                 program={PAD_PROGRAM}
                 needs={{ userToken: launch.mint, userQuote: quoteMint }}
@@ -2206,13 +2271,14 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
                   }
                   return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
                 }}
-                cli={cliCommand(PAD_PROGRAM, built)}
-                label={side === 'buy'
-                  ? `Buy ${launch.symbol} with ${amount} ${quote}`
-                  : `Sell ${amount} ${launch.symbol}`}
+                label={side === 'buy' ? `Buy ${launch.symbol}` : `Sell ${launch.symbol}`}
                 onDone={traded}
               />
             </div>
+          ) : (
+            <button className="btn tp-cta" disabled>
+              {side === 'buy' ? `Buy ${launch.symbol}` : `Sell ${launch.symbol}`}
+            </button>
           )}
         </>
       )}
@@ -2277,7 +2343,6 @@ export function LaunchpadPage() {
     return (
       <div className="wrap">
         <h1 className="h1">Launchpad</h1>
-        <p className="lede">Put a token on a bonding curve and let the chain price it.</p>
         <NotLive what="thrupad" />
       </div>
     )
@@ -2288,19 +2353,16 @@ export function LaunchpadPage() {
      refresh button, which is three bands of chrome before the first launch. */
   return (
     <div className="wrap-wide">
+      {/* The title and one button.
+       *
+       * The line that used to sit under the title said how many slots were
+       * taken and where the threshold was, which is on every card below
+       * anyway, and the Refresh button is gone because the page now refreshes
+       * itself every eight seconds. Nobody on a trading page should have to
+       * ask for the current price. */}
       <div className="page-head pad-head">
-        <div>
-          <h1 className="h1">Launchpad</h1>
-          <p className="sub">
-            {data
-              ? `${data.launches.length} of ${data.capacity} slots · graduates at ${fmt(data.gradThreshold, decimals?.[data.quoteMint] ?? 0)} ${tickers?.[data.quoteMint] || ''}`.trimEnd()
-              : 'Fixed-supply tokens on a bonding curve'}
-          </p>
-        </div>
+        <h1 className="h1">Launchpad</h1>
         <div className="inline">
-          <button className="btn ghost sm" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
-          {/* Hidden while the form is open: the form has a Close of its own,
-              and two buttons that both close it is one too many. */}
           {!creating && <button className="btn" onClick={() => setCreating(true)}>Create a token</button>}
         </div>
       </div>
@@ -2395,7 +2457,6 @@ export function FaucetPage() {
   return (
     <Tabs
       title="Faucet"
-      lede="Test tUSD to trade with, THRU for fees. Neither has value."
       tabs={[
         { key: 'get', label: 'Get funds', el: getTab },
         { key: 'return', label: 'Give it back', el: returnTab },

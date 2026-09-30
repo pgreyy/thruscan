@@ -92,17 +92,24 @@ const ID_REGISTRY = ID_REGISTRY_ADDR
  */
 const NAV = [
   { to: '/', label: 'Launchpad', icon: 'rocket', exact: true },
-  { to: '/activity', label: 'Activity', icon: 'pulse' },
+  { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/collections', label: 'Collections', icon: 'pal' },
+  { to: '/activity', label: 'Activity', icon: 'pulse' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
 ]
 
 const TOP_NAV = [
   { to: '/', label: 'Launchpad', exact: true, also: ['/token', '/launch'] },
-  { to: '/activity', label: 'Activity' },
+  /* Back in the bar, and second.
+   *
+   * Taking it out was right for the shape of the site and wrong for using it.
+   * Every curve here is priced in WTHRU, and turning THRU into WTHRU is a
+   * swap, so without this tab there is no way to get hold of the one asset the
+   * launchpad spends. */
+  { to: '/swap', label: 'Swap' },
   { to: '/collections', label: 'Collections' },
-  { to: '/names', label: 'Names' },
+  { to: '/activity', label: 'Activity' },
 ]
 /* The faucet stays reachable while we are on a testnet, because it is how
    anybody gets anything to trade with. It goes when there is no faucet to
@@ -114,6 +121,7 @@ const TOP_NAV = [
  * other than launching or buying a token. The explorer in particular is
  * temporary by design, since Thru will ship its own for mainnet. */
 const MORE_NAV = [
+  { to: '/names', label: 'Names' },
   { to: '/faucet', label: 'Faucet' },
   { to: EXTENSION_URL, label: 'ThruScan Wallet', external: EXTENSION_IS_EXTERNAL },
 ]
@@ -687,6 +695,8 @@ function Shell({ children }) {
   // nothing can ever slide under anything else, at any width or zoom level.
   const barRef = useRef(null)
   const moreRef = useRef(null)
+  const moreTimer = useRef(null)
+  useEffect(() => () => clearTimeout(moreTimer.current), [])
   useDismissDetails(moreRef)
   const [navFit, setNavFit] = useState(TOP_NAV.length)
   const fitNav = useCallback(() => {
@@ -810,7 +820,24 @@ function Shell({ children }) {
           {shownNav.map((l) => (
             <Link key={l.to} to={l.to} aria-current={active(l)}>{l.label}</Link>
           ))}
-          <details className="deskbar-more" ref={moreRef}>
+          {/* Opens on hover as well as on click.
+           *
+           * A details element only opens on click, so the pointer handlers do the
+           * hovering. Leaving closes it after a beat rather than instantly,
+           * because the pointer has to cross a gap between the summary and the
+           * menu and a menu that vanishes in that gap cannot be used. Touch
+           * devices never fire these, so tapping still works exactly as it
+           * did. */}
+          <details
+            className="deskbar-more"
+            ref={moreRef}
+            onPointerEnter={(e) => { if (e.pointerType === 'mouse') { clearTimeout(moreTimer.current); e.currentTarget.open = true } }}
+            onPointerLeave={(e) => {
+              if (e.pointerType !== 'mouse') return
+              const el = e.currentTarget
+              moreTimer.current = setTimeout(() => { el.open = false }, 180)
+            }}
+          >
             <summary>More</summary>
             <div className="deskbar-menu">
               {moreNav.map((l) => (l.external
@@ -839,11 +866,10 @@ function Shell({ children }) {
           <span className="brand-mark">T</span>
         </button>
         <div className="topbar-search"><Search compact /></div>
-        <div className="topbar-right">
-          <FaucetDrop />
-          <NotificationBell />
-          <BarTheme />
-        </div>
+        {/* Nothing else. The wallet button sits to the right of this, floating
+            over the bar, and the faucet, the notifications and the theme moved
+            inside its menu. Four icons and a search field never fitted on a
+            360px phone without one of them being squeezed. */}
       </header>
 
       <main className="main" data-nav={open}>{children}</main>
@@ -2924,7 +2950,6 @@ function ActivityPage() {
   return (
     <div className="wrap-wide">
       <h1 className="h1">Activity</h1>
-      <p className="lede">Everything happening on Thru, newest first.</p>
       <Feed title="On chain" limit={50} />
     </div>
   )
@@ -2959,7 +2984,6 @@ function HomeRoute() {
  * a launchpad with a games tab in the header reads as a site that has not
  * decided what it is. Anyone with a link still lands where they expect. */
 const ARCHIVED = [
-  ['Swap', 'Trade any Thru token. Buying and selling on the launchpad now happens on each token’s own page.', '/swap'],
   ['Wall', 'Messages posted on chain, kept forever.', '/wall'],
   ['Games', 'Wordle and 2048, both scored on chain.', '/games'],
   ['Builders', 'Projects and people building on Thru.', '/builders'],
