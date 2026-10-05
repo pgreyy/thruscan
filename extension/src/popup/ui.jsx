@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export const EXPLORER = 'https://thruscan.vercel.app'
+export const EXPLORER = 'https://thruscan.xyz'
 
 /** Ask the background worker. Throws its error message on failure. */
 export function bg(type, extra = {}) {

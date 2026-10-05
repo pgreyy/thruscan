@@ -12,7 +12,10 @@ import {
 } from '@thru/sdk'
 
 export const DEFAULT_RPC = 'https://rpc.alphanet.thru.org'
-export const EXPLORER = 'https://thruscan.vercel.app'
+/* The site the wallet links out to. thruscan.xyz is the one that is indexed
+   and the one on the store listing; the vercel.app address still works and is
+   not what anybody should be shown. */
+export const EXPLORER = 'https://thruscan.xyz'
 
 export const PROGRAMS = {
   EOA: 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr',
@@ -39,8 +42,11 @@ export const MAX_STATE_UNITS = 8_192
 // The .id names root on Thru's name service.
 const NAMES_ROOT = 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
 // Tokens worth checking for on every wallet even before it has any history.
+/* tUSD was here and that mint no longer exists: the network was reset and it
+   was not recreated, because the launchpad prices everything in WTHRU now.
+   Listing a dead mint costs a lookup per wallet and shows a token nobody can
+   hold. */
 export const KNOWN_MINTS = [
-  'ta4OJoJQcZRIx4Sm3MLdEUrn_j5gb4vFeFPhpSJraHZTeB', // tUSD
   'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb', // WTHRU
 ]
 
@@ -205,7 +211,10 @@ async function nftMetadata(uri) {
     // Images ThruScan serves are fetched here, where the extension has
     // permission, and handed to the popup as data, so a browser's shields or
     // a slow first load cannot leave a blank tile.
-    if (image && image.startsWith('https://thruscan.vercel.app/')) {
+    /* Both hosts, because token pictures uploaded before the move still carry
+       the vercel.app address and a wallet that silently dropped those would
+       show blank tiles for every older token. */
+    if (image && /^https:\/\/(thruscan\.xyz|thruscan\.vercel\.app)\//.test(image)) {
       try {
         const r2 = await fetch(image, { signal: AbortSignal.timeout(8000) })
         const type = r2.headers.get('content-type') ?? ''
