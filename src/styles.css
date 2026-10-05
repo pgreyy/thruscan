@@ -26,10 +26,12 @@
   --r-lg: 18px;
 
   --rail: 236px;
-  --shadow: 0 1px 2px var(--hover), 0 8px 24px var(--hover);
+  --shadow: 0 1px 2px rgba(40, 32, 20, 0.05), 0 8px 24px rgba(40, 32, 20, 0.06);
 
-  --hover: var(--hover);
-  --soft: var(--soft);
+  /* Warm greys between --canvas and --line. --hover is translucent so it reads
+     on both the page and a card; --soft is solid, for wells and placeholders. */
+  --hover: rgba(60, 48, 28, 0.06);
+  --soft: #eae8e4;
   --glass: rgba(241, 240, 237, 0.92);
   --ink-2: #494b52;
   --dark: #16181d;          /* panels that stay dark in both themes */
@@ -1568,7 +1570,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   }
   .deskbar-menu a { padding: 9px 10px; border-radius: 8px; font-size: 14px; color: var(--ink); text-decoration: none; }
   .deskbar-menu a:hover { background: var(--soft); }
-  .deskbar-menu a[aria-current='page'] { background: var(--soft, var(--canvas)); font-weight: 600; }
+  .deskbar-menu a[aria-current='page'] { background: var(--soft); font-weight: 600; }
   .deskbar-right { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
   .deskbar-right .status { font-family: var(--mono); font-size: 12px; }
   @media (max-width: 1380px) { .deskbar-right .status { display: none; } }
