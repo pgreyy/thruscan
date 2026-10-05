@@ -131,7 +131,7 @@ export function TokenPage() {
                   </svg>
                   {fav ? 'On your front page' : 'Add to front page'}
                 </button>
-                {launch && <Link className="home-badge plain-link" to={`/launch/${launch.id}`}>{launch.graduated ? 'Graduated launch' : 'Trade on launchpad'}</Link>}
+                {launch && <Link className="home-badge plain-link" to={`/launch/${launch.id}`}>{launch.graduated ? 'Graduated launch' : 'Trade on ThruPad'}</Link>}
               </span>
             </div>
             <Field k="Ticker">
@@ -158,7 +158,7 @@ export function TokenPage() {
 
         {info && launch && (
           <TradeChart
-            title="Launchpad price"
+            title="ThruPad price"
             quoteVault={launch.quoteVault}
             tokenVault={launch.tokenVault}
             quote={sym(launch.quoteMint)}
@@ -192,7 +192,7 @@ export function TokenPage() {
         })}
 
         {info && !launch && pools.length === 0 && (
-          <section className="home-list detail-card"><p className="fine home-pad">Not trading on ThruScan's launchpad or pools.</p></section>
+          <section className="home-list detail-card"><p className="fine home-pad">Not trading on ThruPad or in a ThruSwap pool.</p></section>
         )}
       </div>
     </div>

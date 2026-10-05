@@ -841,7 +841,7 @@ export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
   const { address } = requireSession()
   const ticker = String(symbol ?? '').trim().toUpperCase()
   if (!/^[A-Z0-9]{2,8}$/.test(ticker)) return { ok: false, error: 'A ticker is 2 to 8 letters or digits.' }
-  if (!padProgram) return { ok: false, error: 'No launchpad program configured.' }
+  if (!padProgram) return { ok: false, error: 'No ThruPad program configured.' }
   if (!(await accountExists(address))) return { ok: false, error: 'Register your wallet on chain first.' }
 
   return api('pad-accounts', { owner: address, symbol: ticker, quoteMint, padProgram })

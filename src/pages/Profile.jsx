@@ -538,7 +538,7 @@ export function ProfilePage() {
                 </Row>
                 <Row title="Launched" count={launches.length || null}>
                   {scanning
-                    ? <p className="fine">Reading the launchpad…</p>
+                    ? <p className="fine">Reading ThruPad…</p>
                     : launches.length === 0
                       ? <p className="fine">Nothing yet. <Link to="/launch">Launch a token</Link>.</p>
                       : (
@@ -555,7 +555,7 @@ export function ProfilePage() {
                         </div>
                       )}
                 </Row>
-                <Row title="Names" count={names.length || null}>
+                <Row title="ThruNames" count={names.length || null}>
                   {names.length === 0
                     ? <p className="fine">None yet. <Link to="/names">Claim one</Link>, free.</p>
                     : (

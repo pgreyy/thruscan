@@ -214,7 +214,7 @@ export function AccountPage() {
             <div className="home-list-head"><h2>Overview</h2><span className="home-badge">{kind}</span></div>
             <Field k="Address"><span className="detail-addr"><span className="mono detail-break">{account.address ?? id}</span><Copy text={account.address ?? id} /></span></Field>
             {names && names.length > 0 && (
-              <Field k="Names"><b>{names.map((n) => `${n}.${ROOT_SUFFIX}`).join(', ')}</b></Field>
+              <Field k="ThruNames"><b>{names.map((n) => `${n}.${ROOT_SUFFIX}`).join(', ')}</b></Field>
             )}
             <Field k="Balance"><b>{num(meta?.balance)} THRU</b></Field>
 

@@ -58,7 +58,7 @@ export function describe(item, me) {
     case THRUSWAP_PROGRAM:
       return { label: ({ 1: 'Created a pool', 2: 'Added liquidity', 3: 'Removed liquidity', 4: 'Swap' })[op] ?? 'Swap program' }
     case THRUPAD_PROGRAM:
-      return { label: ({ 1: 'Launched a token', 2: 'Bought on launchpad', 3: 'Sold on launchpad', 4: 'Claimed creator fees', 5: 'Graduated a launch' })[op] ?? 'Launchpad' }
+      return { label: ({ 1: 'Launched a token', 2: 'Bought on ThruPad', 3: 'Sold on ThruPad', 4: 'Claimed creator fees', 5: 'Graduated a launch' })[op] ?? 'ThruPad' }
     case WALL_PROGRAM:
       return { label: 'Wall message' }
     case NAME_SERVICE_PROGRAM: {
@@ -134,7 +134,7 @@ export async function namesFromHistory(address, maxPages = 6) {
 export function programName(address) {
   return ({
     [THRUSWAP_PROGRAM]: 'ThruSwap',
-    [THRUPAD_PROGRAM]: 'ThruPad launchpad',
+    [THRUPAD_PROGRAM]: 'ThruPad',
     [WALL_PROGRAM]: 'ThruWall',
     [TOKEN_PROGRAM]: 'Token program',
     [NAME_SERVICE_PROGRAM]: 'Name service',

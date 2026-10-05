@@ -405,7 +405,7 @@ export function NamesPage() {
 
   return (
     <div className="wrap">
-      <h1 className="h1">Names</h1>
+      <h1 className="h1">ThruNames</h1>
 
       <Claim wallet={wallet} onClaimed={claimed} />
 

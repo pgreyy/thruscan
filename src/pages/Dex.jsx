@@ -2078,7 +2078,7 @@ export function LaunchDetail({ id }) {
         <section className="card">
           <h2 className="h2">Not found</h2>
           <p className="fine" style={{ marginTop: 10 }}>No launch with that id.</p>
-          <p style={{ marginTop: 12 }}><Link to="/">Back to the launchpad</Link></p>
+          <p style={{ marginTop: 12 }}><Link to="/">Back to ThruPad</Link></p>
         </section>
       </div>
     )
@@ -2434,7 +2434,7 @@ export function LaunchpadPage() {
   if (!PAD_PROGRAM || !PAD_REGISTRY) {
     return (
       <div className="wrap">
-        <h1 className="h1">Launchpad</h1>
+        <h1 className="h1">ThruPad</h1>
         <NotLive what="thrupad" />
       </div>
     )
@@ -2453,7 +2453,7 @@ export function LaunchpadPage() {
        * itself every eight seconds. Nobody on a trading page should have to
        * ask for the current price. */}
       <div className="page-head pad-head">
-        <h1 className="h1">Launchpad</h1>
+        <h1 className="h1">ThruPad</h1>
         <div className="inline">
           {!creating && !error && <button className="btn" onClick={() => setCreating(true)}>Create a token</button>}
         </div>
@@ -2532,7 +2532,7 @@ export function FaucetPage() {
         <h2 className="h2">What to do with it</h2>
         <div className="rows" style={{ marginTop: 12 }}>
           <div className="row"><span>Trade it</span><span className="fine">On the Swap page, against any pool</span></div>
-          <div className="row"><span>Buy a launch</span><span className="fine">On the Launchpad, along a bonding curve</span></div>
+          <div className="row"><span>Buy a launch</span><span className="fine">On ThruPad, along a bonding curve</span></div>
           <div className="row"><span>Launch your own</span><span className="fine">Create a token and earn fees on every trade</span></div>
         </div>
       </section>

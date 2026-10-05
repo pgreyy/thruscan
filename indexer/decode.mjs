@@ -127,17 +127,17 @@ export function makeDecoder(addresses) {
     [A.ORACLE_PROGRAM]: 'Oracle',
     [A.AMM_PROGRAM]: 'AMM',
     [A.CLOB_PROGRAM]: 'Order book',
-    [A.THRUPAD_PROGRAM]: 'Launchpad',
+    [A.THRUPAD_PROGRAM]: 'ThruPad',
     [A.THRUSWAP_PROGRAM]: 'Swap',
     [A.PALS_PROGRAM]: 'Pixel Pals',
     [A.WALL_PROGRAM]: 'Wall',
   }
 
   const PAD = {
-    0: ['pad', 'Opened the launchpad'],
+    0: ['pad', 'Opened ThruPad'],
     1: ['launch', 'Launched a token'],
-    2: ['buy', 'Bought on the launchpad'],
-    3: ['sell', 'Sold on the launchpad'],
+    2: ['buy', 'Bought on ThruPad'],
+    3: ['sell', 'Sold on ThruPad'],
     4: ['claim', 'Claimed creator fees'],
     5: ['graduate', 'Graduated a launch'],
     6: ['migrate', 'Migrated to the AMM'],
@@ -172,7 +172,7 @@ export function makeDecoder(addresses) {
       case A.THRUPAD_PROGRAM: {
         const hit = PAD[op]
         if (hit) [kind, label] = hit
-        else label = 'Launchpad'
+        else label = 'ThruPad'
         break
       }
       case A.AMM_PROGRAM: {

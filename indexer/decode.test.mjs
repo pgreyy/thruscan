@@ -57,8 +57,8 @@ const u32le = (n, ...rest) => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16)
 test('launchpad operations each get their own kind', () => {
   const cases = [
     [1, 'launch', 'Launched a token'],
-    [2, 'buy', 'Bought on the launchpad'],
-    [3, 'sell', 'Sold on the launchpad'],
+    [2, 'buy', 'Bought on ThruPad'],
+    [3, 'sell', 'Sold on ThruPad'],
     [4, 'claim', 'Claimed creator fees'],
     [5, 'graduate', 'Graduated a launch'],
     [6, 'migrate', 'Migrated to the AMM'],
@@ -140,7 +140,7 @@ test('a signature survives the round trip', () => {
 test('an empty instruction does not crash the decoder', () => {
   const r = decode(txn({ program: A.THRUPAD_PROGRAM, data: new Uint8Array(0) }))
   assert.equal(r.op, null)
-  assert.equal(r.label, 'Launchpad')
+  assert.equal(r.label, 'ThruPad')
 })
 
 /* ---------- bundles, which is what nearly every write actually is ---------- */
@@ -170,7 +170,7 @@ test('a bundle is named after the most interesting thing in it', () => {
   ], accounts)
   const r = decode(txn({ program: A.MULTICALL_PROGRAM, data, ro: [A.TOKEN_PROGRAM, A.THRUPAD_PROGRAM] }))
   assert.equal(r.kind, 'buy')
-  assert.equal(r.label, 'Bought on the launchpad')
+  assert.equal(r.label, 'Bought on ThruPad')
 })
 
 test('a bundle of nothing but infrastructure is infrastructure', () => {

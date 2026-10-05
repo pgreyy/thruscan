@@ -94,17 +94,17 @@ const ID_REGISTRY = ID_REGISTRY_ADDR
  * matches every page on the site.
  */
 const NAV = [
-  { to: '/', label: 'Launchpad', icon: 'rocket', exact: true },
+  { to: '/', label: 'ThruPad', icon: 'rocket', exact: true },
   { to: '/swap', label: 'Swap', icon: 'swap' },
   { to: '/collections', label: 'Collections', icon: 'pal' },
   { to: '/activity', label: 'Activity', icon: 'pulse' },
-  { to: '/names', label: 'Names', icon: 'tag' },
+  { to: '/names', label: 'ThruNames', icon: 'tag' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
   { to: '/archives', label: 'Archives', icon: 'book' },
 ]
 
 const TOP_NAV = [
-  { to: '/', label: 'Launchpad', exact: true, also: ['/token', '/launch'] },
+  { to: '/', label: 'ThruPad', exact: true, also: ['/token', '/launch'] },
   /* Back in the bar, and second.
    *
    * Taking it out was right for the shape of the site and wrong for using it.
@@ -126,7 +126,7 @@ const TOP_NAV = [
  * doing something other than launching or buying a token. The explorer in
  * particular is temporary by design, since Thru will ship its own for mainnet. */
 const MORE_NAV = [
-  { to: '/names', label: 'Names' },
+  { to: '/names', label: 'ThruNames' },
   { to: '/faucet', label: 'Faucet' },
   { to: '/archives', label: 'Archives' },
   { to: EXTENSION_URL, label: 'ThruScan Wallet', external: EXTENSION_IS_EXTERNAL },
@@ -3007,7 +3007,7 @@ function ArchivesPage() {
       <h1 className="h1">Archives</h1>
       <p className="lede">
         Parts of ThruScan that are still running but no longer in the menus, while the
-        launchpad is being built.
+        ThruPad is being built.
       </p>
       <div className="archive-list">
         {ARCHIVED.map(([name, sub, to]) => (
