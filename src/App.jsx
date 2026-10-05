@@ -98,6 +98,7 @@ const NAV = [
   { to: '/activity', label: 'Activity', icon: 'pulse' },
   { to: '/names', label: 'Names', icon: 'tag' },
   { to: '/faucet', label: 'Faucet', icon: 'drop' },
+  { to: '/archives', label: 'Archives', icon: 'book' },
 ]
 
 const TOP_NAV = [
@@ -116,14 +117,16 @@ const TOP_NAV = [
    anybody gets anything to trade with. It goes when there is no faucet to
    show.
  *
- * Nothing else is here. The explorer, the archives and the Pixel Pals mint are
- * all still running and still work if you have the link, and none of them is
- * in a menu: every one of them is a reason to be on this site doing something
- * other than launching or buying a token. The explorer in particular is
- * temporary by design, since Thru will ship its own for mainnet. */
+ * The archives are linked through one Archives entry, which lists the Wall,
+ * Games, Builders, Updates and Guides; none of those pages is in a menu itself.
+ * The explorer and the Pixel Pals mint are still running and still work if you
+ * have the link, but neither is in a menu: each is a reason to be on this site
+ * doing something other than launching or buying a token. The explorer in
+ * particular is temporary by design, since Thru will ship its own for mainnet. */
 const MORE_NAV = [
   { to: '/names', label: 'Names' },
   { to: '/faucet', label: 'Faucet' },
+  { to: '/archives', label: 'Archives' },
   { to: EXTENSION_URL, label: 'ThruScan Wallet', external: EXTENSION_IS_EXTERNAL },
 ]
 
@@ -848,7 +851,7 @@ function Shell({ children }) {
             <div className="deskbar-menu">
               {moreNav.map((l) => (l.external
                 ? <a key={l.to} href={l.to} target="_blank" rel="noreferrer" onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label} ↗</a>
-                : <Link key={l.to} to={l.to} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>))}
+                : <Link key={l.to} to={l.to} aria-current={active(l)} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>))}
             </div>
           </details>
         </nav>

@@ -1568,6 +1568,7 @@ textarea.field { resize: vertical; min-height: 84px; }
   }
   .deskbar-menu a { padding: 9px 10px; border-radius: 8px; font-size: 14px; color: var(--ink); text-decoration: none; }
   .deskbar-menu a:hover { background: var(--soft); }
+  .deskbar-menu a[aria-current='page'] { background: var(--soft, var(--canvas)); font-weight: 600; }
   .deskbar-right { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
   .deskbar-right .status { font-family: var(--mono); font-size: 12px; }
   @media (max-width: 1380px) { .deskbar-right .status { display: none; } }
