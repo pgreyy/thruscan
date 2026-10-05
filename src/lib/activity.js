@@ -13,7 +13,7 @@ import {
 } from './addresses.js'
 import { ROOT_REGISTRAR, ROOT_SUFFIX } from './names.js'
 
-const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
+export const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 
 export async function fetchHistory(addresses, pages = null) {
   const list = [...new Set(addresses.filter(Boolean))].slice(0, 6)

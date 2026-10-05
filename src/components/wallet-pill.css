@@ -343,6 +343,9 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
 }
 
+/* Only a phone draws the scrim; see the max-width block further down. */
+.picker-scrim { display: none; }
+
 .picker-item {
   display: flex;
   align-items: center;
@@ -398,7 +401,26 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 }
 @media (max-width: 720px) {
   .swap-amount { font-size: 24px; }
-  .picker-menu { right: auto; left: 0; }
+
+  /* The token picker is a bottom sheet on a phone.
+   *
+   * It used to hang from its trigger at a fixed 310px, and the trigger sits at
+   * the right-hand end of the amount row, so on a 390px phone the menu opened
+   * from there and ran off the screen. A sheet is as wide as the screen less a
+   * margin whatever the trigger does, and the page behind it dims, so it reads
+   * as a layer rather than as something that has spilled out of the card. */
+  .picker-menu {
+    position: fixed;
+    left: 10px; right: 10px; top: auto;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    width: auto; max-width: none;
+    max-height: min(72vh, 480px);
+    z-index: 81;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.28);
+    overscroll-behavior: contain;
+  }
+  .picker-scrim { display: block; position: fixed; inset: 0; z-index: 80; border: 0; padding: 0; background: rgba(22, 24, 29, 0.42); cursor: default; }
+  .picker-item { padding: 12px 10px; }
 }
 
 /* The profile header: picture beside identity, stacking on a phone. */

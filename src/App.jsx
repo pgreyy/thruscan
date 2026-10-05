@@ -2958,7 +2958,7 @@ function GuideDetail({ guide, onBack }) {
 function ActivityPage() {
   /* wrap-wide: this is a table with five columns and it wants the room. */
   return (
-    <div className="wrap-wide">
+    <div className="wrap-wide wrap-act">
       <h1 className="h1">Activity</h1>
       <Feed title="On chain" limit={50} />
     </div>

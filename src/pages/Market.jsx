@@ -312,14 +312,13 @@ export function MarketHome() {
       {/* One line for the whole page's health, rather than an error in every
           block. The blocks below still say, in place, what they are missing. */}
       {(padDown || chainDown) && (
-        <div className="mk-alert" role="status">
-          <b>{padDown && chainDown ? 'The chain is not answering.' : padDown ? 'The launch registry cannot be read.' : 'The chain is not answering.'}</b>
+        <div className="down-note" role="status" title={pad.error || overview.error}>
+          <b>{padDown && !chainDown ? 'Launch list unavailable' : 'The chain is not answering'}</b>
           <span>
             {padDown
-              ? ' Prices, launches and trading are unavailable until it reads again. This page retries by itself.'
-              : ' Block height and speed are unavailable. This page retries by itself.'}
+              ? 'Prices, launches and trading are unavailable until it reads again.'
+              : 'Block height and speed are unavailable until it answers.'}
           </span>
-          <code>{pad.error || overview.error}</code>
         </div>
       )}
 

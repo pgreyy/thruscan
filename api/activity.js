@@ -71,6 +71,13 @@ const cursorOf = (row) => `${row.slot}.${row.block_offset}`
 
 /* One row, named the way the browser wants it rather than the way the table
    stores it. The site should not have to know about column names. */
+/* rw and ro are JSON text in the database and arrays on the chain path. */
+function listOf(v) {
+  if (Array.isArray(v)) return v
+  if (typeof v !== 'string') return []
+  try { const a = JSON.parse(v); return Array.isArray(a) ? a : [] } catch { return [] }
+}
+
 function shape(row) {
   return {
     signature: row.signature,
@@ -82,6 +89,13 @@ function shape(row) {
     label: row.label,
     ok: !!Number(row.ok),
     error: Number(row.user_error) || Number(row.vm_error) || null,
+    /* The node's fee, as the string it sent; null for a row indexed before
+       fees were recorded. Never a default, because a fee of zero is a fact. */
+    fee: row.fee ?? null,
+    /* What a transfer's recipient and amount are read from. */
+    data: row.data ?? null,
+    rw: listOf(row.rw),
+    ro: listOf(row.ro),
     /* Nanoseconds, as a string, because the number is larger than JavaScript
        counts exactly. The browser divides it down to milliseconds. */
     time: row.block_time_ns == null ? null : String(row.block_time_ns),
@@ -251,6 +265,10 @@ async function queryChain({ kind, address, cursor, limit }) {
     user_error: r.userError,
     vm_error: r.vmError,
     block_time_ns: times.get(r.slot) ?? null,
+    fee: r.fee,
+    data: r.data,
+    rw: r.rw,
+    ro: r.ro,
   }))
 }
 

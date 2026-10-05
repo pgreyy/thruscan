@@ -17,7 +17,15 @@ CREATE TABLE IF NOT EXISTS activity (
   ok            INTEGER NOT NULL,
   user_error    INTEGER,
   vm_error      INTEGER,
-  block_time_ns TEXT
+  block_time_ns TEXT,
+  -- The node's fee for the transaction, as the decimal string it sent.
+  fee           TEXT,
+  -- The first 32 bytes of the instruction (base64), and the read-write and
+  -- read-only accounts it names (JSON arrays), so a row can say who paid whom
+  -- without going back to the chain.
+  data          TEXT,
+  rw            TEXT,
+  ro            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS activity_slot   ON activity( slot DESC, block_offset DESC );

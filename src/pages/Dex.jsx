@@ -799,28 +799,32 @@ function TokenPicker({ tokens, value, onChange, exclude, label, onAdded }) {
       </button>
 
       {open && (
-        <div className="picker-menu">
-          {tokens.filter((t) => t.mint !== exclude).map((t) => (
-            <button
-              key={t.mint}
-              className="picker-item"
-              onClick={() => { onChange(t.mint); setOpen(false) }}
-            >
-              <span className="picker-item-name">
-                <b>{t.ticker}</b>
-                <span className="fine mono">{t.native ? 'native coin' : short(t.mint)}</span>
-              </span>
-              <span className="mono fine">{fmt(t.balance, t.decimals)}</span>
-            </button>
-          ))}
-          {tokens.filter((t) => t.mint !== exclude).length === 0 && (
-            <p className="fine" style={{ padding: 10 }}>Nothing to pick yet.</p>
-          )}
-          <div className="picker-add">
-            <AddToken compact known={tokens.map((t) => t.mint)}
-              onAdded={(mint) => { onAdded?.(mint); onChange(mint); setOpen(false) }} />
+        <>
+          {/* Only drawn on a phone, where the menu is a sheet. */}
+          <button className="picker-scrim" aria-label="Close" tabIndex={-1} onClick={() => setOpen(false)} />
+          <div className="picker-menu">
+            {tokens.filter((t) => t.mint !== exclude).map((t) => (
+              <button
+                key={t.mint}
+                className="picker-item"
+                onClick={() => { onChange(t.mint); setOpen(false) }}
+              >
+                <span className="picker-item-name">
+                  <b>{t.ticker}</b>
+                  <span className="fine mono">{t.native ? 'native coin' : short(t.mint)}</span>
+                </span>
+                <span className="mono fine">{fmt(t.balance, t.decimals)}</span>
+              </button>
+            ))}
+            {tokens.filter((t) => t.mint !== exclude).length === 0 && (
+              <p className="fine" style={{ padding: 10 }}>Nothing to pick yet.</p>
+            )}
+            <div className="picker-add">
+              <AddToken compact known={tokens.map((t) => t.mint)}
+                onAdded={(mint) => { onAdded?.(mint); onChange(mint); setOpen(false) }} />
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -1630,12 +1634,7 @@ export function SwapPage() {
   const swapTab = (
     <div className="wrap wrap-top">
       {error && (
-        <RegistryDown what="pool" error={error}>
-          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            Wrapping THRU into WTHRU and unwrapping it again do not go through
-            the registry, so they still work. They are below.
-          </p>
-        </RegistryDown>
+        <RegistryDown what="pool" error={error} note="Wrapping and unwrapping THRU still work." />
       )}
       <SwapPanel {...shared} />
       {!error && pools.length === 0 && <EmptyPools loading={loading} />}
@@ -1648,7 +1647,7 @@ export function SwapPage() {
   const liquidityTab = (
     <div className="wrap wrap-top">
       {error
-        ? <RegistryDown what="pool" error={error} />
+        ? <RegistryDown what="pool" error={error} note="Adding liquidity needs it." />
         : pools.length > 0 ? (
           <>
             <Positions pools={pools} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
@@ -1660,12 +1659,12 @@ export function SwapPage() {
 
   const poolsTab = (
     <div className="wrap wrap-top">
-      {error && <RegistryDown what="pool" error={error} />}
+      {error && <RegistryDown what="pool" error={error} note="Pools cannot be listed until it reads again." />}
       <section className="card">
         <div className="card-head">
           <div>
             <h2 className="h2">Pools</h2>
-            <p className="sub">{data ? `${pools.length} of ${data.capacity} slots in use` : 'reading the chain'}</p>
+            <p className="sub">{data ? `${pools.length} of ${data.capacity} slots in use` : error ? 'registry unavailable' : 'reading the chain'}</p>
           </div>
         </div>
         {!error && data && pools.length === 0 && (
@@ -1852,18 +1851,19 @@ function EmptyPools({ loading }) {
  * launches is unreadable but every program behind them is untouched, so a
  * trade in a pool you already know about still goes through.
  */
-function RegistryDown({ what, error, children }) {
+function RegistryDown({ what, error, note }) {
   const missing = /not\s*found|does not exist|NOT_FOUND|no account/i.test(String(error ?? ''))
+  /* Two lines: what is wrong, and what that costs. The raw error is for
+     whoever is debugging, so it lives in the tooltip rather than on the page. */
   return (
-    <section className="card" style={{ borderColor: 'var(--bad-line)' }}>
-      <h2 className="h2" style={{ color: 'var(--bad)' }}>The {what} list could not be read</h2>
-      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+    <section className="down-note" role="status" title={String(error ?? '')}>
+      <b>{what[0].toUpperCase() + what.slice(1)} list unavailable</b>
+      <span>
         {missing
-          ? `The node says the ${what} registry account does not exist. That is one account, not the chain: nothing below has been deleted and no program has changed. Until it reads again this page cannot list what is in it.`
-          : `The node did not answer for the ${what} registry. This page retries every few seconds and will fill in by itself once it does.`}
-      </p>
-      {children}
-      <p className="fine" style={{ marginTop: 10, opacity: 0.75, wordBreak: 'break-word' }}>{String(error)}</p>
+          ? `The ${what} registry account is missing on chain.`
+          : `The node did not answer for the ${what} registry. Retrying.`}
+        {note ? ` ${note}` : ''}
+      </span>
     </section>
   )
 }
@@ -2474,14 +2474,7 @@ export function LaunchpadPage() {
           account, so while the node cannot read it a launch will not land
           either, and saying so beats a button that fails on press. */}
       {error && (
-        <RegistryDown what="launch" error={error}>
-          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            A launch is written into this same account, so it will not land
-            either until the node can read it. Tokens already launched are
-            untouched: their mints, their balances and their curves are
-            separate accounts.
-          </p>
-        </RegistryDown>
+        <RegistryDown what="launch" error={error} note="A new launch needs it too." />
       )}
       {!error && data && data.launches.length === 0 && (
         <section className="card"><p className="fine">Nothing has launched yet.</p></section>

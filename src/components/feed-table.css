@@ -1,0 +1,152 @@
+/* The activity table.
+ *
+ * The same language as Collections and the home page's tables: a white panel
+ * on the warm canvas, a hairline between rows, 12px muted headers, figures in
+ * mono and right-aligned. Wide, one row is eight columns. Narrow, the same
+ * cells are regrouped into two lines, so the phone layout is designed rather
+ * than squeezed: the markup puts the cells in two wrappers (.act-l1, .act-l2),
+ * which dissolve into the grid on a wide screen and become the two lines on a
+ * narrow one. */
+
+.act-panel {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  /* clip, not hidden: it rounds the corners without becoming a scroll
+     container, which would stop the header sticking. */
+  overflow: clip;
+}
+.act-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 18px 12px; background: var(--surface); }
+.act-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.act-filters { margin: 0; }
+
+.act-tr {
+  --act-cols: 84px minmax(110px, 1.5fr) 132px 112px 124px minmax(100px, 1fr) 72px 42px;
+  display: grid; grid-template-columns: var(--act-cols); column-gap: 12px; align-items: center;
+  min-height: 60px; box-sizing: border-box; padding: 8px 18px;
+  border-top: 1px solid var(--line); color: var(--ink); font-size: 14px; cursor: pointer;
+}
+.act-tr > * { min-width: 0; }
+.act-l1, .act-l2, .act-route { display: contents; }
+.act-arrow { display: none; }
+.act-tr:not(.act-head):not(.skel):hover { background: var(--soft); }
+
+/* Wide: every cell on one row, in its own column. */
+.act-event  { grid-row: 1; grid-column: 1; }
+.act-detail { grid-row: 1; grid-column: 2; }
+.act-hash   { grid-row: 1; grid-column: 3; }
+.act-from   { grid-row: 1; grid-column: 4; }
+.act-to     { grid-row: 1; grid-column: 5; }
+.act-amount { grid-row: 1; grid-column: 6; }
+.act-fee    { grid-row: 1; grid-column: 7; }
+.act-time   { grid-row: 1; grid-column: 8; }
+
+.act-head { position: sticky; top: calc(var(--bar-h, 56px) + env(safe-area-inset-top, 0px)); z-index: 5; min-height: 0; padding-top: 9px; padding-bottom: 9px; background: var(--surface); font-size: 12px; color: var(--muted); cursor: default; }
+@media (min-width: 900px) { .act-head { top: 64px; } }
+
+.act-event { display: flex; align-items: center; gap: 6px; }
+.act-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.act-hash { display: flex; align-items: center; gap: 4px; }
+.act-from, .act-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-from a, .act-to a { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--ink); text-decoration: none; }
+.act-hash a { color: var(--ink-2); text-decoration: none; }
+.act-from a:hover, .act-to a:hover, .act-hash a:hover { color: var(--signal); }
+.act-name { font-weight: 600; }
+.act-prog { color: var(--ink-2); }
+.act-tr .mono { font-size: 12.5px; }
+
+.act-amount { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.act-amounts-all { display: flex; flex-direction: column; align-items: flex-end; max-width: 100%; }
+.act-amounts-all > span, .act-amount-lead { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.act-amount-lead { display: none; }
+.act-in { color: var(--good); }
+.act-out { color: var(--ink); }
+.act-fee, .act-time { text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.act-none { color: var(--muted); }
+.act-head .act-amount, .act-head .act-fee, .act-head .act-time { font-family: inherit; font-size: 12px; align-items: flex-end; }
+
+.act-copy {
+  flex: 0 0 auto; display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.act-copy:hover { color: var(--ink); background: var(--hover); }
+.act-copy.done { color: var(--good); }
+
+/* A failed transaction: the badge goes red, the sentence goes quiet, and the
+   amount cell says nothing moved. */
+.act-tr.failed .act-detail { color: var(--muted); }
+.act-tr .feed-failed { margin: 0; font-size: 11px; }
+
+.act-pending, .skel i { display: inline-block; height: 10px; width: 56px; border-radius: 5px; background: var(--soft); }
+.skel .act-detail i { width: 70%; }
+.skel { cursor: default; }
+
+.act-note { padding: 18px; border-top: 1px solid var(--line); font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.act-note.bad { color: var(--ink-2); }
+.act-note.bad::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-right: 8px; vertical-align: 2px; }
+
+.act-more { display: block; width: calc(100% - 36px); margin: 12px 18px 16px; }
+
+/* Wide: a failed row has no room for the word beside its badge, so it goes
+   underneath. */
+@media (min-width: 760px) {
+  .act-tr.failed .act-event { flex-direction: column; align-items: flex-start; gap: 3px; }
+}
+
+/* A little narrower: the copy button goes, the columns tighten. The hash is
+   still a link, and so is the row. */
+@media (max-width: 999px) {
+  .act-tr { --act-cols: 74px minmax(96px, 1.4fr) 92px 92px 100px minmax(90px, 1fr) 58px 32px; column-gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .act-copy { display: none; }
+  .act-top { padding-left: 14px; padding-right: 14px; }
+}
+
+/* Room enough for a full figure such as -40,000 LUMEN. */
+@media (min-width: 860px) and (max-width: 999px) {
+  .act-tr { --act-cols: 74px minmax(96px, 1.2fr) 92px 92px 100px minmax(118px, 1fr) 58px 32px; }
+}
+
+/* Narrow: two lines.
+ *   line 1   badge, what happened ........ hash  time
+ *   line 2   from > to ............ amount  fee
+ * Every row is the same height, text is cut with an ellipsis rather than
+ * wrapped, and a tap anywhere on the row opens the transaction (the links
+ * inside are inert here so a thumb aimed at the row cannot land on one). */
+@media (max-width: 759px) {
+  .act-top { position: sticky; top: calc(var(--bar-h, 56px) + env(safe-area-inset-top, 0px)); z-index: 6; border-bottom: 1px solid var(--line); padding: 12px 14px 10px; gap: 8px 12px; }
+  .act-tr.act-head { display: none; }
+
+  .act-tr { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 11px 14px; min-height: 0; height: 68px; justify-content: center; }
+  .act-l1, .act-l2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .act-l1 { height: 22px; }
+  .act-l2 { height: 18px; font-size: 12.5px; }
+  .act-route { display: flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: 0; }
+  .act-arrow { display: inline; flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+  .act-event, .act-detail, .act-hash, .act-from, .act-to, .act-amount, .act-fee, .act-time { grid-row: auto; grid-column: auto; }
+
+  .act-event { flex: 0 0 auto; }
+  .act-detail { flex: 1 1 0; font-size: 14px; }
+  .act-hash { flex: 0 0 auto; }
+  .act-hash a { color: var(--muted); font-size: 11.5px; pointer-events: none; }
+  .act-copy { display: none; }
+  .act-time { flex: 0 0 auto; min-width: 26px; font-size: 12px; }
+  /* The sender is whole, the recipient gives way: a short name beside a long
+     program name should not be the one that is cut. */
+  .act-from { flex: 0 0 auto; max-width: 48%; }
+  .act-to { flex: 1 1 0; min-width: 0; }
+  .act-from a, .act-to a { pointer-events: none; font-size: 12.5px; }
+  .act-amount { flex: 0 0 auto; display: block; text-align: right; max-width: 52%; }
+  .act-amounts-all { display: none; }
+  .act-amount-lead { display: block; }
+  .act-fee { flex: 0 0 auto; font-size: 11.5px; }
+  .act-fee:not(:has(.act-none))::before { content: 'Fee '; }
+  /* No fee recorded: say nothing rather than put a second dash beside the amount. */
+  .act-fee:has(.act-none) { display: none; }
+
+  .act-more { width: calc(100% - 28px); margin: 12px 14px 14px; }
+  .act-note { padding: 16px 14px; }
+}
+
+/* The very narrowest phones keep the two things that are the row: what it was
+   and who it involved. The hash and the fee are on the transaction page. */
+@media (max-width: 359px) {
+  .act-hash, .act-fee { display: none; }
+}

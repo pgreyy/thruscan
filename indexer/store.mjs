@@ -15,6 +15,13 @@ import { dirname, join } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const SCHEMA = readFileSync(join(here, 'schema.sql'), 'utf8')
 
+/* Columns added after the first release. CREATE TABLE IF NOT EXISTS does not
+   touch a table that is already there, so a database from before them gets
+   each one added here. Rows written earlier keep null in them, and the site
+   treats null as "not recorded" rather than as zero. */
+const ADDED_COLUMNS = ['fee', 'data', 'rw', 'ro']
+const jsonOrNull = (v) => (Array.isArray(v) ? JSON.stringify(v) : null)
+
 export async function openStore({ url = process.env.DATABASE_URL, file = process.env.INDEX_DB || join(here, 'index.db') } = {}) {
   if (url) return openPostgres(url)
   return openSqlite(file)
@@ -27,11 +34,13 @@ async function openSqlite(file) {
   const db = new DatabaseSync(file)
   db.exec('PRAGMA journal_mode = WAL')
   db.exec(SCHEMA)
+  const have = new Set(db.prepare('PRAGMA table_info(activity)').all().map((c) => c.name))
+  for (const col of ADDED_COLUMNS) if (!have.has(col)) db.exec(`ALTER TABLE activity ADD COLUMN ${col} TEXT`)
 
   const insertActivity = db.prepare(
     `INSERT OR IGNORE INTO activity
-       ( signature, slot, block_offset, fee_payer, program, op, kind, label, ok, user_error, vm_error, block_time_ns )
-     VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
+       ( signature, slot, block_offset, fee_payer, program, op, kind, label, ok, user_error, vm_error, block_time_ns, fee, data, rw, ro )
+     VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )`,
   )
   const insertParticipant = db.prepare(
     'INSERT OR IGNORE INTO participant ( signature, address, writable ) VALUES ( ?, ?, ? )',
@@ -54,6 +63,7 @@ async function openSqlite(file) {
           insertActivity.run(
             r.signature, r.slot, r.blockOffset, r.feePayer, r.program,
             r.op, r.kind, r.label, r.ok, r.userError, r.vmError, r.blockTimeNs ?? null,
+            r.fee ?? null, r.data ?? null, jsonOrNull(r.rw), jsonOrNull(r.ro),
           )
           for (const p of r.participants) insertParticipant.run(r.signature, p.address, p.writable)
         }
@@ -87,6 +97,7 @@ async function openPostgres(url) {
   const pool = new pg.Pool({ connectionString: url })
   // The schema is written for SQLite; two spellings differ in Postgres.
   await pool.query(SCHEMA.replaceAll('INTEGER PRIMARY KEY CHECK', 'INTEGER PRIMARY KEY CHECK'))
+  for (const col of ADDED_COLUMNS) await pool.query(`ALTER TABLE activity ADD COLUMN IF NOT EXISTS ${col} TEXT`)
 
   return {
     kind: 'postgres',
@@ -106,10 +117,11 @@ async function openPostgres(url) {
         for (const r of rows) {
           await c.query(
             `INSERT INTO activity
-               ( signature, slot, block_offset, fee_payer, program, op, kind, label, ok, user_error, vm_error, block_time_ns )
-             VALUES ( $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12 )
+               ( signature, slot, block_offset, fee_payer, program, op, kind, label, ok, user_error, vm_error, block_time_ns, fee, data, rw, ro )
+             VALUES ( $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16 )
              ON CONFLICT ( signature ) DO NOTHING`,
-            [r.signature, r.slot, r.blockOffset, r.feePayer, r.program, r.op, r.kind, r.label, r.ok, r.userError, r.vmError, r.blockTimeNs ?? null],
+            [r.signature, r.slot, r.blockOffset, r.feePayer, r.program, r.op, r.kind, r.label, r.ok, r.userError, r.vmError, r.blockTimeNs ?? null,
+              r.fee ?? null, r.data ?? null, jsonOrNull(r.rw), jsonOrNull(r.ro)],
           )
           for (const p of r.participants) {
             await c.query(

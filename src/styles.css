@@ -245,6 +245,20 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 .wrap { max-width: 720px; margin: 0 auto; }
 .wrap-wide { max-width: 940px; margin: 0 auto; }
+/* Eight columns want more than the 940px the other tables get. */
+.wrap-wide.wrap-act { max-width: 1120px; }
+
+/* A registry or the chain cannot be read: one bold line and one plain one.
+   Shared by the Swap, Liquidity and Pools tabs and the home page, so a
+   failure reads the same wherever it lands. The raw error is a tooltip. */
+.down-note {
+  display: flex; flex-direction: column; gap: 3px;
+  margin: 0 0 var(--s-3); padding: 11px 14px; box-sizing: border-box;
+  background: var(--surface); border: 1px solid var(--bad-line); border-left: 3px solid var(--bad);
+  border-radius: var(--r-md); font-size: 13.5px; line-height: 1.5;
+}
+.down-note b { font-weight: 600; color: var(--bad); }
+.down-note span { color: var(--ink-2); }
 
 /* ---------- mobile chrome ----------
  *

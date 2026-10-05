@@ -105,6 +105,15 @@ export function innerCalls(data, accounts) {
   return out
 }
 
+/* How much of each transaction rides along with its row.
+ *
+ * The fee is the node's own, on every transaction. The instruction's first 32
+ * bytes carry the opcode and, for a transfer, the amount and both account
+ * indices, which is all a feed needs to say who paid whom. The accounts are
+ * what those indices point into. Proofs and long payloads stay on the chain. */
+export const KEEP_DATA_BYTES = 32
+export const KEEP_ACCOUNTS = 16
+
 export function makeDecoder(addresses) {
   const A = addresses
   const named = {
@@ -298,6 +307,11 @@ export function makeDecoder(addresses) {
       ok: userError === 0 && vmError === 0 ? 1 : 0,
       userError,
       vmError,
+      /* null when the node did not say, never a guess. */
+      fee: txn.fee == null ? null : String(txn.fee),
+      data: Buffer.from(data.subarray(0, KEEP_DATA_BYTES)).toString('base64'),
+      rw: rw.slice(0, KEEP_ACCOUNTS),
+      ro: ro.slice(0, KEEP_ACCOUNTS),
       participants: [
         { address: feePayer, writable: 1 },
         ...rw.map((a) => ({ address: a, writable: 1 })),
