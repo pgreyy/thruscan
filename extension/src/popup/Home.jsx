@@ -10,7 +10,10 @@ import {
 } from './ui.jsx'
 
 // Pixel Pals are sent through the collection's own program (see lib/chain.js).
-const PALS = { program: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH', mint: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr' }
+/* Pixel Pals, from whichever network the wallet is pointed at. Hardcoded here
+   until 5 October 2026, which meant a wallet on a second chain would offer to
+   send a Pal through the first chain's program. */
+import { networkFor } from '../lib/networks.js'
 
 /** The overview, refreshed every few seconds while the wallet is open. */
 export function useOverview() {
@@ -71,7 +74,8 @@ function useCurrentSite() {
   return { site, reload: load }
 }
 
-export function Home({ account, onLock }) {
+export function Home({ account, onLock, settings }) {
+  const net = networkFor(settings)
   const { data, error, reload } = useOverview()
   const { site, reload: reloadSite } = useCurrentSite()
   const act = useAction()
@@ -92,11 +96,17 @@ export function Home({ account, onLock }) {
   const assets = assetsOf(data)
   const tokens = assets.slice(1)
   const live = data?.exists
+  /* False only when the node did not answer at all, which is a different
+     problem from an address that is not on chain yet and must not be shown
+     as one. */
+  const reachable = data ? data.reachable !== false : !error
 
   const tiles = [
     { icon: 'send', label: 'Send', onClick: () => go('/send'), off: !live },
     { icon: 'receive', label: 'Receive', onClick: () => go('/receive') },
-    { icon: 'faucet', label: act.busy ? 'Claiming…' : 'Faucet', onClick: faucet, off: !live || act.busy },
+    /* No faucet on a network that has none, rather than a button that explains
+       itself only once pressed. */
+    { icon: 'faucet', label: act.busy ? 'Claiming…' : 'Faucet', onClick: faucet, off: !live || act.busy || !net.FAUCET_ACCOUNT },
     { icon: 'explorer', label: 'Explorer', href: `${EXPLORER}/account/${account.address}` },
   ]
   const [tab, setTab] = useState(() => sessionStorage.getItem('home-tab') || 'tokens')
@@ -124,9 +134,9 @@ export function Home({ account, onLock }) {
         <section className="hero">
           <div className="hero-top">
             <span>THRU balance</span>
-            <span className="hero-net"><i />Alphanet</span>
+            <span className="hero-net"><i />{net.label}</span>
           </div>
-          <b className="hero-amount">{data ? fmtUnits(data.thru) : '…'}</b>
+          <b className="hero-amount">{data && reachable ? fmtUnits(data.thru) : '…'}</b>
           <div className="hero-chips">
             {tokens.slice(0, 4).map((t) => <span key={t.key}>{t.ticker}</span>)}
             {tokens.length > 4 && <span>+{tokens.length - 4}</span>}
@@ -134,7 +144,22 @@ export function Home({ account, onLock }) {
           </div>
         </section>
 
-        {data && !live && (
+        {/* A node that does not answer. The balance used to sit on "…" for ever
+            here, which reads as the wallet being slow rather than the network
+            being unreachable, and on a network that is not live yet that is the
+            normal case rather than a rare one. */}
+        {(!reachable || (!data && error)) && (
+          <section className="card callout">
+            <b>Cannot reach {net.label}</b>
+            <p className="fine">
+              Nothing is wrong with your wallet or your key. The node at <span className="mono">{net.rpc}</span> is
+              not answering{net.id === 'mainnet' ? ', which is expected until Thru opens mainnet' : ''}. Change the
+              network in Settings, or wait and it will fill in by itself.
+            </p>
+          </section>
+        )}
+
+        {data && !live && reachable && (
           <section className="card callout">
             <b>Activate this address</b>
             <p className="fine">A new Thru address is written on chain once before it can hold anything. Free, and signed by you.</p>
@@ -274,7 +299,7 @@ function NftImage({ src, id, big = false }) {
   )
 }
 
-export function NftScreen({ account: nftAccount, me }) {
+export function NftScreen({ account: nftAccount, me, settings }) {
   const n = (nftCache ?? []).find((x) => x.account === nftAccount)
   const [to, setTo] = useState('')
   const [result, setResult] = useState(null)
@@ -287,6 +312,7 @@ export function NftScreen({ account: nftAccount, me }) {
       </div>
     )
   }
+  const PALS = networkFor(settings).pals
   const canSend = !n.listed && (n.authority === me || (n.mint === PALS.mint && n.authority === PALS.program))
   const send = () => act.run(async () => {
     const sig = await bg('sendNft', { account: nftAccount, to: to.trim() })
@@ -427,7 +453,7 @@ export function Receive({ account }) {
   )
 }
 
-export function Send() {
+export function Send({ settings }) {
   const { data } = useOverview()
   const assets = assetsOf(data)
   const [assetKey, setAssetKey] = useState('THRU')
@@ -487,7 +513,7 @@ export function Send() {
             <div><span>Sending</span><b>{amount} {asset.ticker}</b></div>
             <div><span>To</span><b className="mono">{resolved.name ?? short(resolved.address)}</b></div>
             {resolved.name && <div><span>Address</span><span className="mono fine">{short(resolved.address, 10)}</span></div>}
-            <div><span>Network</span><span>Thru alphanet</span></div>
+            <div><span>Network</span><span>{networkFor(settings).label}</span></div>
           </div>
           {asset.mint && <p className="fine">If the receiver has never held {asset.ticker}, this first opens their {asset.ticker} account, which is a second transaction you sign.</p>}
           <Notice>{act.error}</Notice>

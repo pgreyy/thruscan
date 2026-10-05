@@ -74,6 +74,7 @@ import {
   WORDLE_BOARD as WORDLE_BOARD_ADDR, G2048_BOARD as G2048_BOARD_ADDR,
   ID_REGISTRY as ID_REGISTRY_ADDR,
 } from './lib/addresses.js'
+import { network } from './lib/networks.js'
 
 const WALL_PROGRAM = WALL_PROGRAM_ADDR
 const WALL_ACCOUNT = WALL_ACCOUNT_ADDR
@@ -648,10 +649,15 @@ function NetworkStatus() {
 
   const pretty = height && !Number.isNaN(Number(height)) ? Number(height).toLocaleString() : height
 
+  /* The network's name comes from the build rather than from a string typed
+     here. It said "alphanet" for as long as this component existed, which was
+     true and would have gone on being displayed on the day it stopped being
+     true. A test network says so in a colour, because the one thing a trading
+     site must never do is look like money when it is not. */
   return (
-    <span className="status">
+    <span className={network.test ? 'status status-test' : 'status'} title={`${network.label}: ${network.rpc[0]?.url ?? ''}`}>
       <span className={height ? 'dot live' : 'dot'} />
-      {height ? `alphanet ${pretty}` : 'connecting'}
+      {height ? `${network.label.toLowerCase()} ${pretty}` : `${network.label.toLowerCase()} connecting`}
     </span>
   )
 }

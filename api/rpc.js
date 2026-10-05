@@ -33,6 +33,7 @@ import { createThruClient, Pubkey, Signature, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
 import { decodeConfig, decodeMarket, nftAccountFor, PALS_CONFIG, PALS_MARKET, PALS_NFT_MINT, PALS_PROGRAM, PALS_SITE } from '../src/lib/pals/chain.js'
 import { palsInOrder, toSvg } from '../src/lib/pals/art.js'
+import { rpcCandidates, network } from '../src/lib/networks.js'
 
 export const config = { runtime: 'nodejs', maxDuration: 30 }
 
@@ -42,16 +43,13 @@ export const config = { runtime: 'nodejs', maxDuration: 30 }
 // running node with --dns-result-order=ipv4first.
 dns.setDefaultResultOrder('ipv4first')
 
-// Ordered candidates. First one that answers a health check wins.
-// THRU_RPC_URL in Vercel env jumps the queue if Unto Labs moves hosts again.
-const CANDIDATES = [
-  ...(process.env.THRU_RPC_URL
-    ? [{ url: process.env.THRU_RPC_URL, protocol: process.env.THRU_RPC_PROTOCOL || 'grpc' }]
-    : []),
-  { url: 'https://rpc.alphanet.thru.org', protocol: 'grpc' },
-  { url: 'https://rpc.alphanet.thru.org', protocol: 'grpc-web' },
-  { url: 'https://grpc-web.alphanet.thru.org', protocol: 'grpc-web' },
-]
+/* Ordered candidates. First one that answers a health check wins.
+ *
+ * They come from the active network's own entry rather than from a list here,
+ * so a build cannot end up talking to one chain's node with another chain's
+ * addresses. THRU_RPC_URL still jumps the queue, which is what makes a moved
+ * host a dashboard change rather than a deploy. */
+const CANDIDATES = rpcCandidates()
 
 const PROBE_TIMEOUT_MS = 6000
 const CALL_TIMEOUT_MS = 10000
@@ -690,7 +688,14 @@ export default async function handler(req, res) {
   try {
     switch (action) {
       case 'endpoint':
-        return json(res, 200, { ok: true, endpoint }, { cacheSeconds: 30 })
+        /* The network name travels with the endpoint, because the two together
+           are the answer to "what is this build pointed at" and either one
+           alone has been misleading before. */
+        return json(res, 200, {
+          ok: true,
+          endpoint,
+          network: { id: network.id, label: network.label, test: network.test },
+        }, { cacheSeconds: 30 })
 
       case 'status': {
         const status = await withTimeout(client.node.getStatus(), CALL_TIMEOUT_MS)

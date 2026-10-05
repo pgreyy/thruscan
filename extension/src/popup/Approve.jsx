@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { bg, Notice, PasswordField, useAction, short } from './ui.jsx'
+import { networkFor } from '../lib/networks.js'
 
 const PROGRAM_NAMES = {
   taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr: 'Thru accounts (THRU transfer)',
@@ -50,6 +51,16 @@ function explain(program, dataHex) {
 }
 
 export function Approve({ id, state, onUnlocked }) {
+  const net = networkFor(state.settings)
+  /* The account was made on one network and this request is on another. The
+     key works on both, because a Thru address comes from the key rather than
+     from the chain, which is exactly why this is worth saying out loud: there
+     is nothing in the address itself to tell you that a wallet you have only
+     ever used for test money is about to sign on a real chain. Accounts made
+     before the wallet recorded this carry no network and get no warning,
+     because a warning shown to everybody is a warning nobody reads. */
+  const madeOn = state.account?.network
+  const elsewhere = Boolean(madeOn && madeOn !== net.id)
   const [req, setReq] = useState(undefined)
   const [showData, setShowData] = useState(false)
   const [password, setPassword] = useState('')
@@ -122,8 +133,14 @@ export function Approve({ id, state, onUnlocked }) {
             <div><span>Program</span><b>{PROGRAM_NAMES[p.program] ?? <span className="mono">{short(p.program, 8)}</span>}</b></div>
             {summary && <div><span>Does</span><b>{summary}</b></div>}
             <div><span>Fee</span><span>1 THRU at most</span></div>
-            <div><span>Network</span><span>Thru alphanet</span></div>
+            <div><span>Network</span><span>{net.label}{net.test ? ' (test)' : ''}</span></div>
           </div>
+        )}
+        {elsewhere && (
+          <p className="notice warn">
+            This account was made on {(networkFor({ network: madeOn }).label)}, and you are about to sign on {net.label}.
+            The same key works on both. Check this is the network you meant.
+          </p>
         )}
         {p.review && <p className="fine">The site describes it as: “{String(p.review).slice(0, 200)}”. Only the details above come from the transaction itself.</p>}
         {!PROGRAM_NAMES[p.program] && p.program && <p className="notice warn">A program ThruScan Wallet does not recognise. Only approve if you trust {host}.</p>}

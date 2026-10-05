@@ -48,12 +48,12 @@ export default function App() {
   }
 
   const nft = route.match(/^\/nft\/(.+)$/)
-  if (nft) return <NftScreen account={nft[1]} me={state.account.address} />
+  if (nft) return <NftScreen account={nft[1]} me={state.account.address} settings={state.settings} />
   const col = route.match(/^\/nfts\/(.+)$/)
   if (col) return <NftCollection mint={col[1]} me={state.account.address} />
 
   switch (route) {
-    case '/send': return <Send />
+    case '/send': return <Send settings={state.settings} />
     case '/receive': return <Receive account={state.account} />
     case '/activity': return <ActivityScreen account={state.account} />
     case '/sites': return <Sites />
@@ -64,6 +64,6 @@ export default function App() {
     case '/reveal/phrase': return <Reveal what="phrase" />
     case '/reveal/key': return <Reveal what="key" />
     case '/remove': return <Remove onGone={gone} />
-    default: return <Home account={state.account} onLock={lock} />
+    default: return <Home account={state.account} onLock={lock} settings={state.settings} />
   }
 }

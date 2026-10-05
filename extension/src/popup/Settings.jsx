@@ -5,11 +5,13 @@
 import { useState } from 'react'
 import { bg, go, Header, Notice, Copy, PasswordField, useAction, short } from './ui.jsx'
 import { PROGRAMS } from '../lib/chain.js'
+import { NETWORKS, networkFor } from '../lib/networks.js'
 
 export function Settings({ state, onLock, reload }) {
   const [minutes, setMinutes] = useState(String(state.settings.autoLockMinutes))
   const [rpc, setRpc] = useState(state.settings.rpc)
   const [saved, setSaved] = useState(null)
+  const active = networkFor(state.settings)
 
   const save = async (patch) => {
     await bg('setSettings', { settings: patch })
@@ -48,16 +50,47 @@ export function Settings({ state, onLock, reload }) {
           <button className="btn ghost" onClick={onLock}>Lock now</button>
         </section>
 
+        {/* Network.
+         *
+         * This was a text box holding an RPC address and nothing else, which
+         * made switching chains an act of faith: the node changed and the
+         * program addresses did not, so the wallet kept working and every
+         * balance it showed was read from the wrong place. Picking a network by
+         * name moves both together. The box is still here underneath for a node
+         * of your own, and it is labelled as what it is. */}
         <section className="card">
           <h2>Network</h2>
-          <label className="field">
-            <span>RPC address</span>
-            <div className="with-btn">
-              <input value={rpc} className="mono small" onChange={(e) => setRpc(e.target.value)} />
-              <button className="btn ghost small" disabled={!/^https?:\/\//.test(rpc)} onClick={() => save({ rpc: rpc.replace(/\/$/, '') })}>Save</button>
-            </div>
-          </label>
-          <button className="link" onClick={() => { setRpc('https://rpc.alphanet.thru.org'); save({ rpc: 'https://rpc.alphanet.thru.org' }) }}>Reset to Thru alphanet</button>
+          <div className="stack tight">
+            {Object.values(NETWORKS).map((n) => (
+              <button
+                key={n.id}
+                className={n.id === active.id ? 'btn' : 'btn ghost'}
+                onClick={() => { setRpc(n.rpc); save({ network: n.id, rpc: n.rpc }) }}
+              >
+                {n.label}{n.test ? ' (test)' : ''}
+              </button>
+            ))}
+          </div>
+          <p className="fine" style={{ marginTop: 10 }}>
+            {active.test
+              ? 'A test network. Nothing here is worth anything, and nothing here is a rehearsal for a key you would use on mainnet.'
+              : 'The real chain. Balances here are real.'}
+          </p>
+          <details style={{ marginTop: 10 }}>
+            <summary className="fine">Use my own node</summary>
+            <label className="field" style={{ marginTop: 8 }}>
+              <span>RPC address</span>
+              <div className="with-btn">
+                <input value={rpc} className="mono small" onChange={(e) => setRpc(e.target.value)} />
+                <button className="btn ghost small" disabled={!/^https?:\/\//.test(rpc)}
+                  onClick={() => save({ network: 'custom', rpc: rpc.replace(/\/$/, '') })}>Save</button>
+              </div>
+            </label>
+            <p className="fine">
+              A node of your own is assumed to be serving the same chain as {NETWORKS.alphanet.label.toLowerCase()},
+              because the wallet has no way to ask it which programs it carries.
+            </p>
+          </details>
         </section>
         <Notice kind="good">{saved}</Notice>
 

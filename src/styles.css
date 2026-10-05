@@ -318,6 +318,17 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
 .dot.live { background: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
 
+/* A test network wears a border so it cannot be mistaken for the real one at a
+   glance. Deliberately quiet: this is a permanent state on a page people read
+   all day, not a warning, and a loud one would be tuned out within a week and
+   then be worth nothing on the day it matters. */
+.status-test {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px 3px 8px;
+  color: var(--ink-soft, var(--muted));
+}
+
 /* ---------- type ---------- */
 
 .eyebrow {

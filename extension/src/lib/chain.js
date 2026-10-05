@@ -11,44 +11,38 @@ import {
   deriveProgramAddress, signMessage as sdkSignMessage,
 } from '@thru/sdk'
 
-export const DEFAULT_RPC = 'https://rpc.alphanet.thru.org'
+import { NETWORKS, DEFAULT_NETWORK, networkFor } from './networks.js'
+
+export const DEFAULT_RPC = NETWORKS[DEFAULT_NETWORK].rpc
 /* The site the wallet links out to. thruscan.xyz is the one that is indexed
    and the one on the store listing; the vercel.app address still works and is
    not what anybody should be shown. */
 export const EXPLORER = 'https://thruscan.xyz'
 
-export const PROGRAMS = {
-  EOA: 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr',
-  TOKEN: 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE',
-  NAME_SERVICE: 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG',
-  FAUCET: 'taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16',
-  // Thru's own NFT program. Its ABI is published on chain through the ABI
-  // manager; the layouts below were read from it and checked by minting and
-  // transferring on alphanet.
-  NFT: 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5',
-}
-const FAUCET_ACCOUNT = 'taTigKYAf5mNxUNUVXeXq1HQodKc07DBzF4Pl7tCi1iXxt'
-// Pixel Pals: its program is the collection's authority, so a Pal is sent
-// through that program's SEND, which checks that the signer holds it.
-export const PALS = {
-  program: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
-  config: 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv',
-  mint: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr',
-}
+/**
+ * The address set that belongs with a node URL.
+ *
+ * Every function here already takes the node it is talking to, so the
+ * addresses are looked up from that rather than held in a module-level
+ * constant. It is one line, and it is what makes it impossible to call one
+ * chain with another chain's accounts: there is no second place where the
+ * answer could be wrong.
+ */
+const net = (url) => networkFor({ rpc: url })
+
+/* Thru's own programs, which the runtime places at the same address on every
+   network. These are safe as constants, and are the only addresses here that
+   are, which is why everything else goes through net(url). */
+export const PROGRAMS = NETWORKS[DEFAULT_NETWORK].programs
 const FAUCET_MAX = 10_000n
 /* The chain's max_state_units_per_block. Read the live value with
    `thru feature-gates list`; see the note in buildSigned for why it matters. */
 export const MAX_STATE_UNITS = 8_192
-// The .id names root on Thru's name service.
-const NAMES_ROOT = 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
-// Tokens worth checking for on every wallet even before it has any history.
-/* tUSD was here and that mint no longer exists: the network was reset and it
-   was not recreated, because the launchpad prices everything in WTHRU now.
-   Listing a dead mint costs a lookup per wallet and shows a token nobody can
-   hold. */
-export const KNOWN_MINTS = [
-  'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb', // WTHRU
-]
+/* Tokens worth checking for on every wallet even before it has any history.
+   Per network, because a mint is a network's own account: tUSD used to be in
+   here and that mint no longer exists, and listing a dead mint costs a lookup
+   per wallet and shows a token nobody can hold. */
+const knownMints = (url) => [net(url).WTHRU_MINT].filter(Boolean)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -85,9 +79,16 @@ function concat(...parts) {
 export async function accountInfo(url, address) {
   try {
     const a = await client(url).accounts.get(address)
-    return { exists: true, balance: a.meta?.balance ?? 0n, nonce: a.meta?.nonce ?? 0n, data: a.data?.data ?? new Uint8Array(), owner: a.meta?.owner?.toThruFmt?.() ?? null }
-  } catch {
-    return { exists: false, balance: 0n, nonce: 0n, data: new Uint8Array(), owner: null }
+    return { exists: true, reachable: true, balance: a.meta?.balance ?? 0n, nonce: a.meta?.nonce ?? 0n, data: a.data?.data ?? new Uint8Array(), owner: a.meta?.owner?.toThruFmt?.() ?? null }
+  } catch (e) {
+    /* "This account is not on the chain" and "I could not reach the chain" are
+     * different answers, and this returned the first one for both until 5
+     * October 2026. That is how a wallet pointed at a node that was not
+     * answering showed a confident balance of zero and offered to activate an
+     * address it had never managed to look up. Only the node saying not_found
+     * means the account is absent; everything else means we do not know. */
+    const missing = /not[_ ]found|does not exist/i.test(String(e?.message ?? e))
+    return { exists: false, reachable: missing, balance: 0n, nonce: 0n, data: new Uint8Array(), owner: null }
   }
 }
 
@@ -143,7 +144,8 @@ export async function history(url, address, pageToken = null, { times: withTimes
 }
 
 /** A short label for a transaction, from this wallet's point of view. */
-export function describe(item, me) {
+export function describe(item, me, url = DEFAULT_RPC) {
+  const PALS = net(url).pals
   const d = Uint8Array.from(item.data ?? [])
   const dv = d.length >= 4 ? new DataView(d.buffer) : null
   const byMe = item.feePayer === me
@@ -165,7 +167,7 @@ export function describe(item, me) {
       return { label: ({ 1: 'Registered a name', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[dv?.getUint32(0, true)] ?? 'Name service' }
     case 'taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP':
       return { label: 'Wrapped THRU' }
-    case PALS.program:
+    case PALS.program || '\u0000':
       return { label: ({ 2: 'Minted a Pixel Pal', 3: byMe ? 'Sent a Pixel Pal' : 'Received a Pixel Pal', 6: 'Claimed a Pixel Pal prize' })[d[0]] ?? 'Pixel Pals' }
     case PROGRAMS.NFT:
       return { label: ({ 0: 'Created an NFT collection', 1: 'Minted an NFT', 2: byMe ? 'Sent an NFT' : 'Received an NFT', 3: 'Burned an NFT' })[dv?.getUint32(0, true)] ?? 'NFT program' }
@@ -232,6 +234,7 @@ async function nftMetadata(uri) {
 
 /** The NFTs this address holds, found the same way as its tokens. */
 export async function nfts(url, address) {
+  const PALS = net(url).pals
   const candidates = new Set()
   let page = null
   for (let i = 0; i < 3; i++) {
@@ -278,6 +281,7 @@ export async function nfts(url, address) {
 
 /** TRANSFER: [u32 2][nft u16][new owner u16][mint u16]. The current owner signs. */
 export async function sendNft(url, signer, nftAccount, to) {
+  const PALS = net(url).pals
   const n = decodeNft((await accountInfo(url, nftAccount)).data)
   if (!n || n.owner !== signer.address) throw new Error('This wallet does not hold that NFT.')
   if (to === signer.address) throw new Error('That is this wallet.')
@@ -321,7 +325,7 @@ export async function sendNft(url, signer, nftAccount, to) {
  * check; the well-known quote tokens are checked regardless.
  */
 export async function holdings(url, address) {
-  const candidates = new Set(await Promise.all(KNOWN_MINTS.map((m) => deriveTokenAccount(m, address))))
+  const candidates = new Set(await Promise.all(knownMints(url).map((m) => deriveTokenAccount(m, address))))
   let page = null
   for (let i = 0; i < 3; i++) {
     try {
@@ -347,7 +351,9 @@ export async function holdings(url, address) {
 /** name.id to an address: the name's `addr` record if set, else its owner. */
 export async function resolveName(url, input) {
   const name = String(input).trim().toLowerCase().replace(/\.id$/, '')
-  const digest = await sha256(concat(bytesOf(NAMES_ROOT), new TextEncoder().encode(name)))
+  const root = net(url).NAMES_ROOT
+  if (!root) throw new Error('Names are not available on this network.')
+  const digest = await sha256(concat(bytesOf(root), new TextEncoder().encode(name)))
   const domain = deriveProgramAddress({ programAddress: PROGRAMS.NAME_SERVICE, seed: digest }).address
   const info = await accountInfo(url, domain)
   if (!info.exists || info.data.length < 145) throw new Error(`${name}.id is not registered.`)
@@ -436,7 +442,33 @@ export async function sendInstruction(url, signer, args) {
  */
 export async function activate(url, signer) {
   const c = client(url)
-  const tx = await c.accounts.create({ publicKey: signer.address })
+  let tx
+  try {
+    tx = await c.accounts.create({ publicKey: signer.address })
+  } catch (e) {
+    /* "account already present in state trie ... request an EXISTING or
+     * UPDATING proof".
+     *
+     * This address has been on chain before and the chain has since compressed
+     * it: its data is still in the state trie but it is no longer in live
+     * state, so a read of it says "not found" while an attempt to create it
+     * says "already there". Both are true and together they are useless to
+     * anybody reading them.
+     *
+     * Waking a compressed account up is an instruction on Thru's System test
+     * program, which production bootstrap does not install, and a transaction
+     * carries a proof for its fee payer only, so there is no route to it from
+     * here. Say so, and say the one thing that does work. */
+    const m = String(e?.message ?? e)
+    if (/already[_ ]exists|already present in state trie/i.test(m)) {
+      throw new Error(
+        'This address has been used before and the chain has put it into cold storage. '
+        + 'It reads as empty and cannot be activated again, and only the Thru team can bring it back. '
+        + 'Add a new account and use that one.',
+      )
+    }
+    throw e
+  }
   tx.chainId = await c.chain.getChainId()
   const sig = await tx.sign(signer.privateKey)
   const signature = await submit(url, tx.toWire(), sig)
@@ -474,7 +506,9 @@ export async function claimThru(url, signer, amount = FAUCET_MAX) {
   dv.setUint32(0, 1, true)
   dv.setUint32(4, 2, true)
   dv.setBigUint64(8, amount > FAUCET_MAX ? FAUCET_MAX : amount, true)
-  return sendInstruction(url, signer, { program: PROGRAMS.FAUCET, readWrite: [FAUCET_ACCOUNT], data, computeUnits: 300_000, stateUnits: 1_024, memoryUnits: 10_000 })
+  const pot = net(url).FAUCET_ACCOUNT
+  if (!pot) throw new Error('There is no faucet on this network.')
+  return sendInstruction(url, signer, { program: PROGRAMS.FAUCET, readWrite: [pot], data, computeUnits: 300_000, stateUnits: 1_024, memoryUnits: 10_000 })
 }
 
 export async function sendThru(url, signer, to, amount) {

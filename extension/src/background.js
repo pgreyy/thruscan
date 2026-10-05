@@ -16,8 +16,9 @@ import { Pubkey, keys } from '@thru/sdk'
 import { open, openForEdit, resealWith, sealForEdit, b64, hex } from './lib/vault.js'
 import { newPhrase, accountFromPhrase, phraseProblem, phraseWords } from './lib/seed.js'
 import * as chain from './lib/chain.js'
+import { DEFAULT_NETWORK, networkFor, rpcFor } from './lib/networks.js'
 
-const DEFAULT_SETTINGS = { rpc: chain.DEFAULT_RPC, autoLockMinutes: 15 }
+const DEFAULT_SETTINGS = { network: DEFAULT_NETWORK, rpc: chain.DEFAULT_RPC, autoLockMinutes: 15 }
 const LOCK_ALARM = 'auto-lock'
 
 const local = {
@@ -55,6 +56,21 @@ async function settings() {
  */
 
 const rid = () => crypto.randomUUID().slice(0, 8)
+
+/* The network an account is born on.
+ *
+ * A Thru address comes from its key, so the same account exists on every
+ * network and nothing on chain records where it was first used. That is
+ * convenient and it is also the hazard: a wallet somebody has only ever used
+ * for test money looks identical to one they fund for real. Recording it here
+ * is what lets the approval window say "you made this on a test network and
+ * you are signing on mainnet" instead of leaving them to notice. Accounts made
+ * before this existed carry null and are never warned about, because a warning
+ * everybody sees is a warning nobody reads. */
+async function bornOn() {
+  return networkFor(await settings()).id
+}
+
 
 function upgrade(secret) {
   if (secret?.v === 2) return secret
@@ -115,7 +131,7 @@ async function publish(secret) {
   const list = []
   for (const a of secret.accounts) {
     const s = await signerFor(secret, a)
-    list.push({ id: a.id, name: a.name, address: s.address, kind: a.kind })
+    list.push({ id: a.id, name: a.name, address: s.address, kind: a.kind, network: a.network ?? null })
   }
   await local.set('accounts', list)
   const id = await local.get('active')
@@ -177,7 +193,7 @@ let line = Promise.resolve()
 function serial(fn) {
   const run = line.then(fn)
   line = run.then(async (sig) => {
-    if (typeof sig === 'string') await chain.waitFor((await settings()).rpc, sig, 8000)
+    if (typeof sig === 'string') await chain.waitFor(rpcFor(await settings()), sig, 8000)
   }).catch(() => {})
   return run
 }
@@ -267,7 +283,7 @@ async function fromSite(origin, method, params) {
       })
       if (!ok) throw new Error('The user rejected the transaction.')
       const s = await signer()
-      const url = (await settings()).rpc
+      const url = rpcFor(await settings())
       return serial(async () => {
         const { rawTransaction, signature } = await chain.buildSigned(url, s, {
           program: intent.program, readWrite: intent.readWrite, readOnly: intent.readOnly, data: intent.data,
@@ -295,7 +311,7 @@ async function fromSite(origin, method, params) {
 /* ---------- what the popup can ask for ---------- */
 
 async function fromPopup(msg) {
-  const url = (await settings()).rpc
+  const url = rpcFor(await settings())
   switch (msg.type) {
     case 'state': {
       const account = await local.get('account')
@@ -307,13 +323,13 @@ async function fromPopup(msg) {
       const problem = phraseProblem(msg.phrase)
       if (problem) throw new Error(problem)
       const seed = { id: rid(), phrase: phraseWords(msg.phrase).join(' ') }
-      return saveVault(msg.password, { v: 2, seeds: [seed], keys: [], accounts: [{ id: rid(), name: 'Account 1', kind: 'phrase', seed: seed.id, index: 0 }] })
+      return saveVault(msg.password, { v: 2, seeds: [seed], keys: [], accounts: [{ id: rid(), name: 'Account 1', kind: 'phrase', seed: seed.id, index: 0, network: await bornOn() }] })
     }
     case 'importKey': {
       const k = hex.decode(msg.privateKey)
       if (k.length !== 32) throw new Error('A Thru private key is 32 bytes: 64 hex characters.')
       const key = { id: rid(), privateKey: hex.encode(k) }
-      return saveVault(msg.password, { v: 2, seeds: [], keys: [key], accounts: [{ id: rid(), name: 'Account 1', kind: 'key', key: key.id }] })
+      return saveVault(msg.password, { v: 2, seeds: [], keys: [key], accounts: [{ id: rid(), name: 'Account 1', kind: 'key', key: key.id, network: await bornOn() }] })
     }
     case 'unlock': {
       const sealed = await local.get('vault')
@@ -340,7 +356,7 @@ async function fromPopup(msg) {
       if (!seed) throw new Error('This wallet has no recovery phrase to add accounts from. Create or import one.')
       const used = secret.accounts.filter((a) => a.kind === 'phrase' && a.seed === seed.id).map((a) => a.index ?? 0)
       const index = used.length ? Math.max(...used) + 1 : 0
-      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'phrase', seed: seed.id, index }
+      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'phrase', seed: seed.id, index, network: await bornOn() }
       secret.accounts.push(acc)
       await persist(secret)
       return switchTo(acc.id)
@@ -355,7 +371,7 @@ async function fromPopup(msg) {
       if (!seed) { seed = { id: rid(), phrase }; secret.seeds.push(seed) }
       const used = secret.accounts.filter((a) => a.kind === 'phrase' && a.seed === seed.id).map((a) => a.index ?? 0)
       const index = used.length ? Math.max(...used) + 1 : 0
-      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'phrase', seed: seed.id, index }
+      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'phrase', seed: seed.id, index, network: await bornOn() }
       secret.accounts.push(acc)
       await persist(secret)
       return switchTo(acc.id)
@@ -370,7 +386,7 @@ async function fromPopup(msg) {
       if (same) return switchTo(same.id)
       const key = { id: rid(), privateKey: hex.encode(k) }
       secret.keys.push(key)
-      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'key', key: key.id }
+      const acc = { id: rid(), name: (msg.name || '').trim().slice(0, 24) || nextName(secret), kind: 'key', key: key.id, network: await bornOn() }
       secret.accounts.push(acc)
       await persist(secret)
       return switchTo(acc.id)
@@ -411,6 +427,7 @@ async function fromPopup(msg) {
       return {
         address: account.address,
         exists: info.exists,
+        reachable: info.reachable,
         thru: info.balance.toString(),
         tokens: tokens.map((t) => ({ ...t, amount: t.amount.toString() })),
       }
@@ -420,7 +437,7 @@ async function fromPopup(msg) {
       const account = await local.get('account')
       if (!account) return null
       const info = await chain.accountInfo(url, account.address)
-      return { address: account.address, exists: info.exists, thru: info.balance.toString(), tokens: null }
+      return { address: account.address, exists: info.exists, reachable: info.reachable, thru: info.balance.toString(), tokens: null }
     }
     case 'nfts': {
       const account = await local.get('account')
@@ -437,7 +454,7 @@ async function fromPopup(msg) {
       const account = await local.get('account')
       if (!account) return { items: [], next: null }
       const h = await chain.history(url, account.address, msg.page ?? null)
-      return { next: h.next, items: h.items.map((i) => ({ ...i, ...chain.describe(i, account.address) })) }
+      return { next: h.next, items: h.items.map((i) => ({ ...i, ...chain.describe(i, account.address, url) })) }
     }
     case 'activate': return chain.activate(url, await signer())
     case 'faucet': {
