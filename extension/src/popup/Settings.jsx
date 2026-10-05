@@ -13,11 +13,44 @@ export function Settings({ state, onLock, reload }) {
   const [saved, setSaved] = useState(null)
   const active = networkFor(state.settings)
 
+  const [problem, setProblem] = useState(null)
+
   const save = async (patch) => {
+    setProblem(null)
     await bg('setSettings', { settings: patch })
     setSaved('Saved.')
     setTimeout(() => setSaved(null), 1400)
     reload()
+  }
+
+  /**
+   * Save a node of the user's own, after asking Chrome for permission to talk
+   * to it.
+   *
+   * An extension reaches a host it has permission for, or a host that allows
+   * it by its own CORS headers. Thru's nodes do the second, which is why this
+   * box has worked at all; a node that does not would simply fail, and the
+   * failure would look like the node being down. So the permission is declared
+   * as optional and asked for here, on the click, which is the only moment it
+   * can be asked for: nobody should grant a wallet every site on the web on
+   * the day they install it for a box most people will never open.
+   *
+   * A refusal is not fatal and is not treated as one. The node may well allow
+   * it anyway, so the address is saved either way and the wallet says what it
+   * does not know.
+   */
+  const saveCustom = async () => {
+    setProblem(null)
+    let origin
+    try { origin = new URL(rpc).origin + '/*' } catch { setProblem('That is not a web address.'); return }
+    let granted
+    try {
+      granted = await chrome.permissions.request({ origins: [origin] })
+    } catch { /* asked in the wrong context; carry on and let the node decide */ }
+    await save({ network: 'custom', rpc: rpc.replace(/\/$/, '') })
+    if (!granted) {
+      setProblem('Saved. Chrome was not given access to that address, so it will only work if the node allows it. If the wallet cannot reach it, come back and allow access.')
+    }
   }
 
   return (
@@ -74,7 +107,7 @@ export function Settings({ state, onLock, reload }) {
           <p className="fine" style={{ marginTop: 10 }}>
             {active.test
               ? 'A test network. Nothing here is worth anything, and nothing here is a rehearsal for a key you would use on mainnet.'
-              : 'The real chain. Balances here are real.'}
+              : 'Thru has not opened mainnet yet, so nothing will load while this is selected. It is here so the wallet is ready the day they do.'}
           </p>
           <details style={{ marginTop: 10 }}>
             <summary className="fine">Use my own node</summary>
@@ -83,15 +116,17 @@ export function Settings({ state, onLock, reload }) {
               <div className="with-btn">
                 <input value={rpc} className="mono small" onChange={(e) => setRpc(e.target.value)} />
                 <button className="btn ghost small" disabled={!/^https?:\/\//.test(rpc)}
-                  onClick={() => save({ network: 'custom', rpc: rpc.replace(/\/$/, '') })}>Save</button>
+                  onClick={saveCustom}>Save</button>
               </div>
             </label>
             <p className="fine">
-              A node of your own is assumed to be serving the same chain as {NETWORKS.alphanet.label.toLowerCase()},
-              because the wallet has no way to ask it which programs it carries.
+              Chrome will ask whether the wallet may talk to that address. A node of your own is assumed to be
+              serving the same chain as {NETWORKS.alphanet.label.toLowerCase()}, because the wallet has no way to
+              ask it which programs it carries.
             </p>
           </details>
         </section>
+        <Notice>{problem}</Notice>
         <Notice kind="good">{saved}</Notice>
 
         <section className="card">

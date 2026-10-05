@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ThruScan Wallet",
   "short_name": "ThruScan",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "A self-custody wallet for the Thru network. Your keys stay in your browser, encrypted with your password.",
   "icons": {
     "16": "icons/icon16.png",
@@ -30,6 +30,7 @@
   "host_permissions": [
     "https://thruscan.xyz/*",
     "https://rpc.alphanet.thru.org/*",
+    "https://rpc.betanet.thru.org/*",
     "https://thruscan.vercel.app/*"
   ],
   "content_scripts": [
@@ -63,5 +64,8 @@
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
   "minimum_chrome_version": "111",
-  "homepage_url": "https://thruscan.vercel.app"
+  "homepage_url": "https://thruscan.xyz",
+  "optional_host_permissions": [
+    "https://*/*"
+  ]
 }
