@@ -403,7 +403,12 @@ export function WalletPill() {
       {!hasWallet() ? (
         <>
           <button className="wallet-pill" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-            <span className="pill-strong">Connect wallet</span>
+            {/* The short form is for narrow phones, where the bar has room
+                for one word beside the search field. */}
+            <span className="pill-strong pill-connect">
+              <span className="pill-connect-long">Connect wallet</span>
+              <span className="pill-connect-short">Connect</span>
+            </span>
           </button>
           {open && <ConnectMenu onClose={() => setOpen(false)} />}
         </>

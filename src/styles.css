@@ -178,6 +178,18 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 .brand-name { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; white-space: nowrap; }
 
+/* The wordmark: the mark and the name as one unit (components/Wordmark.jsx). */
+.wordmark { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); }
+.wordmark-name { font-weight: 700; letter-spacing: -0.035em; white-space: nowrap; }
+.wordmark-md .brand-mark { width: 30px; height: 30px; font-size: 15px; }
+.wordmark-md .wordmark-name { font-size: 19px; }
+.wordmark-lg .brand-mark { width: 34px; height: 34px; border-radius: 9px; font-size: 17px; }
+.wordmark-lg .wordmark-name { font-size: 26px; }
+@media (max-width: 440px) {
+  .wordmark-lg .brand-mark { width: 30px; height: 30px; font-size: 15px; }
+  .wordmark-lg .wordmark-name { font-size: 22px; }
+}
+
 .nav-toggle {
   display: grid;
   place-items: center;
@@ -234,23 +246,36 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .wrap { max-width: 720px; margin: 0 auto; }
 .wrap-wide { max-width: 940px; margin: 0 auto; }
 
-/* ---------- mobile chrome ---------- */
+/* ---------- mobile chrome ----------
+ *
+ * One bar, three controls: the mark (which is the menu), the search field and
+ * the wallet button. They share one height, one radius and one centre line,
+ * and every size below comes from these tokens so the three cannot drift
+ * apart again. The wallet button lives in a fixed portal rather than in the
+ * bar's markup; it reads the same tokens to sit in the bar's right-hand slot,
+ * and the bar reserves that slot (its measured width, --pill-w) so the search
+ * field can never run underneath it. */
+:root {
+  --bar-h: 56px;      /* the bar, not counting the safe-area inset above it */
+  --bar-x: 12px;      /* side padding */
+  --bar-gap: 8px;     /* between controls */
+  --ctl-h: 40px;      /* every control in the bar */
+  --ctl-r: 10px;      /* and its corners */
+  --ctl-pad: 4px;     /* inset of the search button inside its field */
+}
 
 .topbar .theme-switch { margin-left: 6px; }
 .topbar .theme-menu { left: 0; right: auto; }
 .topbar {
-  /* Leaves the wallet button's width free (measured in App.jsx) plus a real
-     gap. At exactly the button's width the icons finished one pixel inside
-     it, which is not a collision anybody would name but is what makes a bar
-     look badly made. */
-  padding-right: calc(var(--pill-w, 150px) + 26px) !important;
   position: sticky;
   top: 0;
   z-index: 20;
+  box-sizing: border-box;
+  height: calc(var(--bar-h) + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--bar-gap);
+  padding: env(safe-area-inset-top, 0px) calc(var(--pill-w, var(--ctl-h)) + var(--bar-x) + var(--bar-gap)) 0 var(--bar-x);
   background: var(--glass);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
@@ -264,23 +289,62 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
   background: transparent;
   padding: 0;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border-radius: var(--ctl-r);
+  display: grid;
+  place-items: center;
 }
-.topbar-mark .brand-mark { margin: 0; }
+.topbar-mark .brand-mark { margin: 0; width: 100%; height: 100%; border-radius: var(--ctl-r); font-size: 16px; }
 
 /* Search takes whatever is left, and is allowed to get quite small: even a
    narrow field is somewhere to paste a contract address into. */
-.topbar-search { flex: 1 1 auto; min-width: 0; }
-.topbar-search .home-search { margin: 0; width: 100%; }
+.topbar-search { flex: 1 1 auto; min-width: 0; display: flex; }
+.topbar-search .home-search {
+  box-sizing: border-box;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  height: var(--ctl-h);
+  padding: var(--ctl-pad);
+  border-radius: var(--ctl-r);
+  align-items: stretch;
+}
+.topbar-search .home-search input { padding: 0 8px; }
+/* Square, and inset by the same --ctl-pad on all four sides: the field's
+   inner height is --ctl-h less its 1px borders and the padding. */
+.topbar-search .home-search button {
+  width: calc(var(--ctl-h) - 2px - 2 * var(--ctl-pad));
+  border-radius: calc(var(--ctl-r) - var(--ctl-pad));
+}
 .topbar-right { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
 
-@media (max-width: 380px) {
-  .topbar { gap: 6px; padding-left: 10px; }
-  .topbar-right { gap: 0; }
+/* The wallet button, in the bar's right-hand slot. */
+@media (max-width: 899px) {
+  .wallet-pill-mount {
+    /* The bar's 1px bottom border is inside --bar-h, so its centre line is
+       half a pixel above the middle of the box. */
+    top: calc(env(safe-area-inset-top, 0px) + (var(--bar-h) - 1px - var(--ctl-h)) / 2);
+    right: var(--bar-x);
+  }
+  .wallet-pill {
+    box-sizing: border-box;
+    height: var(--ctl-h);
+    min-width: var(--ctl-h);
+    padding: 0 12px;
+    border-radius: var(--ctl-r);
+    justify-content: center;
+  }
 }
-
-
+.pill-connect-short { display: none; }
+@media (max-width: 413px) {
+  /* Avatar only, so a square. */
+  .wallet-pill:has(.pfp) { width: var(--ctl-h); padding: 0; }
+  /* With no wallet the label is the button, so it stays, in one word. */
+  .wallet-pill .pill-strong.pill-connect { display: inline; }
+  .pill-connect-long { display: none; }
+  .pill-connect-short { display: inline; }
+}
 
 /* Desktop overrides live AFTER the mobile rules on purpose. These selectors
    have the same specificity as the ones above, so source order decides the

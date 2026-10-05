@@ -3,7 +3,9 @@ import { Analytics } from '@vercel/analytics/react'
 import { CloudflareBeacon, usePageViews } from './components/Counters.jsx'
 import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
-import { SwapPage, LaunchpadPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
+import { SwapPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
+import { MarketHome } from './pages/Market.jsx'
+import { Wordmark } from './components/Wordmark.jsx'
 import { WalletPage, useWallet } from './pages/Wallet.jsx'
 import { EXTENSION_URL, EXTENSION_IS_EXTERNAL } from './lib/external.js'
 import { NamesPage } from './pages/Names.jsx'
@@ -798,9 +800,8 @@ function Shell({ children }) {
 
       <nav className="rail" data-open={open}>
         <div className="rail-top">
-          <Link to="/" className="brand" onClick={follow}>
-            <span className="brand-mark">T</span>
-            <span className="brand-name">ThruScan</span>
+          <Link to="/" className="brand" onClick={follow} aria-label="ThruScan home">
+            <Wordmark />
           </Link>
           <button className="nav-toggle" onClick={toggle} aria-label="Collapse menu">
             <Icon name="panel" size={18} />
@@ -2981,10 +2982,9 @@ function HomeRoute() {
     else if (q.get('tab')) navigate(`/explorer?tab=${q.get('tab')}`, { replace: true })
   }, [navigate])
 
-  /* The launchpad, on its own. A feed sat under it for a day and it was the
-     same list as /activity one click away, which made the front page longer
-     without making it say more. */
-  return <LaunchpadPage />
+  /* The launchpad as a market: the numbers, the tokens by size, the newest,
+     and what just happened, each with a state for when the chain is down. */
+  return <MarketHome />
 }
 
 /* Everything ThruScan built before it was a launchpad.

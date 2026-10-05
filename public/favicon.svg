@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="17" fill="#16181d"/>
-  <text x="32" y="33" fill="#f1f0ed" font-family="'JetBrains Mono','SF Mono',ui-monospace,monospace"
-        font-size="36" font-weight="700" text-anchor="middle" dominant-baseline="central">T</text>
+  <!-- The T is drawn rather than typeset, so it looks the same in every
+       browser whatever fonts the machine has. -->
+  <path d="M17 16h30v8H36.5v24h-9V24H17z" fill="#f1f0ed"/>
 </svg>

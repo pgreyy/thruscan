@@ -266,7 +266,7 @@ function Execute({ program, needs, buildWith, cli, label, spend, onDone }) {
   )
 }
 
-function NotLive({ what }) {
+export function NotLive({ what }) {
   return (
     <section className="card">
       <h2 className="h2">{what} is not connected yet</h2>
@@ -284,7 +284,7 @@ function NotLive({ what }) {
  * bytes per pool. The name lives in the mint account, where the token program
  * put it, so the page fetches it rather than the chain duplicating it.
  */
-function useChainData(registry, decode, vaultsOf, mintsOf) {
+export function useChainData(registry, decode, vaultsOf, mintsOf) {
   const [state, setState] = useState({ loading: true, error: null, data: null, balances: {}, tickers: {}, decimals: {} })
 
   /* `quiet` is a poll rather than a first load. It leaves the last good data
@@ -471,7 +471,7 @@ function randomSeed() {
  *
  * The commands are still there, under a fold, for anyone who prefers them.
  */
-function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) {
+export function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunched }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
   const fileRef = useRef(null)
@@ -1962,14 +1962,14 @@ function CurveChart({ vq, vt, tokensSold, symbol, quote }) {
  * to be full-width rows a hundred pixels tall, which fit four on a screen and
  * told you no more than these do at a fifth of the size.
  */
-function marketCap(launch, quoteDecimals) {
+export function marketCap(launch, quoteDecimals) {
   const vq = Number(launch.vq), vt = Number(launch.vt), sold = Number(launch.tokensSold)
   if (!(vt > 0)) return null
   return (vq / vt) * (vt + sold) / 10 ** quoteDecimals
 }
 
 /** 1,234 -> 1.2K, 1,200,000 -> 1.2M. A market cap is read, not counted. */
-function compactNumber(n) {
+export function compactNumber(n) {
   if (n === null || !isFinite(n)) return '–'
   const abs = Math.abs(n)
   if (abs >= 1e9) return `${(n / 1e9).toFixed(abs >= 1e10 ? 0 : 2)}B`

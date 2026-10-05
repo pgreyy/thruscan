@@ -4,7 +4,7 @@
 // then the newest blocks and transactions side by side, refreshed every few
 // seconds. Everything is read live from alphanet.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import { describe, timeAgo } from '../lib/activity.js'
@@ -87,10 +87,45 @@ function useCounts() {
 
 /* ---------- search ---------- */
 
+/* Longest first. A compact field shows the longest of these that fits its
+   own width, so the hint is never cut off mid-word, whether the field is a
+   300px slot in the desktop bar or what is left of a 320px phone. */
+const HINTS = [
+  `Token, address, transaction or name.${ROOT_SUFFIX}`,
+  'Search tokens, wallets, txs',
+  'Tokens, wallets, txs',
+  'Search',
+]
+
+let measureCtx = null
+function useFittedHint(inputRef, enabled) {
+  const [hint, setHint] = useState(HINTS[0])
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!enabled || !el) return undefined
+    const fit = () => {
+      const cs = getComputedStyle(el)
+      const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      if (!(room > 0)) return
+      measureCtx ??= document.createElement('canvas').getContext('2d')
+      measureCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+      setHint(HINTS.find((h) => measureCtx.measureText(h).width <= room) ?? HINTS[HINTS.length - 1])
+    }
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    fit()
+    document.fonts?.ready?.then(fit)
+    return () => ro.disconnect()
+  }, [inputRef, enabled])
+  return hint
+}
+
 export function Search({ compact = false }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [q, setQ] = useState('')
+  const inputRef = useRef(null)
+  const hint = useFittedHint(inputRef, compact)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -144,9 +179,11 @@ export function Search({ compact = false }) {
   return (
     <form className={`home-search${compact ? ' compact' : ''}`} onSubmit={go}>
       <input
+        ref={inputRef}
         value={q}
         onChange={(e) => { setQ(e.target.value); setError(null) }}
-        placeholder={`Token, address, transaction or name.${ROOT_SUFFIX}`}
+        placeholder={hint}
+        aria-label={HINTS[0]}
         spellCheck={false}
         autoComplete="off"
       />
