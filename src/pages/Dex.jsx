@@ -842,7 +842,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const mintKey = pools.flatMap((p) => [p.mintA, p.mintB]).concat(custom).join(',')
   useEffect(() => {
     if (!wallet.address) return
-    wallet.refresh([...new Set([...pools.flatMap((p) => [p.mintA, p.mintB]), ...custom])])
+    wallet.refresh([...new Set([WTHRU_MINT, ...pools.flatMap((p) => [p.mintA, p.mintB]), ...custom])])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mintKey, wallet.address])
 
@@ -870,8 +870,36 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
       mint: THRU, ticker: 'THRU', decimals: 0,
       balance: wallet.native ?? 0n, known: true, native: true,
     }
+
+    /* WTHRU, always, whether or not a pool mentions it.
+     *
+     * THRU to WTHRU is a wrap, not a trade: it goes straight to the WTHRU
+     * program and needs no pool, no reserves and no registry read at all. It
+     * is also the first thing most people want, because every pool and every
+     * launch is priced in WTHRU.
+     *
+     * The list used to be built out of the pools alone, so when the registry
+     * could not be read there was nothing to pick, and the one operation still
+     * working was the one you could not reach. Its name and scale are written
+     * here rather than read from the mint for the same reason: a wrap must not
+     * depend on a read that can fail. */
+    if (!seen.has(WTHRU_MINT)) {
+      const row = wallet.balances?.[WTHRU_MINT]
+      seen.set(WTHRU_MINT, {
+        mint: WTHRU_MINT,
+        ticker: 'WTHRU',
+        decimals: displayDecimals(WTHRU_MINT),
+        balance: row?.amount ?? 0n,
+        /* With no wallet there is nothing to look up, so zero is the answer
+           rather than a pending one. THRU reads the same way, and the two
+           sitting side by side as "0" and "—" looked like one of them had
+           failed. */
+        known: !wallet.address || row !== undefined,
+      })
+    }
+
     return [thru, ...seen.values()]
-  }, [pools, tickers, wallet.balances, wallet.tickers, wallet.native, custom])
+  }, [pools, tickers, wallet.balances, wallet.tickers, wallet.native, wallet.address, custom])
 
   const [fromMint, setFromMint] = useState(null)
   const [toMint, setToMint] = useState(null)
@@ -880,16 +908,30 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
 
-  // Open on the pair the wallet can actually trade, so the first thing you see
-  // is something you could do rather than something you cannot.
+  /* Open on the pair the wallet can actually trade, so the first thing you see
+     is something you could do rather than something you cannot. Balances decide
+     which pair that is. They must not decide whether the page works at all.
+
+     Waiting for every balance to be known was unbounded: with no wallet they
+     are never known, and with a wallet whose reads are failing they are never
+     known either, so both pickers sat on "Select" for ever and the page read
+     as hung. The wait now has an end. After it, open on whatever is sensible
+     with what is known, which with no pools is THRU to WTHRU: the one trade
+     that needs nothing read. */
+  const [waited, setWaited] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setWaited(true), 2500)
+    return () => clearTimeout(t)
+  }, [])
+
   useEffect(() => {
     if (fromMint || tokens.length < 2) return
-    if (!tokens.every((t) => t.known)) return    // wait, rather than guess
+    if (wallet.address && !waited && !tokens.every((t) => t.known)) return
     const held = tokens.find((t) => t.balance > 0n) ?? tokens[0]
     const other = tokens.find((t) => t.mint !== held.mint)
     setFromMint(held.mint)
     setToMint(other?.mint ?? null)
-  }, [tokens, fromMint])
+  }, [tokens, fromMint, wallet.address, waited])
 
   const from = tokens.find((t) => t.mint === fromMint)
   const to = tokens.find((t) => t.mint === toMint)
@@ -1577,28 +1619,48 @@ export function SwapPage() {
   const pools = data?.pools ?? []
   const shared = { pools, balances, tickers, decimalsOf, reload }
 
+  /* The panel is always on the page.
+   *
+   * It used to appear only once the pool registry had been read, so a failed
+   * read of one account left nothing but an error line, and the page looked
+   * broken rather than short of pools. It is not short of everything: THRU to
+   * WTHRU is a wrap straight through Thru's own WTHRU program, with no pool, no
+   * reserves and no registry in the path, and it works whatever the registry
+   * says. Hiding the panel hid that. */
   const swapTab = (
     <div className="wrap wrap-top">
-      {error && <p className="notice bad">Could not read the pool registry. It may be mid-reset.</p>}
-      {pools.length > 0
-        ? <SwapPanel {...shared} />
-        : !error && <EmptyPools loading={loading} />}
+      {error && (
+        <RegistryDown what="pool" error={error}>
+          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+            Wrapping THRU into WTHRU and unwrapping it again do not go through
+            the registry, so they still work. They are below.
+          </p>
+        </RegistryDown>
+      )}
+      <SwapPanel {...shared} />
+      {!error && pools.length === 0 && <EmptyPools loading={loading} />}
     </div>
   )
 
+  /* Liquidity genuinely does need the registry: you cannot add to a pool the
+     page cannot name. So this one says so and stops, rather than drawing a
+     form whose every field would be empty. */
   const liquidityTab = (
     <div className="wrap wrap-top">
-      {pools.length > 0 ? (
-        <>
-          <Positions pools={pools} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
-          <LiquidityPanel {...shared} />
-        </>
-      ) : <EmptyPools loading={loading} />}
+      {error
+        ? <RegistryDown what="pool" error={error} />
+        : pools.length > 0 ? (
+          <>
+            <Positions pools={pools} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
+            <LiquidityPanel {...shared} />
+          </>
+        ) : <EmptyPools loading={loading} />}
     </div>
   )
 
   const poolsTab = (
     <div className="wrap wrap-top">
+      {error && <RegistryDown what="pool" error={error} />}
       <section className="card">
         <div className="card-head">
           <div>
@@ -1772,6 +1834,36 @@ function EmptyPools({ loading }) {
           ? 'Reading the chain.'
           : 'Nothing listed yet.'}
       </p>
+    </section>
+  )
+}
+
+/**
+ * One registry could not be read, said plainly, above a page that still works.
+ *
+ * This used to be the whole page: an error line replaced the interface, so a
+ * failed read of one account looked like the site being down, and the
+ * operations that need no registry at all went with it. They do not any more.
+ * The banner says which list is missing and what is still possible, and the
+ * buttons below it stay where they were.
+ *
+ * `missing` is the common case and worth its own words. A registry is one
+ * account; when the node answers that it does not exist, the list of pools or
+ * launches is unreadable but every program behind them is untouched, so a
+ * trade in a pool you already know about still goes through.
+ */
+function RegistryDown({ what, error, children }) {
+  const missing = /not\s*found|does not exist|NOT_FOUND|no account/i.test(String(error ?? ''))
+  return (
+    <section className="card" style={{ borderColor: 'var(--bad-line)' }}>
+      <h2 className="h2" style={{ color: 'var(--bad)' }}>The {what} list could not be read</h2>
+      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+        {missing
+          ? `The node says the ${what} registry account does not exist. That is one account, not the chain: nothing below has been deleted and no program has changed. Until it reads again this page cannot list what is in it.`
+          : `The node did not answer for the ${what} registry. This page retries every few seconds and will fill in by itself once it does.`}
+      </p>
+      {children}
+      <p className="fine" style={{ marginTop: 10, opacity: 0.75, wordBreak: 'break-word' }}>{String(error)}</p>
     </section>
   )
 }
@@ -2363,7 +2455,7 @@ export function LaunchpadPage() {
       <div className="page-head pad-head">
         <h1 className="h1">Launchpad</h1>
         <div className="inline">
-          {!creating && <button className="btn" onClick={() => setCreating(true)}>Create a token</button>}
+          {!creating && !error && <button className="btn" onClick={() => setCreating(true)}>Create a token</button>}
         </div>
       </div>
 
@@ -2377,7 +2469,20 @@ export function LaunchpadPage() {
         />
       )}
 
-      {error && <p className="notice bad" style={{ marginTop: 12 }}>Could not read the launch registry. It may be mid-reset.</p>}
+      {/* The error is a banner now, not the page, and it says what it costs
+          rather than guessing at a cause. A launch writes into this same
+          account, so while the node cannot read it a launch will not land
+          either, and saying so beats a button that fails on press. */}
+      {error && (
+        <RegistryDown what="launch" error={error}>
+          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
+            A launch is written into this same account, so it will not land
+            either until the node can read it. Tokens already launched are
+            untouched: their mints, their balances and their curves are
+            separate accounts.
+          </p>
+        </RegistryDown>
+      )}
       {!error && data && data.launches.length === 0 && (
         <section className="card"><p className="fine">Nothing has launched yet.</p></section>
       )}
