@@ -139,7 +139,7 @@ function Row({ item, names, extra }) {
     <div role="row" className={`act-tr${item.ok ? '' : ' failed'}`} onClick={open}>
       <div className="act-l1">
         <span role="cell" className="act-event">
-          <span className={`feed-tag feed-${tone}`}>{EVENT_WORD[item.kind] ?? item.kind}</span>
+          <span className={`feed-tag feed-${tone}`} title={item.ok ? 'Succeeded' : 'Failed'}>{EVENT_WORD[item.kind] ?? item.kind}</span>
           {!item.ok && <span className="feed-failed">Failed</span>}
         </span>
         <span role="cell" className="act-detail" title={detail}>{detail}</span>

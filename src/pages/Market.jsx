@@ -281,7 +281,7 @@ export function MarketHome() {
   if (!THRUPAD_PROGRAM || !THRUPAD_REGISTRY) {
     return (
       <div className="wrap-wide">
-        <div className="mk-head"><Wordmark size="lg" /></div>
+        <div className="mk-head"><h1 className="mk-title"><Wordmark size="lg" /></h1></div>
         <NotLive what="thrupad" />
       </div>
     )

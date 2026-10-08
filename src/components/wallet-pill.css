@@ -389,10 +389,12 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
    Without this, a page title with an action beside it sits underneath.
    =========================================================================== */
 
-/* Clear of the floating wallet button, plus the page's own top margin. It was
-   exactly the button's height, so every page title started where the button
-   ended, touching it. */
-.wrap, .wrap-wide { padding-top: 76px; padding-bottom: var(--s-6); }
+/* From 900px the wallet button sits inside the top bar, and the bar reserves
+   its room (--pill-w), so a page has nothing to clear and starts right under
+   the bar with <main>'s own padding. It used to be 76px here, on the idea that
+   the button floated over the page; that left a hundred pixels of nothing
+   between the bar and the first line of every page. */
+.wrap, .wrap-wide { padding-top: 0; padding-bottom: var(--s-6); }
 
 /* Below 900px the button sits inside the phone bar, not over the page, so
    there is nothing to clear. */

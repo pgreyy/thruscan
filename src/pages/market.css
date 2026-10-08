@@ -9,6 +9,19 @@
 .mk-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .mk-title { margin: 0; line-height: 1; }
 
+/* From 900px the top bar already carries the name, so the page opens on the
+   stats. The heading stays for screen readers, and "Create a token" moves to
+   the right-hand end of its row. With nothing in the row, the row collapses
+   and takes the grid gap with it. */
+@media (min-width: 900px) {
+  .mk-head { justify-content: flex-end; }
+  .mk-title {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .mk > .mk-head:not(:has(.btn)) { height: 0; margin-bottom: -16px; overflow: hidden; }
+}
+
 /* ---- stats strip ---- */
 .mk-stats {
   margin: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));

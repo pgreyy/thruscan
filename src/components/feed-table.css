@@ -21,7 +21,7 @@
 .act-tr {
   --act-cols: 84px minmax(110px, 1.5fr) 132px 112px 124px minmax(100px, 1fr) 72px 42px;
   display: grid; grid-template-columns: var(--act-cols); column-gap: 12px; align-items: center;
-  min-height: 60px; box-sizing: border-box; padding: 8px 18px;
+  min-height: 54px; box-sizing: border-box; padding: 8px 18px;
   border-top: 1px solid var(--line); color: var(--ink); font-size: 14px; cursor: pointer;
 }
 .act-tr > * { min-width: 0; }
@@ -85,10 +85,31 @@
 
 .act-more { display: block; width: calc(100% - 36px); margin: 12px 18px 16px; }
 
-/* Wide: a failed row has no room for the word beside its badge, so it goes
-   underneath. */
+/* The badge says how it went.
+ *
+ * Green for a transaction that landed, red for one that did not, on every
+ * event. The word "Failed" used to sit under the badge on a wide screen, which
+ * made failed rows taller than the rest and the table uneven. Wide, the colour
+ * does that job and the word stays for screen readers; on a phone there is room
+ * beside the badge, so it stays visible there. */
+.act-tr .feed-tag.feed-plain,
+.act-tr .feed-tag.feed-mark {
+  color: var(--good);
+  border-color: var(--line);
+  background: transparent;
+}
+.act-tr .feed-tag.feed-bad { color: var(--bad); border-color: var(--bad-line); background: transparent; }
+@supports (background: color-mix(in srgb, red 10%, transparent)) {
+  .act-tr .feed-tag.feed-plain,
+  .act-tr .feed-tag.feed-mark { border-color: color-mix(in srgb, var(--good) 30%, var(--line)); background: color-mix(in srgb, var(--good) 9%, transparent); }
+  .act-tr .feed-tag.feed-bad { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+}
+.act-event { position: relative; }
 @media (min-width: 760px) {
-  .act-tr.failed .act-event { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .act-tr .feed-failed {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
 }
 
 /* A little narrower: the copy button goes, the columns tighten. The hash is
