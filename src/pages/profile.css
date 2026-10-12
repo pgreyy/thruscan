@@ -4,84 +4,110 @@
    name, a line of facts, then rows of things. Editing is behind the pencil,
    because a profile is looked at far more often than it is changed. */
 
-.profile { padding-bottom: 20px; }
+.profile { display: flex; flex-direction: column; gap: 20px; padding-bottom: 20px; }
+.profile > * { min-width: 0; }
 
-.phead {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 6px 0 20px;
-  min-width: 0;
-}
-
+/* The header (5j): an 80px avatar, the name (32/700), the short address with
+   copy and the join date; on the right the estimated value and the actions. */
+.phead { display: flex; align-items: center; gap: 20px; min-width: 0; }
 .phead-pic { position: relative; flex: 0 0 auto; }
+.phead-id { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.phead-id h1 { margin: 0; font-size: 32px; line-height: 38px; font-weight: 700; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.phead-id .fine { margin: 0; }
+.phead-addr { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 14px; color: var(--text-secondary); }
+.phead-addr .mono { color: var(--text-primary); }
+.pcopy {
+  height: 28px; min-width: 28px; padding: 0 6px; display: inline-grid; place-items: center;
+  border: 0; border-radius: var(--r-chip); background: none; color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer;
+}
+.pcopy:hover { background: var(--fill-hover); color: var(--text-primary); }
+.phead-right { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; flex: none; }
+.pvalue { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.pvalue-k { font-size: 13px; color: var(--text-secondary); }
+.pvalue-v { font-size: 28px; line-height: 34px; font-weight: 500; letter-spacing: -0.02em; }
+.pvalue-v small { font-size: 14px; color: var(--text-secondary); letter-spacing: 0; }
+.pacts { display: flex; gap: 8px; }
+.pact { gap: 6px; }
+.pact-ic { display: inline-grid; place-items: center; }
+@media (max-width: 819px) {
+  .phead { flex-wrap: wrap; gap: 14px; }
+  .phead-id h1 { font-size: 26px; line-height: 32px; }
+  .phead-right { width: 100%; align-items: stretch; }
+  .pvalue { align-items: flex-start; }
+  /* Three 52px round buttons with labels under them. */
+  .pacts { justify-content: space-around; }
+  .pacts .pact {
+    flex-direction: column; height: auto; padding: 0; gap: 6px; border: 0; background: none;
+    color: var(--text-primary); font-size: 13px; font-weight: 500; min-width: 72px;
+  }
+  .pacts .pact:hover { background: none; }
+  .pact-ic { width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--border-default); background: var(--bg-surface); }
+  .pact-main .pact-ic { border-color: var(--action-primary); background: var(--action-primary); color: var(--action-primary-text); }
+  .pacts .pact:disabled { background: none; }
+  .pacts .pact:disabled .pact-ic { color: var(--text-disabled); background: var(--bg-sunken); border-color: var(--bg-sunken); }
+}
 
-.phead-id { min-width: 0; }
-.phead-id h1 {
-  margin: 0;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
+/* Tokens table (5j): Token · Balance · Price · Value · 24 h. */
+.ptable { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
+.ptr {
+  display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)) 80px; column-gap: 12px; align-items: center;
+  min-height: 56px; padding: 0 16px; border-bottom: 1px solid var(--border-subtle);
+  font-size: 14px; color: var(--text-primary); text-decoration: none;
 }
-.phead-addr {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
+.ptr:last-child { border-bottom: 0; }
+a.ptr:hover { background: var(--bg-canvas); color: var(--text-primary); }
+.ptr > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptr .r { text-align: right; }
+.pth { min-height: 38px; font-size: 12px; font-weight: 600; color: var(--text-secondary); background: var(--bg-canvas); border-bottom: 1px solid var(--border-default); }
+[data-theme="dark"] .pth { background: var(--bg-sunken); }
+.ptoken { display: flex; align-items: center; gap: 10px; }
+.ptoken > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.ptoken b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.ptoken i { font-style: normal; font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
+.pc { display: none; }
+.pnote { margin: 10px 0 0; }
+.pempty { margin: 0; padding: 18px 0; color: var(--text-secondary); }
+@media (max-width: 819px) {
+  .ptr { grid-template-columns: 40px minmax(0, 1fr); min-height: 64px; }
+  .ptr > [role='cell']:not(.ptoken), .pth { display: none; }
+  .ptoken > span:last-child { display: none; }
+  .pc { display: flex; justify-content: space-between; gap: 10px; align-items: center; min-width: 0; }
+  .pc-l, .pc-r { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pc-r { align-items: flex-end; flex: none; }
+  .pc-l b { font-weight: 600; }
+  .pc .mono { font-size: 13px; }
 }
-.phead-facts { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
-.phead-facts a { font-weight: 600; }
-.phead-dot { padding: 0 7px; opacity: 0.6; }
 
-/* A row of things, with its own heading and count. */
-.prow { margin-bottom: 26px; }
-.prow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.prow-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
-.prow-count {
-  margin-left: 8px; font-size: 12.5px; font-weight: 500; color: var(--muted);
-  font-family: var(--mono);
+/* Items (5j): ThruIDs first as ink tiles, then NFTs as square tiles. */
+.pitems { display: flex; flex-direction: column; gap: 24px; }
+.pgroup { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+.pid-grid, .pnft-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.pid, .pnft { display: flex; flex-direction: column; gap: 8px; color: var(--text-primary); text-decoration: none; min-width: 0; }
+.pid:hover, .pnft:hover { color: var(--text-primary); }
+.pid-tile {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 12px; border-radius: var(--r-panel);
+  background: #151412; color: var(--action-primary); font-size: 18px; text-align: center; overflow-wrap: anywhere;
 }
-.prow-all { font-size: 12.5px; }
-.prow .fine { margin: 0; }
+[data-theme="dark"] .pid-tile { border: 1px solid var(--border-default); }
+.pid-sub { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pid-sub b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pnft-art { aspect-ratio: 1; display: block; border-radius: var(--r-panel); overflow: hidden; background: var(--bg-sunken); border: 1px solid var(--border-default); }
+.pnft-art svg { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.pnft-name { font-size: 13px; }
+@media (max-width: 519px) { .pid-grid, .pnft-grid { grid-template-columns: 1fr 1fr; } }
 
-/* Tokens: a card each, wrapping, the way a wallet shows them. */
-.ptiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
-.ptile {
-  display: flex; align-items: center; gap: 10px; min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid var(--line); border-radius: var(--r-md);
-  background: var(--surface); color: inherit; text-decoration: none;
-  transition: border-color 0.14s ease, transform 0.14s ease;
-}
-.ptile:hover { border-color: var(--signal-line); transform: translateY(-1px); }
-.ptile-id { min-width: 0; display: grid; }
-.ptile-id b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ptile-id i { font-size: 12px; color: var(--muted); font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Items, gathered by collection: four pictures as a cover, the name under it.
-   One card for two hundred Pals rather than two hundred cards. */
-.pfolders { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.pfolder {
-  display: block; min-width: 0; color: inherit; text-decoration: none;
-  border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
-  background: var(--surface);
-  transition: border-color 0.14s ease, transform 0.14s ease;
-}
-.pfolder:hover { border-color: var(--signal-line); transform: translateY(-2px); }
-.pfolder-art {
-  display: grid; aspect-ratio: 1; background: var(--soft);
-  grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px;
-}
-/* One picture fills the cover; two sit side by side; three or four make the
-   square. Anything else would leave a hole where a picture should be. */
-.pfolder-art.n1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-.pfolder-art.n2 { grid-template-rows: 1fr; }
-.pfolder-art.n3 > span:first-child { grid-row: span 2; }
-.pfolder-art > span { display: block; overflow: hidden; min-width: 0; background: var(--soft); }
-.pfolder-art svg { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
-.pfolder-name { display: block; padding: 10px 12px 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pfolder-sub { display: block; padding: 1px 12px 11px; font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+/* Launched (5j): avatar, name, "Curve n% · age", and unclaimed fees. */
+.plaunched { display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
+.plrow-wrap { border-bottom: 1px solid var(--border-subtle); }
+.plrow-wrap:last-child { border-bottom: 0; }
+.plrow { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--text-primary); text-decoration: none; }
+.plrow:hover { background: var(--bg-canvas); color: var(--text-primary); }
+.plrow-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.plrow-id b { font-weight: 600; }
+.plrow-id .mono { font-size: 12px; }
+.plrow-fees { font-size: 13px; flex: none; }
+.plrow-edit { margin: 0 16px 10px; font-size: 13px; }
+.plrow-wrap .tmeta { margin: 0 16px 16px; }
 
 /* The editor, which is only ever here because the pencil was pressed. */
 .pic-editor { margin-bottom: 22px; }
@@ -191,25 +217,9 @@
 .tmeta-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .tmeta-links a { font-size: 12px; }
 
-@media (max-width: 640px) {
-  .phead { gap: 14px; }
-  .phead-id h1 { font-size: 24px; }
-  .phead-facts { font-size: 12px; }
-  .phead-dot { padding: 0 5px; }
-}
+.tmeta-btns { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
 
 @media (max-width: 520px) {
   .pic-edit { gap: 14px; }
   .pic-say { flex-basis: 100%; }
-  .ptiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-  .pfolders { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }
-
-/* At the narrowest sizes the picture sits above the name rather than beside a
-   heading it would leave two words of room for. */
-@media (max-width: 400px) {
-  .phead { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .pfolders { grid-template-columns: 1fr 1fr; }
-}
-
-.tmeta-btns { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }

@@ -28,23 +28,29 @@
 // rare visit rather than the common one.
 //
 // Tokens launched are read out of the launchpad registry by matching the
-// creator field, which is the only place that fact exists. There is no index
-// and no database, which is why the page scans rather than queries.
+// creator field, which is the only place that fact exists.
+//
+// Update 02 (5j): no Overview tab. Tokens, Items, Launched and Activity, with
+// the estimated value and Send / Receive / Swap in the header.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useWallet } from './Wallet.jsx'
+import { useWallet, SendForm, ReceiveBody, QuickModal } from './Wallet.jsx'
+import { useChainData } from './Dex.jsx'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { Pfp } from '../components/Pfp.jsx'
 import { TokenMetaCard, TokenIcon } from '../components/TokenMeta.jsx'
 import { Activity } from '../components/Activity.jsx'
 import { Tabs } from '../components/Tabs.jsx'
+import { Icon } from '../components/Icon.jsx'
 import { setNameRecord, waitForResult, hasWallet } from '../lib/wallet.js'
+import { connectWallet } from '../lib/connect.js'
 import { ownedNames, readName } from '../lib/holdings.js'
-import { withSuffix, ROOT_SUFFIX } from '../lib/names.js'
-import { decodePadRegistry } from '../lib/pad.js'
-import { getAccount } from '../lib/rpcClient.js'
-import { THRUPAD_REGISTRY as PAD_REGISTRY, WTHRU_MINT } from '../lib/addresses.js'
+import { withSuffix } from '../lib/names.js'
+import { decodeSwapRegistry } from '../lib/swap.js'
+import { usePadMarket } from '../lib/padmarket.js'
+import { relTime } from '../lib/when.js'
+import { THRUPAD_REGISTRY as PAD_REGISTRY, THRUSWAP_REGISTRY as SWAP_REGISTRY, WTHRU_MINT, TUSD_MINT } from '../lib/addresses.js'
 import { AVATAR_KEY, PFP_KEY, formatNftPfp, pfpForDomain, EMPTY_PFP, palsSnapshot } from '../lib/pfp.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 import { allTokenMeta } from '../lib/tokenmeta.js'
@@ -53,7 +59,7 @@ import './profile.css'
 
 const DECIMALS = 6
 
-const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
+const short = (a) => (a ? `${a.slice(0, 5)}…${a.slice(-4)}` : '')
 
 function fmt(units, decimals = DECIMALS, maxFrac = 4) {
   const n = Number(units ?? 0n) / 10 ** decimals
@@ -250,8 +256,8 @@ function PictureEditor({ primary, domain, pfp, onSaved, onClose }) {
         </div>
         {mine.length === 0 ? (
           <p className="fine">
-            None held by this name yet. <Link to="/pals">Mint or buy a Pixel Pal</Link> and it will show up here.
-            A Pal you have listed for sale sits in the market's escrow until you delist it, so it is not offered.
+            None held by this name yet. NFTs you hold show up here. A Pal you have listed for sale sits in the
+            market's escrow until you delist it, so it is not offered.
           </p>
         ) : (
           <div className="pal-options">
@@ -286,119 +292,225 @@ function PictureEditor({ primary, domain, pfp, onSaved, onClose }) {
   )
 }
 
-/* ---------- what you hold ---------- */
+/* ---------- prices ----------
+ * What each token is worth in WTHRU, for the Tokens table and the estimate:
+ * WTHRU is 1, THRU wraps to it one for one, a ThruPad token is its curve
+ * price, and anything else is priced by a Swap pool paired with WTHRU. A
+ * token with none of these has no price and stays out of the estimate. */
 
-function TokenTile({ ticker, amount, meta, mint }) {
-  return (
-    <Link className="ptile" to={`/token/${mint}`}>
-      <TokenIcon meta={meta} symbol={ticker} mint={mint} size={34} />
-      <span className="ptile-id">
-        <b>{ticker}</b>
-        <i className="mono">{amount}</i>
-      </span>
-    </Link>
+function usePrices(wallet) {
+  const pad = usePadMarket(null)
+  const swap = useChainData(
+    SWAP_REGISTRY,
+    decodeSwapRegistry,
+    (d) => d.pools.flatMap((p) => [p.vaultA, p.vaultB]),
+    (d) => d.pools.flatMap((p) => [p.mintA, p.mintB]),
   )
+  return useMemo(() => {
+    const prices = {}   // mint -> { price, change, launch }
+    prices[WTHRU_MINT] = { price: 1, change: null }
+    for (const p of swap.data?.pools ?? []) {
+      const other = p.mintA === WTHRU_MINT ? 'B' : p.mintB === WTHRU_MINT ? 'A' : null
+      if (!other) continue
+      const mint = other === 'A' ? p.mintA : p.mintB
+      const rx = Number(swap.balances?.[other === 'A' ? p.vaultA : p.vaultB] ?? 0n) / 10 ** (swap.decimals?.[mint] ?? wallet.decimals?.[mint] ?? DECIMALS)
+      const rw = Number(swap.balances?.[other === 'A' ? p.vaultB : p.vaultA] ?? 0n) / 10 ** (swap.decimals?.[WTHRU_MINT] ?? 0)
+      if (rx > 0 && rw > 0) prices[mint] = { price: rw / rx, change: null }
+    }
+    for (const r of pad.rows) {
+      if (r.inWthru && r.now !== null) prices[r.mint] = { price: r.now, change: r.day?.change ?? null, launch: r }
+      else if (prices[r.mint]) prices[r.mint].launch = r
+      else prices[r.mint] = { price: null, change: null, launch: r }
+    }
+    return { prices, launches: pad.rows, padLoading: pad.loading && !pad.data }
+  }, [pad.rows, pad.loading, pad.data, swap.data, swap.balances, swap.decimals, wallet.decimals])
 }
 
-/**
- * A collection, not an item.
- *
- * Two hundred Pals drawn one to a card is a page you scroll past rather than
- * read, and it will only get worse as collections are added. So what a profile
- * shows is one card per collection, with four of its pictures as the cover and
- * the count under the name. The collection's own page is where all of them
- * live, and it already knows how to show the ones you hold.
- */
-function CollectionFolder({ name, to, items }) {
-  const cover = useMemo(
-    () => items.slice(0, 4).map(({ num, pal }) => ({ num, svg: toSvg(pal.grid, 120) })),
-    [items],
-  )
+const value = (v) => (v === null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+function priceText(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—'
+  if (v >= 1) return v.toLocaleString('en-US', { maximumFractionDigits: 4 })
+  return v.toLocaleString('en-US', { maximumSignificantDigits: 4 })
+}
+function pctText(c) {
+  if (c === null || c === undefined || !Number.isFinite(c)) return null
+  if (Math.abs(c) < 0.05) return '0.0%'
+  return `${c > 0 ? '+' : '−'}${Math.abs(c).toFixed(1)}%`
+}
+function Change({ value: c }) {
+  const t = pctText(c)
+  if (t === null) return <span className="dim">—</span>
+  return <span className={Math.abs(c) < 0.05 ? 'dim' : c > 0 ? 'amt-pos' : 'amt-neg'}>{t}</span>
+}
+
+/* ---------- the tabs ---------- */
+
+function TokensTab({ rows }) {
+  if (rows.length === 0) {
+    return <p className="pempty">Nothing yet. <Link to="/faucet">Get some THRU</Link> to start.</p>
+  }
   return (
-    <Link className="pfolder" to={to} title={`Your ${name}`}>
-      <span className={`pfolder-art n${cover.length}`}>
-        {cover.map((c) => (
-          <span key={c.num} dangerouslySetInnerHTML={{ __html: c.svg }} />
+    <>
+      <div className="ptable" role="table" aria-label="Tokens">
+        <div className="ptr pth" role="row">
+          <span role="columnheader">Token</span>
+          <span role="columnheader" className="r">Balance</span>
+          <span role="columnheader" className="r">Price (WTHRU)</span>
+          <span role="columnheader" className="r">Value (WTHRU)</span>
+          <span role="columnheader" className="r">24 h</span>
+        </div>
+        {rows.map((t) => (
+          <Link key={t.mint} to={t.to} className="ptr" role="row">
+            <span role="cell" className="ptoken">
+              <TokenIcon meta={t.meta} symbol={t.ticker} mint={t.mint === 'native' ? WTHRU_MINT : t.mint} size={32} />
+              <span>
+                <b>{t.ticker}</b>
+                <i>{t.sub}</i>
+              </span>
+            </span>
+            <span role="cell" className="mono r">{t.amount}</span>
+            <span role="cell" className="mono r">{priceText(t.price)}</span>
+            <span role="cell" className="mono r">{value(t.value)}</span>
+            <span role="cell" className="mono r"><Change value={t.change} /></span>
+            <span className="pc" aria-hidden="true">
+              <span className="pc-l"><b>{t.ticker}</b><span className="mono dim">{t.amount}</span></span>
+              <span className="pc-r"><span className="mono">{value(t.value)}</span><span className="mono"><Change value={t.change} /></span></span>
+            </span>
+          </Link>
         ))}
-      </span>
-      <span className="pfolder-name">{name}</span>
-      <span className="pfolder-sub">{items.length} {items.length === 1 ? 'item' : 'items'}</span>
+      </div>
+      <p className="fine pnote">Values use the current curve or pool price. Tokens without a price show &ldquo;—&rdquo; and are left out of the estimate.</p>
+    </>
+  )
+}
+
+function ItemsTab({ names, pals }) {
+  return (
+    <div className="pitems">
+      <section>
+        <h2 className="pgroup">ThruID</h2>
+        {names.length === 0
+          ? <p className="pempty">None yet. <Link to="/names">Claim one</Link>, free.</p>
+          : (
+            <div className="pid-grid">
+              {names.map((n, i) => (
+                <Link key={n.account} to={`/account/${n.account}`} className="pid">
+                  <span className="pid-tile mono">{withSuffix(n.name)}</span>
+                  <span className="pid-sub">
+                    <b className="mono">{withSuffix(n.name)}</b>
+                    <span className="fine">{n.domain?.records?.length ?? 0} {(n.domain?.records?.length ?? 0) === 1 ? 'record' : 'records'}{i === 0 ? ' · primary' : ''}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+      </section>
+      <section>
+        <h2 className="pgroup">NFTs</h2>
+        {pals.length === 0
+          ? <p className="pempty">No NFTs yet.</p>
+          : (
+            <div className="pnft-grid">
+              {pals.map(({ num, pal }) => <PalTile key={num} num={num} pal={pal} />)}
+            </div>
+          )}
+      </section>
+    </div>
+  )
+}
+
+function PalTile({ num, pal }) {
+  const art = useMemo(() => toSvg(pal.grid, 160), [pal])
+  return (
+    <Link to="/pixelpals?tab=yours" className="pnft" title={`Pixel Pal #${num}`}>
+      <span className="pnft-art" dangerouslySetInnerHTML={{ __html: art }} />
+      <span className="pnft-name mono">Pixel Pal #{num}</span>
     </Link>
   )
 }
 
-function Row({ title, count, to, children }) {
+function LaunchedTab({ launches, scanning, own, meta, wallet, onChanged, now }) {
+  const [editing, setEditing] = useState(null)
+  if (scanning) return <p className="pempty">Reading ThruPad…</p>
+  if (launches.length === 0) return <p className="pempty">Nothing yet. <Link to="/create">Launch a token</Link>.</p>
   return (
-    <section className="prow">
-      <div className="prow-head">
-        <h2>{title}{count != null && <span className="prow-count">{count}</span>}</h2>
-        {to && <Link className="prow-all" to={to}>See all →</Link>}
-      </div>
-      {children}
-    </section>
+    <div className="plaunched">
+      {launches.map((l) => {
+        const unit = l.unit ?? 'WTHRU'
+        const qd = l.qd ?? DECIMALS
+        return (
+          <div key={l.id} className="plrow-wrap">
+            <Link to={`/launch/${l.id}${own ? '#creator-fees' : ''}`} className="plrow">
+              <TokenIcon meta={meta[l.mint]} symbol={l.symbol} mint={l.mint} size={40} />
+              <span className="plrow-id">
+                <b>{l.name || l.symbol}</b>
+                <span className="mono dim">
+                  {l.graduated ? 'Graduated' : `Curve ${((l.progress ?? 0) * 100).toFixed(0)}%`}
+                  {l.ageMs !== null && l.ageMs !== undefined ? ` · ${relTime(now - l.ageMs, now)}` : ''}
+                </span>
+              </span>
+              {own && <span className="plrow-fees mono">Unclaimed {fmt(l.creatorFees, qd)} {unit}</span>}
+            </Link>
+            {own && (
+              <button type="button" className="btn plain plrow-edit" aria-expanded={editing === l.id} onClick={() => setEditing(editing === l.id ? null : l.id)}>
+                {editing === l.id ? 'Done' : 'Edit image and links'}
+              </button>
+            )}
+            {own && editing === l.id && (
+              <TokenMetaCard launch={l} address={wallet.address} quoteTicker={unit} onClaimed={onChanged} />
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
-
-
 
 /* ---------- the page ---------- */
 
+/**
+ * Your assets (Update 02, 5j): who you are and what you are worth, then
+ * Tokens, Items, Launched and Activity. The tab is in the URL (?tab=).
+ */
 export function ProfilePage() {
   const wallet = useWallet()
-
   const [names, setNames] = useState([])       // [{ name, account, domain }]
-  const [launches, setLaunches] = useState([])
-  const [scanning, setScanning] = useState(true)
   const [pfp, setPfp] = useState(EMPTY_PFP)
   const [editing, setEditing] = useState(false)
   const [pals, setPals] = useState([])
   const [meta, setMeta] = useState({})
+  const [quick, setQuick] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const { prices, launches: allLaunches, padLoading } = usePrices(wallet)
+  const [overview, setOverview] = useState(null)
 
   const storeKey = wallet.address ? `thruscan.names.${wallet.address}` : null
 
-  /* Names, in two passes.
-     This used to read only the names claimed in this browser, which got two
-     things wrong: a name claimed on another device, or with a connected
-     wallet, was invisible, and a name since transferred away still showed as
-     yours. Reading the chain fixes both, but it means scanning the address's
-     history, which on a busy wallet takes seconds.
-     So the remembered names are resolved first and shown at once, then the
-     chain's answer replaces them when it arrives. Both passes check the
+  /* Names, in two passes. The names this browser remembers resolve first and
+     show at once, then the chain's answer replaces them. Both passes check the
      current owner, so neither shows a name that is no longer yours. */
   const loadNames = useCallback(async () => {
     if (!wallet.address) { setNames([]); return }
     let remembered = []
     try { remembered = JSON.parse(localStorage.getItem(storeKey) || '[]') } catch { /* nothing claimed here */ }
 
-    const quick = (await Promise.all(remembered.map((n) => readName(n).catch(() => null))))
+    const quickRows = (await Promise.all(remembered.map((n) => readName(n).catch(() => null))))
       .filter((r) => r?.domain?.owner === wallet.address)
-    if (quick.length) setNames(quick)
+    if (quickRows.length) setNames(quickRows)
 
     try {
       setNames(await ownedNames(wallet.address, remembered))
-    } catch { if (!quick.length) setNames([]) }
+    } catch { if (!quickRows.length) setNames([]) }
   }, [wallet.address, storeKey])
 
-  /* The registry is the only record of who launched what, so this reads it and
-     filters. It is a scan rather than a query because there is no index, which
-     is fine at 64 slots and would not be at 64,000. */
-  const loadLaunches = useCallback(async () => {
-    if (!wallet.address || !PAD_REGISTRY) { setLaunches([]); setScanning(false); return }
-    setScanning(true)
-    try {
-      const acc = await getAccount(PAD_REGISTRY)
-      const reg = decodePadRegistry(acc.data?.base64)
-      setLaunches(reg.launches.filter((l) => l.creator === wallet.address))
-    } catch { setLaunches([]) }
-    finally { setScanning(false) }
-  }, [wallet.address])
-
   useEffect(() => { loadNames() }, [loadNames])
-  useEffect(() => { loadLaunches() }, [loadLaunches])
   useEffect(() => {
     let alive = true
     allTokenMeta().then((m) => { if (alive) setMeta(m) }).catch(() => {})
-    return () => { alive = false }
+    fetch('/api/rpc?action=overview').then((r) => r.json()).then((j) => { if (alive && j?.ok) setOverview(j) }).catch(() => {})
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => { alive = false; clearInterval(id) }
   }, [])
 
   const primary = names[0] ?? null
@@ -428,51 +540,73 @@ export function ProfilePage() {
     return () => { alive = false }
   }, [wallet.address])
 
-  const held = Object.entries(wallet.balances ?? {})
-    .filter(([, b]) => b?.exists && b.amount > 0n)
-    .map(([mint, b]) => ({
-      mint,
-      ticker: wallet.tickers?.[mint] || short(mint),
-      amount: fmt(b.amount, wallet.decimals?.[mint] ?? DECIMALS),
-    }))
+  /* Tokens launched by this wallet: the registry is the only record of that,
+     so it is a filter over the launches ThruPad already read. */
+  const launches = useMemo(() => {
+    const age = (l) => (overview?.finalized && overview?.blockTimeMs && l.startSlot
+      ? Math.max(0, Number(overview.finalized) - Number(l.startSlot)) * overview.blockTimeMs : null)
+    return allLaunches.filter((l) => l.creator === wallet.address).map((l) => ({ ...l, ageMs: age(l) }))
+  }, [allLaunches, wallet.address, overview])
+  const scanning = !!PAD_REGISTRY && padLoading
+  const created = new Set(launches.map((l) => l.mint))
+
+  const rows = useMemo(() => {
+    const out = []
+    const native = wallet.native ?? 0n
+    if (native > 0n) {
+      out.push({ mint: 'native', ticker: 'THRU', sub: 'Thru, wraps 1:1 to WTHRU', amount: Number(native).toLocaleString('en-US'), price: 1, value: Number(native), change: null, to: '/wallet' })
+    }
+    for (const [mint, b] of Object.entries(wallet.balances ?? {})) {
+      if (!b?.exists || b.amount <= 0n) continue
+      const d = wallet.decimals?.[mint] ?? DECIMALS
+      const n = Number(b.amount) / 10 ** d
+      const p = prices[mint]
+      const ticker = wallet.tickers?.[mint] || p?.launch?.symbol || short(mint)
+      const sub = mint === WTHRU_MINT ? 'Wrapped THRU'
+        : created.has(mint) ? 'ThruPad · you created this'
+          : p?.launch ? 'ThruPad' : mint === TUSD_MINT ? 'Test USD' : 'Token'
+      out.push({
+        mint, ticker, sub, meta: meta[mint],
+        amount: fmt(b.amount, d),
+        price: p?.price ?? null,
+        value: p?.price !== null && p?.price !== undefined ? n * p.price : null,
+        change: p?.change ?? null,
+        to: p?.launch ? `/launch/${p.launch.id}` : `/token/${mint}`,
+      })
+    }
+    return out.sort((a, b) => (b.value ?? -1) - (a.value ?? -1))
+  }, [wallet.balances, wallet.native, wallet.decimals, wallet.tickers, prices, meta])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const estimate = rows.reduce((s, r) => (r.value !== null && Number.isFinite(r.value) ? s + r.value : s), 0)
+  const priced = rows.some((r) => r.value !== null)
 
   if (!hasWallet()) {
     return (
-      <div className="wrap">
-        <h1 className="h1">Profile</h1>
-        <section className="card">
-          <h2 className="h2">No wallet yet</h2>
-          <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-            <Link to="/wallet">Open one</Link> to see your profile.
-          </p>
+      <div className="page profile">
+        <h1 className="h1">Assets</h1>
+        <section className="empty">
+          <span className="empty-title">Connect a wallet to see your assets</span>
+          <p>Your tokens, names, NFTs, the tokens you launched and your activity, read from the chain.</p>
+          <div className="mk-actions-row">
+            <button type="button" className="btn" onClick={connectWallet}><Icon name="wallet" size={18} />Connect wallet</button>
+          </div>
         </section>
       </div>
     )
   }
 
   const since = joined(primary?.domain?.registeredAt)
-
-  const tokens = held.length > 0 && (
-    <div className="ptiles">
-      {held.map((h) => <TokenTile key={h.mint} {...h} meta={meta[h.mint]} />)}
-    </div>
-  )
-  /* One entry per collection this wallet holds something from. Written as a
-     list so a second collection is a row here rather than a rewrite. */
-  const folders = pals.length > 0
-    ? [{ key: 'pixel-pals', name: 'Pixel Pals', to: '/pals?tab=yours', items: pals }]
-    : []
-  const itemsView = folders.length > 0 && (
-    <div className="pfolders">
-      {folders.map((f) => <CollectionFolder key={f.key} {...f} />)}
-    </div>
-  )
+  const copy = () => {
+    navigator.clipboard?.writeText(wallet.address)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   return (
-    <div className="wrap-wide profile">
+    <div className="page profile">
       <header className="phead">
         <div className="phead-pic">
-          <Pfp pfp={pfp} address={wallet.address} size={104} />
+          <Pfp pfp={pfp} address={wallet.address} size={80} />
           {primary && (
             <button
               type="button"
@@ -491,26 +625,36 @@ export function ProfilePage() {
 
         <div className="phead-id">
           <h1>{primary ? withSuffix(primary.name) : 'Unnamed'}</h1>
-          <p className="mono phead-addr">{wallet.address}</p>
-          <p className="phead-facts">
-            {pfp.kind === 'nft' && (
-              <>
-                <Link to="/pals">Pixel Pal #{pfp.num}</Link>, held by this wallet on chain
-                <span className="phead-dot">·</span>
-              </>
-            )}
-            {since && <>Joined {since}<span className="phead-dot">·</span></>}
-            {pals.length} {pals.length === 1 ? 'item' : 'items'}
-            <span className="phead-dot">·</span>
-            {held.length} {held.length === 1 ? 'token' : 'tokens'}
+          <p className="phead-addr">
+            <span className="mono" title={wallet.address}>{short(wallet.address)}</span>
+            <button type="button" className="pcopy" onClick={copy} aria-label="Copy address">{copied ? '✓ Copied' : <Icon name="copy" size={16} />}</button>
+            {since && <span className="dim">· Joined {since}</span>}
           </p>
-          {!primary && (
-            <p className="fine" style={{ marginTop: 8 }}>
-              <Link to="/names">Claim a name</Link>, free, and you can set a picture.
-            </p>
-          )}
+          {!primary && <p className="fine"><Link to="/names">Claim a name</Link>, free, and you can set a picture.</p>}
+        </div>
+
+        <div className="phead-right">
+          <div className="pvalue">
+            <span className="pvalue-k">Estimated value</span>
+            <span className="pvalue-v mono">{priced ? `≈ ${value(estimate)}` : '—'} <small>WTHRU</small></span>
+          </div>
+          <div className="pacts">
+            <button type="button" className="btn secondary pact" onClick={() => setQuick('send')} disabled={!wallet.unlocked || !wallet.registered}>
+              <span className="pact-ic"><Icon name="send" size={18} /></span><span>Send</span>
+            </button>
+            <button type="button" className="btn secondary pact" onClick={() => setQuick('receive')}>
+              <span className="pact-ic"><Icon name="receive" size={18} /></span><span>Receive</span>
+            </button>
+            <Link className="btn pact pact-main" to="/swap">
+              <span className="pact-ic"><Icon name="swap" size={18} /></span><span>Swap</span>
+            </Link>
+          </div>
+          {!wallet.unlocked && <p className="why">Unlock your wallet to send.</p>}
         </div>
       </header>
+
+      {quick === 'send' && <QuickModal title="Send" onClose={() => setQuick(null)}><SendForm wallet={wallet} /></QuickModal>}
+      {quick === 'receive' && <QuickModal title="Receive" onClose={() => setQuick(null)}><ReceiveBody address={wallet.address} /></QuickModal>}
 
       {editing && primary && (
         <PictureEditor
@@ -523,80 +667,16 @@ export function ProfilePage() {
       )}
 
       <Tabs
-        param="view"
         tabs={[
+          { key: 'tokens', label: 'Tokens', badge: rows.length, el: <TokensTab rows={rows} /> },
+          { key: 'items', label: 'Items', badge: names.length + pals.length, el: <ItemsTab names={names} pals={pals} /> },
           {
-            key: 'overview',
-            label: 'Overview',
-            el: (
-              <>
-                <Row title="Tokens" count={held.length || null}>
-                  {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some THRU</Link> to start.</p>}
-                </Row>
-                <Row title="Items" count={pals.length || null}>
-                  {itemsView || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
-                </Row>
-                <Row title="Launched" count={launches.length || null}>
-                  {scanning
-                    ? <p className="fine">Reading ThruPad…</p>
-                    : launches.length === 0
-                      ? <p className="fine">Nothing yet. <Link to="/launch">Launch a token</Link>.</p>
-                      : (
-                        <div className="launch-mine">
-                          {launches.map((l) => (
-                            <TokenMetaCard
-                              key={l.id}
-                              launch={l}
-                              address={wallet.address}
-                              quoteTicker={wallet.tickers?.[l.quoteMint] || (l.quoteMint === WTHRU_MINT ? 'WTHRU' : 'tUSD')}
-                              onClaimed={async () => { await loadLaunches(); wallet.refresh() }}
-                            />
-                          ))}
-                        </div>
-                      )}
-                </Row>
-                <Row title="ThruID" count={names.length || null}>
-                  {names.length === 0
-                    ? <p className="fine">None yet. <Link to="/names">Claim one</Link>, free.</p>
-                    : (
-                      <div className="rows">
-                        {names.map((n) => (
-                          <div className="row" key={n.account}>
-                            <span><b>{withSuffix(n.name)}</b></span>
-                            <span className="fine">{n.domain?.records?.length ?? 0} records</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                </Row>
-              </>
-            ),
+            key: 'launched',
+            label: 'Launched',
+            badge: launches.length,
+            el: <LaunchedTab launches={launches} scanning={scanning} own meta={meta} wallet={wallet} now={now} onChanged={() => wallet.refresh()} />,
           },
-          {
-            key: 'tokens',
-            label: 'Tokens',
-            badge: held.length || null,
-            el: (
-              <Row title="Tokens" count={held.length || null}>
-                {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some THRU</Link> to start.</p>}
-              </Row>
-            ),
-          },
-          {
-            key: 'items',
-            label: 'Items',
-            badge: pals.length || null,
-            el: (
-              <Row title="Items" count={pals.length || null}>
-                {itemsView || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
-              </Row>
-            ),
-          },
-          {
-            key: 'activity',
-            label: 'Activity',
-            el: <div className="prow"><Activity addresses={[wallet.address]} me={wallet.address} /></div>,
-          },
+          { key: 'activity', label: 'Activity', el: <Activity addresses={[wallet.address]} me={wallet.address} /> },
         ]}
       />
     </div>
