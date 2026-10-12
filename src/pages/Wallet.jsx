@@ -1403,13 +1403,16 @@ export function WalletPage() {
  */
 /** `program` may be left out when the built transaction already names one,
  *  which is the case for anything built through the multicall helper. */
-export async function sendBuilt(program, built) {
+/** Sign, send and wait for the result. `onSent` hears the signature the
+ *  moment the wallet hands it back, before it has landed. */
+export async function sendBuilt(program, built, onSent) {
   const signature = await signAndSend({
     program: program ?? built.program,
     readWrite: built.readWrite,
     readOnly: built.readOnly,
     data: built.data,
   })
+  onSent?.(signature)
   const result = await waitForResult(signature)
   return { signature, ...result }
 }

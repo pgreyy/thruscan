@@ -2,6 +2,7 @@ import { ThemeRow } from './components/ThemeSwitch.jsx'
 import { Icon, Spinner } from './components/Icon.jsx'
 import { CopyId } from './components/CopyId.jsx'
 import { currentAddress } from './lib/wallet.js'
+import { onToast } from './lib/toasts.js'
 import { Analytics } from '@vercel/analytics/react'
 import { CloudflareBeacon, usePageViews } from './components/Counters.jsx'
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
@@ -539,6 +540,9 @@ function ToastHost({ children }) {
     // Long enough to read a signature and decide, short enough not to linger.
     setTimeout(() => dismiss(id), 6500)
   }, [dismiss])
+
+  // Toasts raised from anywhere (see lib/toasts.js).
+  useEffect(() => onToast(show), [show])
 
   return (
     <ToastContext.Provider value={show}>

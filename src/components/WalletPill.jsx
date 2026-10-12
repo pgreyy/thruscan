@@ -365,6 +365,14 @@ export function WalletPill() {
   // phone where that thing may now be under your thumb.
   useDismiss(boxRef, open, useCallback(() => setOpen(false), []))
 
+  /* "Connect wallet" buttons elsewhere on the page open this menu, so there is
+     one place a wallet is chosen. See lib/connect.js. */
+  useEffect(() => {
+    const on = () => { setOpen(true); boxRef.current?.querySelector('button')?.focus() }
+    window.addEventListener('thruscan-connect', on)
+    return () => window.removeEventListener('thruscan-connect', on)
+  }, [])
+
   // Every token ThruScan knows (pools, launches, ones added by address), so a
   // launchpad token shows here before it has a pool.
   useEffect(() => {

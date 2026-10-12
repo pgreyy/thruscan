@@ -122,186 +122,164 @@
 }
 
 /* ===========================================================================
-   The swap panel.
+   Amounts, the token selector, and the Swap page (2e, 2j, 3f/3g).
    =========================================================================== */
 
-.swap-card { padding-top: 18px; }
-
-.swap-side {
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  background: rgba(128, 128, 128, 0.045);
+/* The editable input: white, a 1px ink edge, radius 8, padding 12/14, a top
+   row of label and balance, then the number. The calculated output is the
+   same shape, sunken, with no edge. */
+.amt { border-radius: var(--r-panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.amt-in { background: var(--bg-surface); border: 1px solid var(--action-secondary); }
+.amt-in:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.amt-out { background: var(--bg-sunken); border: 1px solid transparent; }
+.amt-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 13px; line-height: 18px; }
+.amt-label { font-weight: 600; }
+.amt-bal { color: var(--text-secondary); white-space: nowrap; }
+.amt-max {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+  color: var(--text-link); text-decoration: underline; text-underline-offset: 2px;
 }
-
-.swap-side-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 6px;
+.amt-max:hover { color: var(--text-primary); }
+.amt-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
+.amt-num {
+  flex: 1 1 auto; min-width: 0; width: 100%; padding: 0; border: 0; outline: 0; background: none;
+  color: var(--text-primary); font-size: 32px; line-height: 40px; font-weight: 500; letter-spacing: -0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.amt-num:focus-visible { outline: 0; }
+.amt-out .amt-num { color: var(--text-body); }
+.amt-zero { color: var(--text-disabled) !important; }
+.amt-unit { display: inline-flex; align-items: center; gap: 8px; flex: none; font-size: 15px; }
+@media (max-width: 519px) { .amt-num { font-size: 28px; line-height: 36px; } }
 
-.swap-side-body {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.swap-amount {
-  /* width, not just flex-grow. This is used in two places: inside a flex row
-     on the swap panel, where flex sizes it, and on its own inside the launch
-     panel's box, where nothing did. With no flex parent an <input> falls back
-     to its intrinsic width of about twenty characters, which at 28px is wider
-     than the card, so the box and its focus ring ran out across the page. */
-  width: 100%;
-  box-sizing: border-box;
-  flex: 1 1 auto;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 28px;
-  font-weight: 500;
-  padding: 2px 0;
-  outline: none;
-}
-
-.swap-amount::placeholder { opacity: 0.3; }
-
-
-/* The same class of mistake, ruled out everywhere at once. A control that does
-   not know its own width is the single most common way a page starts scrolling
-   sideways on a phone. */
-input, textarea, select { max-width: 100%; box-sizing: border-box; }
-
-/* The flip sits between the two sides and overlaps both, so the pair reads as
-   one control rather than two stacked cards. */
-.swap-flip {
-  display: flex;
-  justify-content: center;
-  height: 0;
-  position: relative;
-  z-index: 2;
-}
-
-.flip-btn {
-  width: 34px;
-  height: 34px;
-  margin-top: -17px;
-  border-radius: 10px;
-  border: 1px solid rgba(128, 128, 128, 0.26);
-  background: #fff;
-  color: inherit;
-  cursor: pointer;
-  font-size: 15px;
-  line-height: 1;
-}
-
-.flip-btn:hover { border-color: rgba(128, 128, 128, 0.5); }
-
-:root[data-theme='dark'] .flip-btn { background: #17171a; border-color: rgba(255, 255, 255, 0.16); }
-
-.picker { position: relative; flex: 0 0 auto; }
-
+/* The selector: a 40px pill, avatar, symbol, chevron. */
+.picker { position: relative; flex: none; }
 .picker-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(128, 128, 128, 0.26);
-  background: rgba(255, 255, 255, 0.9);
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 10px 0 6px;
+  border: 1px solid var(--border-default); border-radius: var(--r-control);
+  background: var(--bg-surface); color: var(--text-primary);
+  font-size: 15px; font-weight: 600; white-space: nowrap; cursor: pointer;
 }
+.picker-trigger:hover { background: var(--fill-hover); }
+.picker-trigger > span:only-of-type { padding-left: 4px; font-weight: 400; color: var(--text-secondary); }
 
-.picker-trigger:hover { border-color: rgba(128, 128, 128, 0.5); }
-.picker-caret { opacity: 0.4; font-size: 15px; }
-
+/* The menu (2j): 300px, a search field, then avatar · symbol · subtitle · balance. */
 .picker-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  width: 310px;
-  max-width: 86vw;
-  max-height: 360px;
-  overflow: auto;
-  padding: 6px;
-  border-radius: 12px;
-  border: 1px solid rgba(128, 128, 128, 0.24);
-  background: #fff;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+  width: 300px; max-height: 380px; overflow: auto; padding: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--r-panel); box-shadow: var(--shadow-popover);
 }
-
-/* Only a phone draws the scrim; see the max-width block further down. */
-.picker-scrim { display: none; }
-
+.picker-search {
+  display: flex; align-items: center; gap: 8px; height: 36px; margin: 4px; padding: 0 10px;
+  border: 1px solid var(--border-default); border-radius: var(--r-control); color: var(--text-secondary);
+}
+.picker-search:focus-within { border-color: var(--text-primary); }
+.picker-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 14px; color: var(--text-primary); }
 .picker-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
+  display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 4px; padding: 8px 10px;
+  border: 0; border-radius: var(--r-control); background: none; color: var(--text-primary); text-align: left; cursor: pointer;
 }
-
-.picker-item:hover { background: rgba(128, 128, 128, 0.1); }
-.picker-item-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-
-:root[data-theme='dark'] .picker-trigger { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.16); }
-:root[data-theme='dark'] .picker-menu { background: #17171a; border-color: rgba(255, 255, 255, 0.14); }
-:root[data-theme='dark'] .picker-item:hover { background: rgba(255, 255, 255, 0.08); }
-
-.linkish {
-  margin-left: 8px;
-  padding: 1px 6px;
-  border: 0;
-  border-radius: 5px;
-  background: rgba(128, 128, 128, 0.14);
-  color: inherit;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.linkish:hover { background: rgba(128, 128, 128, 0.24); }
-
-@media (max-width: 720px) {
-  .swap-amount { font-size: 24px; }
-
-  /* The token picker is a bottom sheet on a phone.
-   *
-   * It used to hang from its trigger at a fixed 310px, and the trigger sits at
-   * the right-hand end of the amount row, so on a 390px phone the menu opened
-   * from there and ran off the screen. A sheet is as wide as the screen less a
-   * margin whatever the trigger does, and the page behind it dims, so it reads
-   * as a layer rather than as something that has spilled out of the card. */
+.picker-item:hover, .picker-item[aria-selected='true'] { background: var(--bg-sunken); }
+.picker-item-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.picker-item-name b { font-size: 14px; }
+.picker-item-name span { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-item > .mono { font-size: 13px; flex: none; }
+.picker-none { margin: 0; padding: 10px; font-size: 13px; color: var(--text-secondary); }
+.picker-add { padding: 6px 4px 2px; border-top: 1px solid var(--border-subtle); margin-top: 6px; }
+.picker-scrim { display: none; }
+@media (max-width: 719px) {
+  /* A bottom sheet on a phone, as wide as the screen less a margin. */
   .picker-menu {
-    position: fixed;
-    left: 10px; right: 10px; top: auto;
+    position: fixed; left: 10px; right: 10px; top: auto;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    width: auto; max-width: none;
-    max-height: min(72vh, 480px);
-    z-index: 81;
-    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.28);
-    overscroll-behavior: contain;
+    width: auto; max-height: min(72vh, 480px); z-index: 81;
+    box-shadow: var(--shadow-modal); overscroll-behavior: contain;
   }
-  .picker-scrim { display: block; position: fixed; inset: 0; z-index: 80; border: 0; padding: 0; background: rgba(22, 24, 29, 0.42); cursor: default; }
-  .picker-item { padding: 12px 10px; }
+  .picker-scrim { display: block; position: fixed; inset: 0; z-index: 80; border: 0; padding: 0; background: var(--scrim); cursor: default; }
+  .picker-item { min-height: 52px; }
 }
+
+/* A link that reads as text. */
+.linkish {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.linkish:hover { color: var(--text-link); }
+
+/* ---- the page: a centred 480 / 400 grid, 40 apart ---- */
+.swap-page {
+  display: grid; grid-template-columns: minmax(0, 480px) minmax(0, 400px); gap: 40px;
+  justify-content: center; align-items: start; padding-top: 16px;
+}
+.swap-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.swap-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.swap-h1 { margin: 0; font-size: 36px; line-height: 40px; font-weight: 700; letter-spacing: -0.03em; }
+.swap-page .swap-tabs { margin: 0; }
+.swap-side-col { display: flex; flex-direction: column; gap: 20px; padding-top: 56px; min-width: 0; }
+@media (max-width: 1023px) {
+  .swap-page { grid-template-columns: minmax(0, 560px); gap: 24px; }
+  .swap-side-col { padding-top: 0; }
+}
+@media (max-width: 519px) {
+  .swap-page { padding-top: 0; }
+  .swap-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .swap-h1 { font-size: 28px; line-height: 32px; }
+}
+
+.swap-panel {
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel);
+  padding: 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.swap-panel > .seg, .swap-panel > .liq-pools { margin-bottom: 8px; }
+.swap-panel > .notice { margin-top: 8px; }
+.swap-flip { display: flex; justify-content: center; margin: -14px 0; position: relative; z-index: 1; }
+.flip-btn {
+  width: 36px; height: 36px; display: grid; place-items: center;
+  border: 1px solid var(--border-default); border-radius: var(--r-control);
+  background: var(--bg-surface); color: var(--text-primary); cursor: pointer;
+}
+.flip-btn:hover { background: var(--fill-hover); }
+.swap-rows { display: flex; flex-direction: column; margin-top: 8px; font-size: 14px; }
+.swap-rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 2px; }
+.swap-rows > div > span:first-child { color: var(--text-secondary); }
+.swap-rows .mono { font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+.swap-caption { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+
+.cta { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.cta .why .btn.plain { font-size: 13px; }
+
+/* ---- the right column ---- */
+.pool-panel, .pool-list {
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel);
+  padding: 18px; display: flex; flex-direction: column; gap: 12px;
+}
+.pool-list { padding: 18px 18px 6px; }
+.pool-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.pool-head .h3 { font-size: 16px; font-weight: 700; }
+.pool-rows { display: flex; flex-direction: column; border-top: 1px solid var(--border-subtle); font-size: 14px; }
+.pool-rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
+.pool-rows > div:last-child { border-bottom: 0; }
+.pool-rows > div > span:first-child { color: var(--text-secondary); }
+.pool-rows .mono { font-size: 13px; }
+.pool-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-body); }
+
+.why-wthru { border-top: 1px solid var(--text-primary); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.why-wthru b { font-size: 15px; }
+.why-wthru p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-body); }
+.why-wthru a { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+
+/* Pools tab rows, and positions. */
+.pool-list .row { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.pool-list .row:last-child { border-bottom: 0; }
+.plain-link { color: var(--text-primary); }
+.position { padding: 12px 0; border-top: 1px solid var(--border-subtle); }
+.position-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 14px; }
+.position-pair { font-weight: 600; }
+.position-share { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 
 /* The profile header: picture beside identity, stacking on a phone. */
 .profile-head {
@@ -386,107 +364,28 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 }
 
 /* ===========================================================================
-   Tab strips.
-
-   Scrolling past one feature to reach another is how a page hides its own
-   contents. Swap, liquidity and pools are three jobs, not one long page, and
-   so are builders, projects and community.
-
-   The strip sticks to the top under the header so it stays reachable on a long
-   panel, and it scrolls sideways on a narrow screen rather than wrapping into
-   two rows, which is what a phone expects.
+   Tab strips (the shared Tabs component): 15px, a 2px ink underline on the
+   active tab, a 1px rule under the whole row. The selected tab lives in the
+   URL.
    =========================================================================== */
-
-/* Under a tab strip the floating wallet pill is already cleared, so .wrap's
-   56px of top padding would only show as a gap. These put back a normal amount
-   of breathing room instead. */
-.wrap-tight { padding-top: 22px; padding-bottom: 0; }
-.wrap-top   { padding-top: 22px; }
-
-.tabstrip-wrap {
-  /* Not sticky. The wallet pill is fixed to the top right of every page, and a
-     strip pinned to the top edge slides underneath it on a narrow screen. */
-  margin-bottom: 0;
-  padding: 0 24px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-:root[data-theme='dark'] .tabstrip-wrap { background: rgba(14, 14, 16, 0.86); }
-
-.tabstrip {
-  display: flex;
-  gap: 4px;
-  max-width: 1080px;
-  margin: 0 auto;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
+.wrap-tight { padding-top: 0; padding-bottom: 0; }
+.wrap-top { padding-top: 0; }
+.tabstrip-wrap { margin: 0 auto 24px; max-width: var(--w-content); }
+.tabstrip { display: flex; gap: 20px; border-bottom: 1px solid var(--border-default); overflow-x: auto; scrollbar-width: none; }
 .tabstrip::-webkit-scrollbar { display: none; }
-
 .tabstrip-tab {
-  flex: 0 0 auto;
-  appearance: none;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.94rem;
-  font-weight: 500;
-  color: inherit;
-  opacity: 0.58;
-  padding: 13px 14px 11px;
-  border-bottom: 2px solid transparent;
-  transition: opacity 0.14s ease, border-color 0.14s ease;
-  white-space: nowrap;
+  flex: none; padding: 8px 0; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent;
+  background: none; color: var(--text-secondary); font-size: 15px; line-height: 20px; cursor: pointer; white-space: nowrap;
 }
-
-.tabstrip-tab:hover { opacity: 0.85; }
-
-.tabstrip-tab[aria-selected="true"] {
-  opacity: 1;
-  font-weight: 600;
-  border-bottom-color: currentColor;
-}
-
+.tabstrip-tab:hover { color: var(--text-primary); }
+.tabstrip-tab[aria-selected="true"] { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--text-primary); }
 .tabstrip-badge {
-  display: inline-block;
-  margin-left: 7px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  background: rgba(128, 128, 128, 0.18);
+  display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid var(--border-default); border-radius: var(--r-chip);
+  font-family: var(--font-mono); font-size: 11px; line-height: 16px; color: var(--text-secondary);
 }
-
 .tabstrip-panel { min-height: 40vh; }
+@media (max-width: 819px) { .tabstrip-tab { min-height: 44px; } }
 
-/* Pages under a strip bring their own .wrap and the same 56px with it. */
-.tabstrip-panel > .wrap,
-.tabstrip-panel > * > .wrap { padding-top: 22px; }
-
-@media (max-width: 720px) {
-  .tabstrip-wrap { padding: 0 14px; }
-  .tabstrip-tab { padding: 12px 11px 10px; font-size: 0.9rem; }
-}
-
-/* A button for the thing you probably do not want to do. Quiet until hovered,
-   so it never looks like the obvious next step. */
-
-.btn.danger {
-  border-color: rgba(200, 60, 60, 0.4);
-  color: #c0392b;
-}
-
-.btn.danger:hover:not(:disabled) {
-  border-color: rgba(200, 60, 60, 0.75);
-  background: rgba(200, 60, 60, 0.08);
-}
-
-:root[data-theme='dark'] .btn.danger { color: #ff8a80; border-color: rgba(255, 138, 128, 0.36); }
 :root[data-theme='dark'] .btn.danger:hover:not(:disabled) {
     border-color: rgba(255, 138, 128, 0.7);
     background: rgba(255, 138, 128, 0.1);

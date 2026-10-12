@@ -40,6 +40,13 @@ export function TokenIcon({ meta, symbol, mint, size = 32, className = '' }) {
   const font = size >= 64 ? 18 : size >= 48 ? 14 : size >= 40 ? 13 : size >= 28 ? 11 : 10
   const box = { width: size, height: size, flex: `0 0 ${size}px`, borderRadius: radius, fontSize: font }
 
+  // THRU itself, the chain's coin: round like the other system tokens.
+  if (mint === 'THRU') {
+    return (
+      <span className={`tok-icon tok-system tok-thru ${className}`}
+        style={{ ...box, borderRadius: '50%', fontSize: Math.max(9, Math.round(size * 0.38)) }} aria-hidden="true">TH</span>
+    )
+  }
   if (mint && (mint === WTHRU_MINT || mint === TUSD_MINT)) {
     const wthru = mint === WTHRU_MINT
     return (

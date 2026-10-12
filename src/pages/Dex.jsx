@@ -54,6 +54,10 @@ import {
   WTHRU_MINT,
 } from '../lib/addresses.js'
 import { useDismiss } from '../lib/dismiss.js'
+import { connectWallet } from '../lib/connect.js'
+import { Icon } from '../components/Icon.jsx'
+import { TxDialog, useTxFlow, NETWORK_ROW } from '../components/TxDialog.jsx'
+import { useTab } from '../lib/useTab.js'
 import './launch.css'
 
 const DECIMALS = 6
@@ -782,42 +786,65 @@ export function CreateLaunchCard({ nextId, registry, threshold, onClose, onLaunc
  *   It picks the pool. Either orientation, whichever holds both mints.
  */
 
-function TokenPicker({ tokens, value, onChange, exclude, label, onAdded }) {
+/* Who a token is, in the picker's second line. The system tokens are named by
+   what they are; every other token was named by whoever created it. */
+function tokenSubtitle(t) {
+  if (t.native) return 'Thru’s own coin · native'
+  if (t.mint === WTHRU_MINT) return 'Wrapped THRU · system'
+  if (t.mint === TUSD_MINT) return 'Test USD · ThruScan faucet'
+  return `Creator-named · ${short(t.mint)}`
+}
+
+/** The token selector (2j): a pill that opens a searchable menu. */
+function TokenPicker({ tokens, value, onChange, exclude, label, onAdded, surface }) {
   const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
   const boxRef = useRef(null)
 
   useDismiss(boxRef, open, useCallback(() => setOpen(false), []))
 
   const chosen = tokens.find((t) => t.mint === value)
+  const needle = q.trim().toLowerCase()
+  const shown = tokens
+    .filter((t) => t.mint !== exclude)
+    .filter((t) => !needle || t.ticker.toLowerCase().includes(needle) || t.mint.toLowerCase() === needle)
 
   return (
     <div className="picker" ref={boxRef}>
-      <button className="picker-trigger" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button className={`picker-trigger${surface ? ' on-sunken' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox">
         {chosen
-          ? <><b>{chosen.ticker}</b><span className="picker-caret">›</span></>
-          : <><span>{label}</span><span className="picker-caret">›</span></>}
+          ? <><TokenIcon symbol={chosen.ticker} mint={chosen.mint} size={26} /><b>{chosen.ticker}</b></>
+          : <span>{label}</span>}
+        <Icon name="expand" size={16} />
       </button>
 
       {open && (
         <>
           {/* Only drawn on a phone, where the menu is a sheet. */}
           <button className="picker-scrim" aria-label="Close" tabIndex={-1} onClick={() => setOpen(false)} />
-          <div className="picker-menu">
-            {tokens.filter((t) => t.mint !== exclude).map((t) => (
+          <div className="picker-menu" role="listbox">
+            <label className="picker-search">
+              <Icon name="search" size={16} />
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Symbol or mint address" aria-label="Symbol or mint address" spellCheck={false} />
+            </label>
+            {shown.map((t) => (
               <button
                 key={t.mint}
+                role="option"
+                aria-selected={t.mint === value}
                 className="picker-item"
-                onClick={() => { onChange(t.mint); setOpen(false) }}
+                onClick={() => { onChange(t.mint); setOpen(false); setQ('') }}
               >
+                <TokenIcon symbol={t.ticker} mint={t.mint} size={28} />
                 <span className="picker-item-name">
                   <b>{t.ticker}</b>
-                  <span className="fine mono">{t.native ? 'native coin' : short(t.mint)}</span>
+                  <span>{tokenSubtitle(t)}</span>
                 </span>
-                <span className="mono fine">{fmt(t.balance, t.decimals)}</span>
+                <span className="mono">{t.known ? fmt(t.balance, t.decimals) : '—'}</span>
               </button>
             ))}
-            {tokens.filter((t) => t.mint !== exclude).length === 0 && (
-              <p className="fine" style={{ padding: 10 }}>Nothing to pick yet.</p>
+            {shown.length === 0 && (
+              <p className="picker-none">{needle ? 'No token matches that.' : 'Nothing to pick yet.'}</p>
             )}
             <div className="picker-add">
               <AddToken compact known={tokens.map((t) => t.mint)}
@@ -830,7 +857,57 @@ function TokenPicker({ tokens, value, onChange, exclude, label, onAdded }) {
   )
 }
 
-function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
+/** The editable amount (2e): white, an ink edge, a 32px mono number. */
+function AmountIn({ label, value, onChange, balance, onMax, children }) {
+  return (
+    <div className="amt amt-in">
+      <div className="amt-top">
+        <label className="amt-label">{label}</label>
+        {balance !== undefined && (
+          <span className="amt-bal mono">
+            Balance {balance}
+            {onMax && <> <button className="amt-max" onClick={onMax}>Max</button></>}
+          </span>
+        )}
+      </div>
+      <div className="amt-main">
+        <input className="amt-num mono" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0" inputMode="decimal" aria-label={label} />
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** The calculated amount: sunken, no edge, prefixed with ≈ and labelled. */
+function AmountOut({ label, value, balance, children }) {
+  return (
+    <div className="amt amt-out">
+      <div className="amt-top">
+        <span className="amt-label">{label}</span>
+        {balance !== undefined && <span className="amt-bal mono">Balance {balance}</span>}
+      </div>
+      <div className="amt-main">
+        <span className={`amt-num mono${value ? '' : ' amt-zero'}`}>{value ? `≈ ${value}` : '0'}</span>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** The primary action with its reason. Disabled buttons always say why. */
+function Cta({ state }) {
+  return (
+    <div className="cta">
+      {state.kind === 'connect' && <button className="btn lg full" onClick={connectWallet}><Icon name="wallet" size={18} />Connect wallet</button>}
+      {state.kind === 'unlock' && <button className="btn secondary lg full" onClick={state.onClick}><Icon name="locked" size={18} />{state.label}</button>}
+      {state.kind === 'go' && <button className={`btn lg full${state.variant ? ` ${state.variant}` : ''}`} onClick={state.onClick}>{state.label}</button>}
+      {state.kind === 'off' && <button className={`btn lg full${state.variant ? ` ${state.variant}` : ''}`} disabled>{state.label}</button>}
+      {state.why && <p className="why">{state.why}</p>}
+    </div>
+  )
+}
+
+function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown, onPool }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
 
@@ -908,9 +985,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const [fromMint, setFromMint] = useState(null)
   const [toMint, setToMint] = useState(null)
   const [amount, setAmount] = useState('')
-  const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
-  const [done, setDone] = useState(null)
 
   /* Open on the pair the wallet can actually trade, so the first thing you see
      is something you could do rather than something you cannot. Balances decide
@@ -1001,195 +1076,195 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const thin = impactBps >= 1000n && !blocker      // 10% and up
   const veryThin = impactBps >= 5000n && !blocker  // half the pool
 
-  const swap = async () => {
-    setError(null); setDone(null)
-    try {
-      await gate.ensure()
-    } catch (e) {
+  const flow = useTxFlow()
+  const needsOpen = !wrapOnly && !!pool && [poolFrom, poolTo].some((m) => !wallet.balances?.[m]?.exists)
+
+  /* The whole trade, step by step, for the review dialog. */
+  const run = async (progress) => {
+    const landed = async (sig, what) => {
+      const r = await waitForResult(sig)
+      if (r.settled && !r.succeeded) return { ok: false, signature: sig, error: `${what} failed (error ${r.userError || r.vmError})` }
+      return null
+    }
+
+    // THRU <-> WTHRU needs no pool: it is a wrap or an unwrap.
+    if (wrapOnly) {
+      progress('sign')
+      const sig = fromMint === THRU ? await wrapThru(amountIn) : await unwrapThru(amountIn)
+      progress('sent', sig)
+      const bad = await landed(sig, fromMint === THRU ? 'Wrapping' : 'Unwrapping')
+      if (bad) return bad
+      setAmount('')
+      await wallet.refresh([WTHRU_MINT])
+      return { ok: true, signature: sig }
+    }
+
+    if (needsOpen) progress('accounts')
+    const accounts = {}
+    for (const [key, mint] of [['userIn', poolFrom], ['userOut', poolTo]]) {
+      const known = wallet.balances[mint]
+      if (known?.exists) { accounts[key] = known.account; continue }
+      const made = await openTokenAccount(mint)
+      accounts[key] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
+    }
+
+    // Buying THRU: note the WTHRU held now, so exactly what the trade brings
+    // in is unwrapped afterwards and nothing already held is touched.
+    const wthruBefore = toMint === THRU
+      ? BigInt((await tokenBalances([WTHRU_MINT], wallet.address))[0]?.amount ?? 0)
+      : 0n
+
+    progress('sign')
+    const sent = (sig) => progress('sent', sig)
+    // Selling THRU wraps it on the way through, in the same transaction, so
+    // it is one approval rather than two. Buying THRU cannot do the same in
+    // reverse: see buildSwapPayingInThru for why.
+    const result = fromMint === THRU
+      ? await sendBuilt(null, buildSwapPayingInThru({
+        payer: wallet.address, program: SWAP_PROGRAM,
+        registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
+        userIn: accounts.userIn, userOut: accounts.userOut,
+        amountIn, minOut: 1n, wrap: amountIn,
+      }), sent)
+      : await sendBuilt(SWAP_PROGRAM, buildSwapInstruction({
+        registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
+        userIn: accounts.userIn, userOut: accounts.userOut,
+        amountIn, minOut: 1n,
+      }), sent)
+
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+
+    if (toMint === THRU) {
+      let got = 0n
+      for (let i = 0; i < 8 && got <= 0n; i++) {
+        const now = BigInt((await tokenBalances([WTHRU_MINT], wallet.address))[0]?.amount ?? 0)
+        got = now - wthruBefore
+        if (got <= 0n) await new Promise((r) => setTimeout(r, 1000))
+      }
+      if (got > 0n) {
+        const bad = await landed(await unwrapThru(got), 'Unwrapping to THRU')
+        if (bad) return bad
+      }
+    }
+    setAmount('')
+    await wallet.refresh(tokens.filter((t) => !t.native).map((t) => t.mint))
+    reload()
+    return { ok: true, signature: result.signature }
+  }
+
+  const review = async () => {
+    setError(null)
+    try { await gate.ensure() } catch (e) {
       if (!isDismissal(e)) setError(String(e?.message ?? e))
       return
     }
-
-    const landed = async (sig, what) => {
-      const r = await waitForResult(sig)
-      if (r.settled && !r.succeeded) throw new Error(`${what} failed (error ${r.userError || r.vmError}).`)
-      return sig
-    }
-
-    try {
-      // THRU <-> WTHRU needs no pool: it is a wrap or an unwrap.
-      if (wrapOnly) {
-        setStep(fromMint === THRU ? 'wrapping' : 'unwrapping')
-        const sig = fromMint === THRU ? await wrapThru(amountIn) : await unwrapThru(amountIn)
-        await landed(sig, fromMint === THRU ? 'Wrapping' : 'Unwrapping')
-        setDone(sig); setAmount('')
-        await wallet.refresh([WTHRU_MINT])
-        return
-      }
-
-      setStep('opening')
-      const accounts = {}
-      for (const [key, mint] of [['userIn', poolFrom], ['userOut', poolTo]]) {
-        const known = wallet.balances[mint]
-        if (known?.exists) { accounts[key] = known.account; continue }
-        const made = await openTokenAccount(mint)
-        accounts[key] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
-      }
-
-      // Buying THRU: note the WTHRU held now, so exactly what the trade brings
-      // in is unwrapped afterwards and nothing already held is touched.
-      const wthruBefore = toMint === THRU
-        ? BigInt((await tokenBalances([WTHRU_MINT], wallet.address))[0]?.amount ?? 0)
-        : 0n
-
-      setStep('signing')
-      // Selling THRU wraps it on the way through, in the same transaction, so
-      // it is one approval rather than two. Buying THRU cannot do the same in
-      // reverse: see buildSwapPayingInThru for why.
-      const result = fromMint === THRU
-        ? await sendBuilt(null, buildSwapPayingInThru({
-          payer: wallet.address, program: SWAP_PROGRAM,
-          registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
-          userIn: accounts.userIn, userOut: accounts.userOut,
-          amountIn, minOut: 1n, wrap: amountIn,
-        }))
-        : await sendBuilt(SWAP_PROGRAM, buildSwapInstruction({
-          registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
-          userIn: accounts.userIn, userOut: accounts.userOut,
-          amountIn, minOut: 1n,
-        }))
-
-      if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
-
-      if (toMint === THRU) {
-        setStep('unwrapping')
-        let got = 0n
-        for (let i = 0; i < 8 && got <= 0n; i++) {
-          const now = BigInt((await tokenBalances([WTHRU_MINT], wallet.address))[0]?.amount ?? 0)
-          got = now - wthruBefore
-          if (got <= 0n) await new Promise((r) => setTimeout(r, 1000))
-        }
-        if (got > 0n) await landed(await unwrapThru(got), 'Unwrapping to THRU')
-      }
-      setDone(result.signature)
-      setAmount('')
-      await wallet.refresh(tokens.filter((t) => !t.native).map((t) => t.mint))
-      reload()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setStep(null)
-    }
+    flow.open()
   }
 
   const flip = () => { setFromMint(toMint); setToMint(fromMint); setAmount('') }
 
+  /* The rate at the pool's current reserves, before any amount is typed. */
+  const rate = (() => {
+    if (!from || !to) return '–'
+    if (wrapOnly) return `1 ${from.ticker} = 1 ${to.ticker}`
+    if (!pool || reserveIn === 0n || reserveOut === 0n) return '–'
+    if (amountIn > 0n && quote?.amountOut > 0n) {
+      return `1 ${from.ticker} = ${fmt((quote.amountOut * 10n ** BigInt(from.decimals)) / amountIn, to.decimals)} ${to.ticker}`
+    }
+    return `1 ${from.ticker} = ${fmt((reserveOut * 10n ** BigInt(from.decimals)) / reserveIn, to.decimals)} ${to.ticker}`
+  })()
+  const feeText = pool ? `${(pool.feeBps / 100).toFixed(2)}%` : null
+  const feeAmount = pool && amountIn > 0n ? `${fmt((amountIn * BigInt(pool.feeBps)) / 10000n, from.decimals)} ${from.ticker}` : '–'
+  const outText = quote?.amountOut > 0n && to ? fmt(quote.amountOut, to.decimals ?? DECIMALS) : null
+
+  /* What the button says, and why when it cannot be pressed. */
+  const cta = (() => {
+    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <Link to="/get-wallet">Get ThruScan Wallet</Link> or create one in this browser.</> }
+    if (!wallet.unlocked) return { kind: 'unlock', label: 'Unlock to swap', onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign.' }
+    if (registryDown && !wrapOnly) {
+      return { kind: 'off', label: 'Quote unavailable', why: <>The pool registry can&rsquo;t be read. The form stays; swapping resumes when it can. <button className="btn plain" onClick={() => reload()}>Retry</button></> }
+    }
+    if (!from || !to) return { kind: 'off', label: 'Pick two tokens', why: 'Choose what you pay and what you receive.' }
+    if (amountIn <= 0n) return { kind: 'off', label: 'Enter an amount', why: blocker && !/^You have/.test(blocker) ? blocker : null }
+    if (shortOfFunds) {
+      const faucet = from.native || from.mint === WTHRU_MINT
+      return {
+        kind: 'off', label: `Not enough ${from.ticker}`,
+        why: <>You have {fmt(spendable, from.decimals)} {from.ticker}{from.native ? ' to spend after fees' : ''}.{faucet && <> <Link to="/faucet">Get more from the faucet</Link>.</>}</>,
+      }
+    }
+    if (blocker) return { kind: 'off', label: 'Review swap', why: blocker }
+    return { kind: 'go', label: wrapOnly ? (fromMint === THRU ? 'Review wrap' : 'Review unwrap') : 'Review swap', onClick: review }
+  })()
+
+  useEffect(() => { onPool?.({ pool, from, to, wrapOnly }) }, [pool, from, to, wrapOnly])  // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <section className="card swap-card">
-      {gate.modal}
-
-      <div className="swap-side">
-        <div className="swap-side-head">
-          <span className="fine">Sell</span>
-          {from && (
-            <span className="fine">
-              Balance {from.known ? fmt(from.balance, from.decimals) : '—'}
-              {from.balance > 0n && (
-                <button
-                  className="linkish"
-                  onClick={() => setAmount(String(Number(spendable) / 10 ** from.decimals))}
-                >MAX</button>
-              )}
-            </span>
-          )}
-        </div>
-        <div className="swap-side-body">
-          <input
-            className="swap-amount mono"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0"
-            inputMode="decimal"
-          />
+    <>
+      <section className="swap-panel">
+        {gate.modal}
+        <AmountIn
+          label="You pay" value={amount} onChange={setAmount}
+          balance={from ? (from.known ? fmt(from.balance, from.decimals) : '—') : undefined}
+          onMax={from && from.balance > 0n ? () => setAmount(fromUnits(spendable, from.decimals)) : null}
+        >
           <TokenPicker tokens={tokens} value={fromMint} onChange={setFromMint} exclude={toMint} label="Select" />
+        </AmountIn>
+
+        <div className="swap-flip">
+          <button className="flip-btn" onClick={flip} aria-label="Swap direction"><Icon name="flip" size={18} /></button>
         </div>
-      </div>
 
-      <div className="swap-flip">
-        <button className="flip-btn" onClick={flip} title="Swap direction" aria-label="Swap direction">↓</button>
-      </div>
+        <AmountOut label="You receive (estimate)" value={outText} balance={to ? (to.known ? fmt(to.balance, to.decimals) : '—') : undefined}>
+          <TokenPicker tokens={tokens} value={toMint} onChange={setToMint} exclude={fromMint} label="Select" surface />
+        </AmountOut>
 
-      <div className="swap-side">
-        <div className="swap-side-head">
-          <span className="fine">Buy</span>
-          {to && <span className="fine">Balance {to.known ? fmt(to.balance, to.decimals) : '—'}</span>}
+        <div className="swap-rows">
+          <div><span>Rate</span><span className="mono">{rate}</span></div>
+          {!wrapOnly && <div><span>Pool fee{feeText ? ` (${feeText}, paid to LPs)` : ''}</span><span className="mono">{feeAmount}</span></div>}
+          <div><span>Network fee</span><span className="mono">shown by your wallet</span></div>
         </div>
-        <div className="swap-side-body">
-          <span className="swap-amount mono" style={{ opacity: quote?.amountOut ? 1 : 0.4 }}>
-            {quote?.amountOut ? fmt(quote.amountOut, to?.decimals ?? DECIMALS) : '0'}
-          </span>
-          <TokenPicker tokens={tokens} value={toMint} onChange={setToMint} exclude={fromMint} label="Select" />
-        </div>
-      </div>
 
-      {pool && amountIn > 0n && !blocker && (
-        <div className="rows" style={{ marginTop: 14 }}>
-          <div className="row"><span>Rate</span><span className="mono">
-            1 {from.ticker} = {fmt((quote.amountOut * 10n ** BigInt(from.decimals)) / (amountIn || 1n), to.decimals)} {to.ticker}
-          </span></div>
-          <div className="row"><span>Price impact</span>
-            <span className="mono" style={veryThin ? { fontWeight: 600 } : undefined}>
-              {(Number(impactBps) / 100).toFixed(2)}%
-            </span>
-          </div>
-          <div className="row"><span>Fee</span><span className="mono">
-            {fmt((amountIn * BigInt(pool.feeBps)) / 10000n, from.decimals)} {from.ticker}
-          </span></div>
-          <div className="row"><span>Pool holds</span><span className="mono fine">
-            {fmt(reserveIn, from.decimals)} {from.ticker} · {fmt(reserveOut, to.decimals)} {to.ticker}
-          </span></div>
-        </div>
-      )}
+        {veryThin && (
+          <p className="notice bad">Thin pool: this trade moves the price {(Number(impactBps) / 100).toFixed(0)}% and you&rsquo;d get far less than fair value. Trade smaller.</p>
+        )}
+        {thin && !veryThin && (
+          <p className="notice"><Icon name="warning" size={18} /><span>Thin pool: this moves the price {(Number(impactBps) / 100).toFixed(1)}%. Smaller trades get a better rate.</span></p>
+        )}
 
-      {veryThin && (
-        <p className="notice bad" style={{ marginTop: 14 }}>Thin pool: this trade moves the price {(Number(impactBps) / 100).toFixed(0)}% and you'd get far less than fair value. Trade smaller.</p>
-      )}
-      {thin && !veryThin && (
-        <p className="notice" style={{ marginTop: 14 }}>
-          Thin pool: this moves the price {(Number(impactBps) / 100).toFixed(1)}%. Smaller trades get
-          a better rate.
-        </p>
-      )}
+        <Cta state={cta} />
+        {error && <p className="notice bad">{error}</p>}
+      </section>
+      <p className="swap-caption">Quotes come from the pool&rsquo;s current reserves. The final amount can differ if someone else trades first.</p>
 
-      {blocker && <p className="notice bad" style={{ marginTop: 14 }}>{blocker}</p>}
-
-      <button
-        className="btn"
-        style={{ width: '100%', marginTop: 14 }}
-        onClick={swap}
-        disabled={!!blocker || amountIn <= 0n || step !== null}
-      >
-        {step === 'opening' ? 'Opening your token account…'
-          : step === 'wrapping' ? 'Wrapping THRU…'
-          : step === 'unwrapping' ? 'Unwrapping to THRU…'
-          : step === 'signing' ? 'Signing…'
-          : !hasWallet() ? 'Connect a wallet to swap'
-          : from && to ? `Swap ${from.ticker} for ${to.ticker}`
-          : 'Swap'}
-      </button>
-
-      {!hasWallet() && (
-        <p className="fine" style={{ marginTop: 10 }}><Link to="/wallet">Open a wallet</Link> first.</p>
-      )}
-
-      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
-      {done && (
-        <p className="notice" style={{ marginTop: 12 }}>
-          Swapped. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
-        </p>
-      )}
-
-    </section>
+      <TxDialog
+        flow={flow}
+        title={wrapOnly ? (fromMint === THRU ? 'Review wrap' : 'Review unwrap') : 'Review swap'}
+        pay={{ value: `${amount || '0'} ${from?.ticker ?? ''}` }}
+        receive={{ value: `${outText ?? '0'} ${to?.ticker ?? ''}`, exact: wrapOnly }}
+        rows={[
+          { k: 'Rate', v: rate },
+          ...(wrapOnly ? [] : [
+            { k: `Pool fee (${feeText}, to LPs)`, v: feeAmount },
+            { k: 'Minimum received', v: 'No minimum set' },
+          ]),
+          NETWORK_ROW,
+        ]}
+        technical={wrapOnly ? null : { program: SWAP_PROGRAM, extra: [{ k: 'Pool', v: pool ? `#${pool.id}` : '–' }] }}
+        note={wrapOnly
+          ? 'Your wallet will ask you to sign. Wrapping goes straight through Thru’s WTHRU program, one for one.'
+          : 'Your wallet will ask you to sign. The final amount can differ if the pool changes before your swap lands.'}
+        needsAccounts={needsOpen}
+        run={run}
+        words={{
+          pendingTitle: wrapOnly ? 'Wrap submitted' : 'Swap submitted',
+          landed: wrapOnly ? (fromMint === THRU ? 'Wrap confirmed' : 'Unwrap confirmed') : 'Swap confirmed',
+          landedSub: outText && to ? `About ${outText} ${to.ticker} is on its way to your wallet; the balance updates in a moment.` : undefined,
+          failed: wrapOnly ? 'Wrap failed' : 'Swap failed',
+        }}
+        landedLinks={toMint === WTHRU_MINT ? [{ to: '/', label: 'Buy on ThruPad', strong: true }] : []}
+      />
+    </>
   )
 }
 
@@ -1290,9 +1365,7 @@ function Positions({ pools, balances, tickers, decimalsOf }) {
       <div className="card-head">
         <div>
           <h2 className="h2">Your positions</h2>
-          <p className="sub">
-            {mine.length ? `${mine.length} pool${mine.length === 1 ? '' : 's'}` : 'Nothing deposited yet'}
-          </p>
+          {mine.length > 0 && <p className="sub">{`${mine.length} pool${mine.length === 1 ? '' : 's'}`}</p>}
         </div>
       </div>
 
@@ -1327,7 +1400,7 @@ function Positions({ pools, balances, tickers, decimalsOf }) {
 }
 
 
-function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
+function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload, onPool }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
 
@@ -1335,9 +1408,7 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
   const [side, setSide] = useState('add')
   const [amountA, setAmountA] = useState('')
   const [lpAmount, setLpAmount] = useState('')
-  const [step, setStep] = useState(null)
   const [error, setError] = useState(null)
-  const [done, setDone] = useState(null)
 
   useEffect(() => { if (poolId == null && pools.length) setPoolId(pools[0].id) }, [pools, poolId])
 
@@ -1411,196 +1482,202 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload }) {
     return null
   })()
 
-  const go = async () => {
-    setError(null); setDone(null)
+  const flow = useTxFlow()
+  const needsOpen = !!pool && [pool.mintA, pool.mintB, pool.lpMint].some((m) => !wallet.balances?.[m]?.exists)
+
+  const run = async (progress) => {
+    const need = [pool.mintA, pool.mintB, pool.lpMint]
+    if (needsOpen) progress('accounts')
+    const accounts = {}
+    for (const mint of need) {
+      const known = wallet.balances[mint]
+      if (known?.exists) { accounts[mint] = known.account; continue }
+      const made = await openTokenAccount(mint)
+      if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+      accounts[mint] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
+    }
+
+    progress('sign')
+    const args = {
+      registry: SWAP_REGISTRY, poolId: pool.id,
+      vaultA: pool.vaultA, vaultB: pool.vaultB,
+      userA: accounts[pool.mintA], userB: accounts[pool.mintB],
+      lpMint: pool.lpMint, userLp: accounts[pool.lpMint],
+    }
+    const built = side === 'add'
+      ? buildAddLiquidityInstruction({ ...args, amountA: inA, amountB: inB })
+      : buildRemoveLiquidityInstruction({ ...args, lpAmount: burnLp })
+
+    const result = await sendBuilt(SWAP_PROGRAM, built, (sig) => progress('sent', sig))
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+
+    setAmountA(''); setLpAmount('')
+    await wallet.refresh(need)
+    reload()
+    return { ok: true, signature: result.signature }
+  }
+
+  const review = async () => {
+    setError(null)
     try { await gate.ensure() } catch (e) {
       if (!isDismissal(e)) setError(String(e?.message ?? e))
       return
     }
-
-    try {
-      setStep('opening')
-      const need = [pool.mintA, pool.mintB, pool.lpMint]
-      const accounts = {}
-      for (const mint of need) {
-        const known = wallet.balances[mint]
-        if (known?.exists) { accounts[mint] = known.account; continue }
-        const made = await openTokenAccount(mint)
-        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
-        accounts[mint] = made.account ?? (await deriveTokenAccount(mint, wallet.address))
-      }
-
-      setStep('signing')
-      const args = {
-        registry: SWAP_REGISTRY, poolId: pool.id,
-        vaultA: pool.vaultA, vaultB: pool.vaultB,
-        userA: accounts[pool.mintA], userB: accounts[pool.mintB],
-        lpMint: pool.lpMint, userLp: accounts[pool.lpMint],
-      }
-      const built = side === 'add'
-        ? buildAddLiquidityInstruction({ ...args, amountA: inA, amountB: inB })
-        : buildRemoveLiquidityInstruction({ ...args, lpAmount: burnLp })
-
-      const result = await sendBuilt(SWAP_PROGRAM, built)
-      if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
-
-      setDone(result.signature)
-      setAmountA(''); setLpAmount('')
-      await wallet.refresh(need)
-      reload()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setStep(null)
-    }
+    flow.open()
   }
+
+  useEffect(() => { onPool?.(pool) }, [pool])  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!pools.length) return null
 
+  const adding = side === 'add'
+  const cta = (() => {
+    const label = adding ? 'Add liquidity' : 'Remove liquidity'
+    const variant = adding ? 'secondary' : 'danger'
+    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <Link to="/get-wallet">Get ThruScan Wallet</Link> or create one in this browser.</> }
+    if (!wallet.unlocked) return { kind: 'unlock', label: 'Unlock to continue', onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign.' }
+    if (adding ? inA <= 0n : burnLp <= 0n) return { kind: 'off', label, variant, why: blocker ?? (adding ? 'Enter an amount.' : 'Enter how many LP tokens to burn.') }
+    if (blocker) return { kind: 'off', label, variant, why: blocker }
+    return { kind: 'go', label, variant, onClick: review }
+  })()
+
   return (
-    <section className="card">
-      {gate.modal}
-
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Liquidity</h2>
-          <p className="sub">Deposit both sides, earn a share of every trade</p>
+    <>
+      <section className="swap-panel">
+        {gate.modal}
+        {pools.length > 1 && (
+          <div className="chips liq-pools" role="group" aria-label="Pool">
+            {pools.map((p) => (
+              <button key={p.id} className="chip" aria-pressed={p.id === poolId}
+                onClick={() => { setPoolId(p.id); setAmountA(''); setLpAmount('') }}>
+                {tick(p.mintA)} / {tick(p.mintB)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="seg" role="group" aria-label="Add or remove">
+          <button aria-pressed={adding} onClick={() => setSide('add')}>Add</button>
+          <button aria-pressed={!adding} onClick={() => setSide('remove')}>Remove</button>
         </div>
-        <div className="inline">
-          <button className="btn ghost" onClick={() => setSide('add')} aria-current={side === 'add'}>Add</button>
-          <button className="btn ghost" onClick={() => setSide('remove')} aria-current={side === 'remove'}>Remove</button>
-        </div>
-      </div>
 
-      <div className="form-row" style={{ marginTop: 14 }}>
-        <label className="label">Pool</label>
-        <div className="inline">
-          {pools.map((p) => (
-            <button
-              key={p.id}
-              className="btn ghost"
-              onClick={() => { setPoolId(p.id); setAmountA(''); setLpAmount('') }}
-              aria-current={p.id === poolId}
+        {pool && adding && (
+          <>
+            <AmountIn
+              label={`You add · ${tick(pool.mintA)}`} value={amountA} onChange={setAmountA}
+              balance={fmt(heldA, dp(pool.mintA))}
+              onMax={heldA > 0n ? () => setAmountA(fromUnits(heldA, dp(pool.mintA))) : null}
             >
-              {tick(p.mintA)} / {tick(p.mintB)}
-            </button>
-          ))}
-        </div>
-      </div>
+              <span className="amt-unit"><TokenIcon symbol={tick(pool.mintA)} mint={pool.mintA} size={26} /><b>{tick(pool.mintA)}</b></span>
+            </AmountIn>
+            <AmountOut label={`And ${tick(pool.mintB)}, at the pool's ratio (estimate)`} value={inB > 0n ? fmt(inB, dp(pool.mintB)) : null} balance={fmt(heldB, dp(pool.mintB))}>
+              <span className="amt-unit"><TokenIcon symbol={tick(pool.mintB)} mint={pool.mintB} size={26} /><b>{tick(pool.mintB)}</b></span>
+            </AmountOut>
+          </>
+        )}
+
+        {pool && !adding && (
+          <>
+            <AmountIn
+              label="LP tokens to burn" value={lpAmount} onChange={setLpAmount}
+              balance={fmt(heldLp)}
+              onMax={heldLp > 0n ? () => setLpAmount(fromUnits(heldLp, DECIMALS)) : null}
+            >
+              <span className="amt-unit"><b>LP</b></span>
+            </AmountIn>
+            <AmountOut label="You get back (estimate)" value={burnLp > 0n ? `${fmt(outA, dp(pool.mintA))} ${tick(pool.mintA)} · ${fmt(outB, dp(pool.mintB))} ${tick(pool.mintB)}` : null} />
+          </>
+        )}
+
+        {pool && (
+          <div className="swap-rows">
+            <div><span>Fee to providers</span><span className="mono">{pool.feeBps / 100}% of every trade</span></div>
+            <div><span>Your share</span><span className="mono">{heldLp > 0n ? `${sharePct.toFixed(2)}% · ${fmt(heldLp)} LP` : 'none'}</span></div>
+          </div>
+        )}
+
+        <Cta state={cta} />
+        {error && <p className="notice bad">{error}</p>}
+      </section>
+      <p className="swap-caption">Deposits go in at the pool&rsquo;s ratio, so the second amount is worked out for you. Your share tracks what the pool holds now, not what you put in.</p>
 
       {pool && (
-        <>
-          <div className="rows" style={{ marginTop: 14 }}>
-            <div className="row">
-              <span>Pool holds</span>
-              <span className="mono">
-                {fmt(reserveA, dp(pool.mintA))} {tick(pool.mintA)} · {fmt(reserveB, dp(pool.mintB))} {tick(pool.mintB)}
-              </span>
-            </div>
-            <div className="row">
-              <span>Your share</span>
-              <span className="mono">
-                {heldLp > 0n ? `${sharePct.toFixed(2)}% · ${fmt(heldLp)} LP` : 'none'}
-              </span>
-            </div>
-            <div className="row"><span>Fee to providers</span><span className="mono">{pool.feeBps / 100}% of every trade</span></div>
-          </div>
-
-          {side === 'add' ? (
-            <div className="stack" style={{ marginTop: 16 }}>
-              <div className="swap-side">
-                <div className="swap-side-head">
-                  <span className="fine">{tick(pool.mintA)}</span>
-                  <span className="fine">
-                    Balance {fmt(heldA, dp(pool.mintA))}
-                    {heldA > 0n && (
-                      <button
-                        className="linkish"
-                        onClick={() => setAmountA(String(Number(heldA) / 10 ** dp(pool.mintA)))}
-                      >MAX</button>
-                    )}
-                  </span>
-                </div>
-                <input
-                  className="swap-amount mono"
-                  value={amountA}
-                  onChange={(e) => setAmountA(e.target.value)}
-                  placeholder="0"
-                  inputMode="decimal"
-                />
-              </div>
-
-              <div className="swap-side">
-                <div className="swap-side-head">
-                  <span className="fine">{tick(pool.mintB)}, at the pool's ratio</span>
-                  <span className="fine">Balance {fmt(heldB, dp(pool.mintB))}</span>
-                </div>
-                <span className="swap-amount mono" style={{ opacity: inB > 0n ? 1 : 0.4 }}>
-                  {inB > 0n ? fmt(inB, dp(pool.mintB)) : '0'}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="stack" style={{ marginTop: 16 }}>
-              <div className="swap-side">
-                <div className="swap-side-head">
-                  <span className="fine">LP tokens to burn</span>
-                  <span className="fine">
-                    Holding {fmt(heldLp)}
-                    {heldLp > 0n && (
-                      <button className="linkish" onClick={() => setLpAmount(String(Number(heldLp) / 1e6))}>MAX</button>
-                    )}
-                  </span>
-                </div>
-                <input
-                  className="swap-amount mono"
-                  value={lpAmount}
-                  onChange={(e) => setLpAmount(e.target.value)}
-                  placeholder="0"
-                  inputMode="decimal"
-                />
-              </div>
-              {burnLp > 0n && (
-                <div className="rows">
-                  <div className="row">
-                    <span>You get back</span>
-                    <b className="mono">
-                      {fmt(outA, dp(pool.mintA))} {tick(pool.mintA)} · {fmt(outB, dp(pool.mintB))} {tick(pool.mintB)}
-                    </b>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {blocker && <p className="notice bad" style={{ marginTop: 14 }}>{blocker}</p>}
-
-          <button
-            className="btn"
-            style={{ width: '100%', marginTop: 14 }}
-            onClick={go}
-            disabled={!!blocker || step !== null || (side === 'add' ? inA <= 0n : burnLp <= 0n)}
-          >
-            {step === 'opening' ? 'Opening your token accounts…'
-              : step === 'signing' ? 'Signing…'
-              : !hasWallet() ? 'Connect a wallet first'
-              : side === 'add' ? 'Add liquidity' : 'Remove liquidity'}
-          </button>
-
-          {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
-          {done && (
-            <p className="notice" style={{ marginTop: 12 }}>
-              Done. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
-            </p>
-          )}
-
-          <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>Deposits go in at the pool's ratio, so the second amount is worked out for you.</p>
-        </>
+        <TxDialog
+          flow={flow}
+          title={adding ? 'Review deposit' : 'Review withdrawal'}
+          pay={adding
+            ? { label: 'You add', value: `${amountA || '0'} ${tick(pool.mintA)} + ${fmt(inB, dp(pool.mintB))} ${tick(pool.mintB)}` }
+            : { label: 'You burn', value: `${lpAmount || '0'} LP` }}
+          receive={adding ? null : { label: 'You get back (estimate)', value: `${fmt(outA, dp(pool.mintA))} ${tick(pool.mintA)} · ${fmt(outB, dp(pool.mintB))} ${tick(pool.mintB)}` }}
+          rows={[
+            { k: 'Pool', v: `${tick(pool.mintA)} / ${tick(pool.mintB)}`, plain: true },
+            { k: 'Fee to providers', v: `${pool.feeBps / 100}%` },
+            NETWORK_ROW,
+          ]}
+          technical={{ program: SWAP_PROGRAM, extra: [{ k: 'Pool', v: `#${pool.id}` }] }}
+          note="Your wallet will ask you to sign. The amounts can shift if someone trades through the pool before this lands."
+          needsAccounts={needsOpen}
+          run={run}
+          words={{
+            pendingTitle: adding ? 'Deposit submitted' : 'Withdrawal submitted',
+            landed: adding ? 'Liquidity added' : 'Liquidity removed',
+            failed: adding ? 'Deposit failed' : 'Withdrawal failed',
+          }}
+        />
       )}
+    </>
+  )
+}
+
+
+/** The pool the panel is quoting against: reserves, your share, pricing. */
+function PoolPanel({ info, balances, tickers, decimalsOf, liquidity }) {
+  const wallet = useWallet()
+  const pool = info?.pool
+  if (info?.wrapOnly) {
+    return (
+      <section className="pool-panel">
+        <div className="pool-head"><h2 className="h3">THRU / WTHRU</h2></div>
+        <p className="pool-text">A wrap, not a pool trade: THRU goes through Thru&rsquo;s WTHRU program one for one, with no reserves and no pool fee.</p>
+      </section>
+    )
+  }
+  if (!pool) {
+    return (
+      <section className="pool-panel">
+        <div className="pool-head"><h2 className="h3">Pool</h2></div>
+        <p className="pool-text">{liquidity ? 'No pool can be read right now.' : info?.from && info?.to ? `There is no ${info.from.ticker} / ${info.to.ticker} pool yet.` : 'Pick two tokens to see their pool.'}</p>
+      </section>
+    )
+  }
+  const tick = (m) => tickers?.[m] || short(m)
+  const lp = wallet.balances?.[pool.lpMint]?.amount ?? 0n
+  const share = pool.lpSupply > 0n ? Number((lp * 1000000n) / pool.lpSupply) / 10000 : 0
+  return (
+    <section className="pool-panel">
+      <div className="pool-head">
+        <h2 className="h3">{tick(pool.mintA)} / {tick(pool.mintB)} pool</h2>
+        <span className="mono dim">#{pool.id}</span>
+      </div>
+      <div className="pool-rows">
+        <div><span>{tick(pool.mintA)} reserve</span><span className="mono">{fmt(balances[pool.vaultA] ?? 0n, decimalsOf(pool.mintA))}</span></div>
+        <div><span>{tick(pool.mintB)} reserve</span><span className="mono">{fmt(balances[pool.vaultB] ?? 0n, decimalsOf(pool.mintB))}</span></div>
+        <div><span>Your pool share</span><span className="mono">{wallet.address ? `${share.toFixed(2)}%` : '–'}</span></div>
+        <div><span>Swaps</span><span className="mono">{Number(pool.swapCount).toLocaleString('en-US')}</span></div>
+        <div><span>Pricing</span><span>Constant product (x·y=k)</span></div>
+      </div>
     </section>
   )
 }
 
+function WhyWthru() {
+  return (
+    <section className="why-wthru">
+      <b>Why WTHRU?</b>
+      <p>Every ThruPad launch is bought and sold in WTHRU, a wrapped form of THRU. Wrap THRU into WTHRU here, then buy on ThruPad.</p>
+      <Link to="/">Go to ThruPad</Link>
+    </section>
+  )
+}
 
 export function SwapPage() {
   const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
@@ -1610,12 +1687,17 @@ export function SwapPage() {
     (d) => d.pools.flatMap((p) => [p.mintA, p.mintB]),
   )
   const decimalsOf = useCallback((m) => decimals?.[m] ?? DECIMALS, [decimals])
+  const [tab, pick] = useTab(['swap', 'liquidity', 'pools'])
+  const [info, setInfo] = useState(null)
+  useEffect(() => { setInfo(null) }, [tab])
 
   if (!SWAP_PROGRAM || !SWAP_REGISTRY) {
     return (
-      <div className="wrap">
-        <h1 className="h1">Swap</h1>
-        <NotLive what="thruswap" />
+      <div className="page swap-page">
+        <div className="swap-main">
+          <h1 className="swap-h1">Swap</h1>
+          <NotLive what="thruswap" />
+        </div>
       </div>
     )
   }
@@ -1623,72 +1705,59 @@ export function SwapPage() {
   const pools = data?.pools ?? []
   const shared = { pools, balances, tickers, decimalsOf, reload }
 
-  /* The panel is always on the page.
-   *
-   * It used to appear only once the pool registry had been read, so a failed
-   * read of one account left nothing but an error line, and the page looked
-   * broken rather than short of pools. It is not short of everything: THRU to
-   * WTHRU is a wrap straight through Thru's own WTHRU program, with no pool, no
-   * reserves and no registry in the path, and it works whatever the registry
-   * says. Hiding the panel hid that. */
-  const swapTab = (
-    <div className="wrap wrap-top">
-      {error && (
-        <RegistryDown what="pool" error={error} note="Wrapping and unwrapping THRU still work." />
-      )}
-      <SwapPanel {...shared} />
-      {!error && pools.length === 0 && <EmptyPools loading={loading} />}
-    </div>
-  )
-
-  /* Liquidity genuinely does need the registry: you cannot add to a pool the
-     page cannot name. So this one says so and stops, rather than drawing a
-     form whose every field would be empty. */
-  const liquidityTab = (
-    <div className="wrap wrap-top">
-      {error
-        ? <RegistryDown what="pool" error={error} note="Adding liquidity needs it." />
-        : pools.length > 0 ? (
-          <>
-            <Positions pools={pools} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
-            <LiquidityPanel {...shared} />
-          </>
-        ) : <EmptyPools loading={loading} />}
-    </div>
-  )
-
-  const poolsTab = (
-    <div className="wrap wrap-top">
-      {error && <RegistryDown what="pool" error={error} note="Pools cannot be listed until it reads again." />}
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Pools</h2>
-            <p className="sub">{data ? `${pools.length} of ${data.capacity} slots in use` : error ? 'registry unavailable' : 'reading the chain'}</p>
+  return (
+    <div className="page swap-page">
+      <div className="swap-main">
+        <div className="swap-head">
+          <h1 className="swap-h1">Swap</h1>
+          <div className="tabs swap-tabs" role="tablist">
+            {[['swap', 'Swap'], ['liquidity', 'Liquidity'], ['pools', 'Pools']].map(([k, label]) => (
+              <button key={k} role="tab" className="tab-btn" aria-selected={tab === k} onClick={() => pick(k)}>{label}</button>
+            ))}
           </div>
         </div>
-        {!error && data && pools.length === 0 && (
-          <p className="fine" style={{ marginTop: 12 }}>No pools have been created yet.</p>
-        )}
-        <div className="rows" style={{ marginTop: 12 }}>
-          {pools.map((p) => (
-            <PoolRow key={p.id} pool={p} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
-          ))}
-        </div>
-      </section>
-      {pools.map((p) => <PoolChart key={p.id} pool={p} tickers={tickers} decimalsOf={decimalsOf} />)}
-    </div>
-  )
 
-  return (
-    <Tabs
-      title="Swap"
-      tabs={[
-        { key: 'swap', label: 'Swap', el: swapTab },
-        { key: 'liquidity', label: 'Liquidity', el: liquidityTab },
-        { key: 'pools', label: 'Pools', el: poolsTab, badge: pools.length || null },
-      ]}
-    />
+        {/* The swap panel is always on the page. THRU to WTHRU is a wrap
+            straight through Thru's own WTHRU program, with no pool and no
+            registry in the path, so it works whatever the registry says. */}
+        {tab === 'swap' && (
+          <>
+            {error && <RegistryDown what="pool" error={error} note="Wrapping and unwrapping THRU still work." onRetry={reload} />}
+            <SwapPanel {...shared} registryDown={!!error} onPool={setInfo} />
+          </>
+        )}
+
+        {/* Liquidity genuinely needs the registry: you cannot add to a pool the
+            page cannot name. */}
+        {tab === 'liquidity' && (
+          error
+            ? <RegistryDown what="pool" error={error} note="Adding liquidity needs it." onRetry={reload} />
+            : pools.length > 0
+              ? <LiquidityPanel {...shared} onPool={(pool) => setInfo({ pool })} />
+              : <EmptyPools loading={loading} />
+        )}
+
+        {tab === 'pools' && (
+          <>
+            {error && <RegistryDown what="pool" error={error} note="Pools can't be listed until it reads again." onRetry={reload} />}
+            <section className="pool-list">
+              <div className="pool-head"><h2 className="h3">Pools</h2><span className="fine">{data ? `${pools.length} of ${data.capacity} slots in use` : error ? 'registry unavailable' : 'reading the chain'}</span></div>
+              {!error && data && pools.length === 0 && <p className="pool-text">No pools have been created yet.</p>}
+              {pools.map((p) => <PoolRow key={p.id} pool={p} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />)}
+            </section>
+            <Positions pools={pools} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
+            {pools.map((p) => <PoolChart key={p.id} pool={p} tickers={tickers} decimalsOf={decimalsOf} />)}
+          </>
+        )}
+      </div>
+
+      {tab !== 'pools' && (
+        <aside className="swap-side-col">
+          <PoolPanel info={info} liquidity={tab === 'liquidity'} balances={balances} tickers={tickers} decimalsOf={decimalsOf} />
+          <WhyWthru />
+        </aside>
+      )}
+    </div>
   )
 }
 
@@ -1826,13 +1895,9 @@ export function ReturnCard() {
 
 function EmptyPools({ loading }) {
   return (
-    <section className="card">
-      <h2 className="h2">{loading ? 'Reading the chain' : 'No pools yet'}</h2>
-      <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        {loading
-          ? 'Reading the chain.'
-          : 'Nothing listed yet.'}
-      </p>
+    <section className="empty">
+      <span className="empty-title">{loading ? 'Reading from the chain…' : 'No pools yet'}</span>
+      <p>{loading ? 'The pool registry is being read.' : 'No pools have been created on this network yet.'}</p>
     </section>
   )
 }
@@ -1840,34 +1905,28 @@ function EmptyPools({ loading }) {
 /**
  * One registry could not be read, said plainly, above a page that still works.
  *
- * This used to be the whole page: an error line replaced the interface, so a
- * failed read of one account looked like the site being down, and the
- * operations that need no registry at all went with it. They do not any more.
  * The banner says which list is missing and what is still possible, and the
- * buttons below it stay where they were.
+ * buttons below it stay where they were. The raw error is for whoever is
+ * debugging, so it lives in the tooltip rather than on the page.
  *
  * `missing` is the common case and worth its own words. A registry is one
  * account; when the node answers that it does not exist, the list of pools or
- * launches is unreadable but every program behind them is untouched, so a
- * trade in a pool you already know about still goes through.
+ * launches is unreadable but every program behind them is untouched.
  */
-function RegistryDown({ what, error, note }) {
+function RegistryDown({ what, error, note, onRetry }) {
   const missing = /not\s*found|does not exist|NOT_FOUND|no account/i.test(String(error ?? ''))
-  /* Two lines: what is wrong, and what that costs. The raw error is for
-     whoever is debugging, so it lives in the tooltip rather than on the page. */
   return (
-    <section className="down-note" role="status" title={String(error ?? '')}>
-      <b>{what[0].toUpperCase() + what.slice(1)} list unavailable</b>
+    <div className="notice" role="status" title={String(error ?? '')}>
+      <Icon name="warning" size={18} />
       <span>
-        {missing
-          ? `The ${what} registry account is missing on chain.`
-          : `The node did not answer for the ${what} registry. Retrying.`}
+        <b>The {what} registry can&rsquo;t be read right now.</b>{' '}
+        {missing ? `Its account is missing on chain.` : 'The node did not answer. Retrying.'}
         {note ? ` ${note}` : ''}
+        {onRetry && <> <button className="btn plain" onClick={() => onRetry()}>Retry</button></>}
       </span>
-    </section>
+    </div>
   )
 }
-
 
 /**
  * The bonding curve, drawn.
