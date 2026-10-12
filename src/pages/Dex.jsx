@@ -2,8 +2,7 @@
 //
 // The Swap and Launchpad pages.
 //
-// Both trade, and both also print the command, because those are two audiences
-// and neither should be made to use the other's tool.
+// Both trade from the wallet in the browser or the ThruScan Wallet extension.
 //
 // A trade moves real balances, so the tokens have to sit in somebody's account.
 // The sponsored model the games use would mean everyone shared one pot, where
@@ -22,12 +21,12 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
-  decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru, toHex,
+  decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru,
   buildAddLiquidityInstruction, buildRemoveLiquidityInstruction,
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
-  buildBuyInstruction, buildSellInstruction, buildLaunchInstruction,
+  buildBuyInstruction, buildSellInstruction, buildLaunchInstruction, buildClaimInstruction,
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
@@ -45,6 +44,7 @@ import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imag
 import { signUserMessage } from '../lib/wallet.js'
 import { TradeChart, useTrades } from '../components/TradeChart.jsx'
 import { CopyId } from '../components/CopyId.jsx'
+import { EventPill } from '../components/Pill.jsx'
 import { loadNames } from '../lib/feed.js'
 import { relTime, fullUtc } from '../lib/when.js'
 import { network } from '../lib/networks.js'
@@ -62,6 +62,8 @@ import { connectWallet } from '../lib/connect.js'
 import { Icon } from '../components/Icon.jsx'
 import { StoreLink } from '../components/StoreLink.jsx'
 import { TxDialog } from '../components/TxDialog.jsx'
+import { FeeSharingPanel } from '../components/FeeSharing.jsx'
+import { FEE_SHARING } from '../lib/features.js'
 import { useTxFlow, NETWORK_ROW } from '../lib/txflow.js'
 import { useTab } from '../lib/useTab.js'
 import './launch.css'
@@ -153,35 +155,6 @@ function explainRevert(result) {
     + 'or a pool too thin for a trade that size.'
 }
 
-/** The command to run, built from the same bytes the chain will receive. */
-function cliCommand(program, built) {
-  // No line continuations. A backslash is bash and a backtick is PowerShell,
-  // and whichever one is chosen is wrong for half the people who paste it.
-  const parts = [`thru txn execute ${program} ${toHex(built.data)}`]
-  for (const a of built.readWrite) parts.push(`--readwrite-accounts ${a}`)
-  for (const a of built.readOnly) parts.push(`--readonly-accounts ${a}`)
-  parts.push('--fee-payer YOUR_KEY_NAME')
-  parts.push('--state-units 60000 --memory-units 60000')
-  return parts.join(' ')
-}
-
-function CopyBlock({ text, label = 'Copy command' }) {
-  const [done, setDone] = useState(false)
-  const copy = () => {
-    navigator.clipboard?.writeText(text)
-    setDone(true)
-    setTimeout(() => setDone(false), 1600)
-  }
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div className="codewrap" style={{ maxHeight: 220, overflow: 'auto' }}>
-        <pre className="mono" style={{ margin: 0, padding: 12, fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text}</pre>
-      </div>
-      <button className="btn" style={{ marginTop: 8 }} onClick={copy}>{done ? 'Copied' : label}</button>
-    </div>
-  )
-}
-
 export function NotLive({ what }) {
   return (
     <section className="card">
@@ -262,96 +235,6 @@ export function useChainData(registry, decode, vaultsOf, mintsOf) {
   }, [load])
 
   return { ...state, reload: load }
-}
-
-/* ---------- faucet ---------- */
-
-/**
- * tUSD is what every pool and every launch is priced in, so without a way to
- * get some the whole thing works for exactly one person: whoever holds the
- * mint authority.
- *
- * The faucet only mints. Creating the destination account needs a state proof,
- * which the CLI already does well and a browser does not, so the first command
- * below is the user's to run. Doing less server-side means the part that
- * matters cannot fail for a reason nobody can debug from here.
- */
-/**
- * The terminal route, for people who have their own CLI key.
- *
- * This used to be the main event and it is now a footnote, correctly. It asked
- * you to run a command with YOUR_ADDRESS and YOUR_KEY_NAME in it, which meant
- * knowing your own public key, having a CLI wallet, and understanding what a
- * token account is, before you could receive a single test token. Several
- * people, reasonably, pasted the placeholders verbatim.
- *
- * The wallet above does all of that in one click. So this is collapsed by
- * default and exists only for someone who is deliberately working from a
- * terminal and already knows what those two values are.
- */
-function TerminalFaucet() {
-  const [account, setAccount] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState(null)
-  const [error, setError] = useState(null)
-
-  const claim = async () => {
-    setBusy(true); setError(null); setResult(null)
-    try {
-      const r = await fetch('/api/wallet', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'faucet', account: account.trim() }),
-      })
-      const j = await r.json()
-      if (j.ok) setResult(j)
-      else setError(j.error || 'That did not go through.')
-    } catch {
-      setError('Could not reach the faucet.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // One line, no backslashes. PowerShell does not understand a bash line
-  // continuation and silently swallows the rest of the command.
-  const setupCommand =
-    `thru token initialize-account ${TUSD_MINT} <your public key> `
-    + `0000000000000000000000000000000000000000000000000000000000000000 `
-    + `--fee-payer <your key name>`
-
-  return (
-    <section className="card">
-      <details>
-        <summary className="h2" style={{ cursor: 'pointer', listStyle: 'revert' }}>
-          Using your own CLI key instead
-        </summary>
-
-        <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>Your public key is what <code className="mono">thru keys list</code> prints. Run this once, then paste the address it returns.</p>
-        <CopyBlock text={setupCommand} label="Copy setup command" />
-
-        <div className="stack" style={{ marginTop: 16 }}>
-          <input
-            className="field mono"
-            value={account}
-            onChange={(e) => { setAccount(e.target.value); setError(null); setResult(null) }}
-            placeholder="Paste the token account address it printed"
-          />
-          <button className="btn" onClick={claim} disabled={busy || !account.trim()}>
-            {busy ? 'Sending' : 'Send me 500 tUSD'}
-          </button>
-        </div>
-
-        {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-        {result && (
-          <div className="rows" style={{ marginTop: 14 }}>
-            <div className="row"><span>Sent</span><b className="mono">{fmt(result.amount)} tUSD</b></div>
-            <div className="row"><span>To</span><span className="mono">{short(result.account)}</span></div>
-          </div>
-        )}
-      </details>
-    </section>
-  )
 }
 
 /* ---------- creating a launch ---------- */
@@ -722,6 +605,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
           accounts: 'Launch accounts opened',
           pendingTitle: 'Launch submitted',
           closeNote: 'Don’t close this tab until it lands.',
+          type: 'tx',
           landed: `${name} is live on ThruPad`,
           landedSub: metaNote ?? 'Open your token page to share the link, or buy the first tokens yourself.',
           failed: 'Launch failed',
@@ -1232,6 +1116,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
         run={run}
         words={{
           pendingTitle: wrapOnly ? 'Wrap submitted' : 'Swap submitted',
+          type: wrapOnly ? 'tx' : 'trade',
           landed: wrapOnly ? (fromMint === THRU ? 'Wrap confirmed' : 'Unwrap confirmed') : 'Swap confirmed',
           landedSub: outText && to ? `About ${outText} ${to.ticker} is on its way to your wallet; the balance updates in a moment.` : undefined,
           failed: wrapOnly ? 'Wrap failed' : 'Swap failed',
@@ -2181,6 +2066,15 @@ export function LaunchDetail({ id }) {
 
   const launch = data?.launches?.find((l) => l.id === launchId) ?? null
   const quoteMint = launch?.quoteMint
+
+  /* A notification or the profile's Launched tab links to #creator-fees;
+     scroll there once the launch has been read. */
+  const scrolled = useRef(false)
+  useEffect(() => {
+    if (!launch || scrolled.current || window.location.hash !== '#creator-fees') return
+    scrolled.current = true
+    setTimeout(() => document.getElementById('creator-fees')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50)
+  }, [launch])
   const quoteDecimals = decimals?.[quoteMint] ?? DECIMALS
   const { trades } = useTrades(launch?.quoteVault, launch?.tokenVault)
 
@@ -2255,7 +2149,7 @@ export function LaunchDetail({ id }) {
             <div className="ld-name">
               <h1>{launch.name || launch.symbol}</h1>
               <span className="mono">{launch.symbol}</span>
-              {launch.graduated && <span className="status-pill ok"><Icon name="success" size={12} stroke={2.4} />Graduated</span>}
+              {launch.graduated && <span className="pill2 positive"><Icon name="success" size={12} stroke={2.4} />Graduated</span>}
             </div>
             <div className="ld-meta">
               <span>Creator <CopyId value={launch.creator} label={names.get(launch.creator)} /></span>
@@ -2282,6 +2176,8 @@ export function LaunchDetail({ id }) {
         <div className="ld-trade-wide">{tradePanel('panel')}</div>
 
         <div className="ld-main">
+          <CreatorFees launch={launch} quote={quote} quoteDecimals={quoteDecimals} trades={trades} onClaimed={() => reload(true)} />
+
           <LaunchChart
             points={points} nowPrice={nowPrice} symbol={launch.symbol} quote={quote}
             curve={{ vq: launch.vq, vt: launch.vt, tokensSold: launch.tokensSold, raised, threshold, quoteDecimals }}
@@ -2332,14 +2228,14 @@ export function LaunchDetail({ id }) {
                 </div>
                 {[...points].reverse().slice(0, 12).map((t) => (
                   <Link key={t.signature} to={`/tx/${t.signature}`} className="ld-tr" role="row">
-                    <span role="cell" className={`ld-side ${t.side}`}>{t.side === 'buy' ? 'Buy' : 'Sell'}</span>
+                    <span role="cell"><EventPill kind={t.side} /></span>
                     <span role="cell" className="mono r">{fmt(t.tokens, DECIMALS, 0)}</span>
                     <span role="cell" className="mono r">{fmt(t.quote, quoteDecimals)}</span>
                     <span role="cell" className="mono r">{fullPrice(t.price)}</span>
                     <span role="cell" className="mono ld-trader" title={t.trader}>{names.get(t.trader) ?? short(t.trader)}</span>
                     <span role="cell" className="mono r dim" title={fullUtc(t.time)}>{t.time ? relTime(t.time, now) : '—'}</span>
                     <span className="ld-c" aria-hidden="true">
-                      <span><b className={`ld-side ${t.side}`}>{t.side === 'buy' ? 'Buy' : 'Sell'}</b> <span className="mono">{fmt(t.tokens, DECIMALS, 0)} {launch.symbol}</span></span>
+                      <span><EventPill kind={t.side} /> <span className={`mono ${t.side === 'buy' ? 'amt-pos' : 'amt-neg'}`}>{t.side === 'buy' ? '+' : '−'}{fmt(t.tokens, DECIMALS, 0)} {launch.symbol}</span></span>
                       <span className="mono dim">{t.time ? relTime(t.time, now) : '—'}</span>
                     </span>
                   </Link>
@@ -2355,8 +2251,8 @@ export function LaunchDetail({ id }) {
       {/* Phones: a sticky Buy / Sell bar that opens the same panel in a sheet. */}
       {!launch.graduated && (
         <div className="ld-bar">
-          <button className="btn secondary lg" onClick={() => setSheet('sell')}>Sell</button>
-          <button className="btn lg" onClick={() => setSheet('buy')}>Buy</button>
+          <button className="btn lg sell-outline" onClick={() => setSheet('sell')}>Sell</button>
+          <button className="btn lg buy" onClick={() => setSheet('buy')}>Buy</button>
         </div>
       )}
       {sheet && createPortal(
@@ -2378,6 +2274,125 @@ export function LaunchDetailPage() {
   return <LaunchDetail id={id} />
 }
 
+
+/* ---------- creator fees (Update 02, 5h / 5i) ----------
+ *
+ * The creator sees what the curve has collected for them and claims it with
+ * the ThruPad claim instruction, through the same review, sign, pending and
+ * landed flow as a trade. Everyone else sees the same facts read-only.
+ *
+ * "Earned, all time" is not stored by the program. It is worked out from the
+ * trades read from the chain: a buy pays fee_bps of what goes in, a sell pays
+ * fee_bps of the gross, which is out × bps / (10000 − bps) of what comes out.
+ * The trade history read goes back a few pages, so on a very busy token this
+ * is a floor, and the tooltip says so.
+ */
+function earnedFrom(trades, feeBps) {
+  if (!trades) return null
+  const bps = BigInt(feeBps)
+  if (bps <= 0n) return 0n
+  let total = 0n
+  for (const t of trades) {
+    const q = BigInt(t.quote ?? 0)
+    total += t.side === 'buy' ? (q * bps) / 10000n : (q * bps) / (10000n - bps)
+  }
+  return total
+}
+
+function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
+  const wallet = useWallet()
+  const gate = useUnlockGate()
+  const flow = useTxFlow()
+  const [error, setError] = useState(null)
+  const mine = !!wallet.address && wallet.address === launch.creator
+  const owed = launch.creatorFees ?? 0n
+  const owedText = fmt(owed, quoteDecimals)
+  const earned = earnedFrom(trades, launch.feeBps)
+  const pct = `${(launch.feeBps / 100).toFixed(2)}%`
+
+  if (!mine) {
+    return (
+      <section className="cf cf-public" aria-label="Creator fees">
+        <dl className="cf-rows">
+          <div><dt>Creator fee</dt><dd className="mono">{pct}</dd></div>
+          <div><dt>Unclaimed by creator</dt><dd className="mono">{owedText} {quote}</dd></div>
+        </dl>
+      </section>
+    )
+  }
+
+  const run = async (progress) => {
+    const known = wallet.balances?.[launch.quoteMint]
+    if (!known?.exists) {
+      progress('accounts')
+      const made = await openTokenAccount(launch.quoteMint)
+      if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+    }
+    progress('sign')
+    const dest = known?.account ?? await deriveTokenAccount(launch.quoteMint, wallet.address)
+    const built = buildClaimInstruction({ registry: PAD_REGISTRY, launchId: launch.id, quoteVault: launch.quoteVault, dest })
+    const result = await sendBuilt(PAD_PROGRAM, built, (sig) => progress('sent', sig))
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+    onClaimed?.()
+    wallet.refresh([launch.quoteMint])
+    return { ok: true, signature: result.signature }
+  }
+
+  const claim = async () => {
+    setError(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    flow.open()
+  }
+
+  const nothing = owed <= 0n
+  return (
+    <section className="cf" id="creator-fees" aria-labelledby="cf-title">
+      {gate.modal}
+      <div className="cf-head">
+        <h2 id="cf-title">Creator fees</h2>
+        <span className="cf-you">YOU CREATED THIS TOKEN</span>
+        <span className="cf-rate">Creator fee <span className="mono">{pct}</span> on every trade</span>
+      </div>
+      <div className="cf-row">
+        <div className="cf-cell cf-big">
+          <span className="cf-k">Unclaimed</span>
+          <span className="cf-v mono">{owedText} <small>{quote}</small></span>
+        </div>
+        <div className="cf-cell">
+          <span className="cf-k" title="Worked out from the trades read from the chain. On a very busy token the history read may stop short, so this is a floor.">Earned, all time</span>
+          <span className="cf-v2 mono">{earned === null ? '–' : fmt(earned, quoteDecimals)}</span>
+        </div>
+        <div className="cf-cell cf-action">
+          <button className="btn lg" onClick={claim} disabled={nothing}>{nothing ? 'Nothing to claim yet' : `Claim ${owedText} ${quote}`}</button>
+        </div>
+      </div>
+      {error && <p className="notice bad">{error}</p>}
+
+      {FEE_SHARING && <FeeSharingPanel launch={launch} />}
+
+      <TxDialog
+        flow={flow}
+        title={`Claim ${launch.symbol} fees`}
+        receive={{ label: 'You receive', value: `${owedText} ${quote}`, exact: true }}
+        rows={[{ k: 'From', v: `The ${launch.symbol} curve's fee vault`, plain: true }, NETWORK_ROW]}
+        technical={{ program: PAD_PROGRAM, extra: [{ k: 'Launch', v: `#${launch.id}` }, { k: 'Instruction', v: 'claim creator fees' }] }}
+        note="Your wallet will ask you to sign. The program pays only the creator it recorded at launch."
+        needsAccounts={!wallet.balances?.[launch.quoteMint]?.exists}
+        run={run}
+        words={{
+          pendingTitle: 'Claim submitted',
+          type: 'fees',
+          landed: 'Creator fees claimed',
+          landedSub: `${owedText} ${quote} is on its way to your wallet.`,
+          failed: 'Claim failed',
+        }}
+      />
+    </section>
+  )
+}
 
 /** Buy and sell, for one launch (the 3j panel, and the 3k sheet). */
 function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, onTraded, mode = 'panel', initialSide = 'buy', onClose }) {
@@ -2513,7 +2528,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
       }
     }
     if (out <= 0n) return { kind: 'off', label: `${verb} ${launch.symbol}`, why: `Can't quote: ${q.reason}.` }
-    return { kind: 'go', label: mode === 'sheet' ? `Review ${side}` : `${verb} ${launch.symbol}`, onClick: review }
+    return { kind: 'go', variant: side, label: mode === 'sheet' ? `Review ${side}` : `${verb} ${launch.symbol}`, onClick: review }
   })()
 
   const outText = amountIn > 0n && out > 0n ? fmt(out, outDecimals) : null
@@ -2532,13 +2547,13 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
       ) : (
         <>
           <div className="seg tp-seg" role="group" aria-label="Buy or sell">
-            <button aria-pressed={side === 'buy'} onClick={() => { setSide('buy'); setAmount('') }}>Buy</button>
-            <button aria-pressed={side === 'sell'} onClick={() => { setSide('sell'); setAmount('') }}>Sell</button>
+            <button className="tp-buy" aria-pressed={side === 'buy'} onClick={() => { setSide('buy'); setAmount('') }}>Buy</button>
+            <button className="tp-sell" aria-pressed={side === 'sell'} onClick={() => { setSide('sell'); setAmount('') }}>Sell</button>
           </div>
 
           <div className="amt amt-in">
             <div className="amt-top">
-              <label className="amt-label" htmlFor={`tp-in-${mode}`}>You pay</label>
+              <label className="amt-label" htmlFor={`tp-in-${mode}`}>{side === 'buy' ? 'You pay' : 'You sell'}</label>
               <span className="amt-bal mono">{wallet.address ? `${holding === null ? '—' : fmt(holding, inDecimals)} ${payTicker}` : ''}</span>
             </div>
             <div className="amt-main">
@@ -2596,6 +2611,8 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
         run={run}
         words={{
           pendingTitle: `${verb} submitted`,
+          type: 'trade',
+          side,
           landed: `${verb} confirmed`,
           landedSub: outText ? `About ${outText} ${getTicker} is on its way to your wallet.` : undefined,
           failed: `${verb} failed`,
@@ -2644,8 +2661,6 @@ export function FaucetPage() {
                 {hasWallet() && !wallet.unlocked && <button className="btn secondary" style={{ marginTop: 12 }} onClick={connectWallet}><Icon name="locked" size={18} />Unlock</button>}
               </section>
             )}
-
-          <TerminalFaucet />
 
           <section className="card">
             <h2 className="h3">What to do with it</h2>
