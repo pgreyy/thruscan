@@ -43,7 +43,6 @@ import { TokenIcon } from '../components/TokenMeta.jsx'
 import { cleanMeta, saveTokenMeta, allTokenMeta } from '../lib/tokenmeta.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 import { signUserMessage } from '../lib/wallet.js'
-import { Tabs } from '../components/Tabs.jsx'
 import { TradeChart, useTrades } from '../components/TradeChart.jsx'
 import { CopyId } from '../components/CopyId.jsx'
 import { loadNames } from '../lib/feed.js'
@@ -2598,51 +2597,61 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
 
 export function FaucetPage() {
   const wallet = useWallet()
-
-  const getTab = (
-    <div className="wrap wrap-top">
-      {wallet.unlocked && wallet.registered
-        ? <TopUpCard />
-        : (
-          <section className="card">
-            <h2 className="h2">Open a wallet first</h2>
-            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}><Link to="/wallet">Open a wallet</Link> and it claims both for you.</p>
-          </section>
-        )}
-
-      <TerminalFaucet />
-
-      <section className="card">
-        <h2 className="h2">What to do with it</h2>
-        <div className="rows" style={{ marginTop: 12 }}>
-          <div className="row"><span>Trade it</span><span className="fine">On the Swap page, against any pool</span></div>
-          <div className="row"><span>Buy a launch</span><span className="fine">On ThruPad, along a bonding curve</span></div>
-          <div className="row"><span>Launch your own</span><span className="fine">Create a token and earn fees on every trade</span></div>
-        </div>
-      </section>
-    </div>
-  )
-
-  const returnTab = (
-    <div className="wrap wrap-top">
-      {wallet.unlocked
-        ? <ReturnCard />
-        : (
-          <section className="card">
-            <h2 className="h2">Unlock first</h2>
-            <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>Unlock your wallet to return funds.</p>
-          </section>
-        )}
-    </div>
-  )
+  const [tab, pick] = useTab(['get', 'return'])
 
   return (
-    <Tabs
-      title="Faucet"
-      tabs={[
-        { key: 'get', label: 'Get funds', el: getTab },
-        { key: 'return', label: 'Give it back', el: returnTab },
-      ]}
-    />
+    <div className="page faucet-page">
+      <div className="faucet-head">
+        <h1 className="h1">Faucet</h1>
+        <p className="lede">Test THRU, free, for this test network. It has no value and disappears when the network resets.</p>
+        <div className="tabs" role="tablist">
+          <button role="tab" className="tab-btn" aria-selected={tab === 'get'} onClick={() => pick('get')}>Get funds</button>
+          <button role="tab" className="tab-btn" aria-selected={tab === 'return'} onClick={() => pick('return')}>Give it back</button>
+        </div>
+      </div>
+
+      {tab === 'get' && (
+        <>
+          {wallet.unlocked && wallet.registered
+            ? <TopUpCard />
+            : (
+              <section className="card">
+                <h2 className="h3">{!hasWallet() ? 'Open a wallet first' : !wallet.unlocked ? 'Unlock your wallet first' : 'Register your wallet first'}</h2>
+                <p className="why" style={{ marginTop: 6 }}>
+                  {!hasWallet()
+                    ? <><Link to="/get-wallet">Get a wallet</Link>, then come back to claim THRU.</>
+                    : !wallet.unlocked
+                      ? 'The faucet sends THRU to your wallet, so it needs to be unlocked first.'
+                      : <>The faucet sends THRU to an account on chain, and this wallet has none yet. <Link to="/wallet">Register it on the Wallet page</Link>; ThruScan pays for that.</>}
+                </p>
+                {!hasWallet() && <button className="btn" style={{ marginTop: 12 }} onClick={connectWallet}><Icon name="wallet" size={18} />Connect wallet</button>}
+                {hasWallet() && !wallet.unlocked && <button className="btn secondary" style={{ marginTop: 12 }} onClick={connectWallet}><Icon name="locked" size={18} />Unlock</button>}
+              </section>
+            )}
+
+          <TerminalFaucet />
+
+          <section className="card">
+            <h2 className="h3">What to do with it</h2>
+            <div className="rows" style={{ marginTop: 12 }}>
+              <div className="row"><span><Link to="/swap">Wrap it into WTHRU</Link></span><span className="fine">On Swap, one for one</span></div>
+              <div className="row"><span><Link to="/">Buy a launch</Link></span><span className="fine">On ThruPad, along a bonding curve</span></div>
+              <div className="row"><span><Link to="/">Launch your own</Link></span><span className="fine">Create a token and earn a fee on every trade</span></div>
+            </div>
+          </section>
+        </>
+      )}
+
+      {tab === 'return' && (
+        wallet.unlocked
+          ? <ReturnCard />
+          : (
+            <section className="card">
+              <h2 className="h3">Unlock first</h2>
+              <p className="why" style={{ marginTop: 6 }}>Unlock your wallet to return funds.</p>
+            </section>
+          )
+      )}
+    </div>
   )
 }

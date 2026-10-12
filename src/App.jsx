@@ -10,7 +10,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate
 import { SwapPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { MarketHome } from './pages/Market.jsx'
 import { Wordmark } from './components/Wordmark.jsx'
-import { WalletPage, useWallet } from './pages/Wallet.jsx'
+import { WalletPage } from './pages/Wallet.jsx'
 import { EXTENSION_URL, EXTENSION_IS_EXTERNAL } from './lib/external.js'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
@@ -2915,28 +2915,49 @@ function HomeRoute() {
 const ARCHIVED = [
   ['Wall', 'Messages posted on chain, kept forever.', '/wall'],
   ['Games', 'Wordle and 2048, both scored on chain.', '/games'],
-  ['Builders', 'Projects and people building on Thru.', '/builders'],
-  ['Updates', 'What shipped, and when.', '/updates'],
-  ['Guides', 'How the chain and the wallet work.', '/guides'],
-  ['tUSD', 'The test dollar, and where to get some.', '/faucet'],
+  ['Builders', 'Programs, findings and people building on Thru.', '/builders'],
+  ['Projects', 'Projects submitted by the community.', '/projects'],
+  ['Community', 'Articles and posts about Thru, ranked by readers.', '/community'],
+  ['Updates', 'Thru releases, and what shipped when.', '/updates'],
+  ['Guides', 'How the chain and the wallet work, step by step.', '/guides'],
 ]
 
 function ArchivesPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Archives</h1>
-      <p className="lede">
-        Parts of ThruScan that are still running but no longer in the menus, while the
-        ThruPad is being built.
-      </p>
+      <p className="lede">Older ThruScan experiments, kept working but no longer maintained.</p>
       <div className="archive-list">
         {ARCHIVED.map(([name, sub, to]) => (
           <Link key={to} to={to} className="archive-row">
             <span className="archive-text"><b>{name}</b><span className="dim">{sub}</span></span>
-            <span className="dim archive-go" aria-hidden="true">›</span>
+            <Icon name="arrow-right" size={16} />
           </Link>
         ))}
       </div>
+    </div>
+  )
+}
+
+/* Any address the site does not know. */
+function NotFoundPage() {
+  return (
+    <div className="wrap nf">
+      <h1 className="h1">Nothing at this address</h1>
+      <p className="lede">There is no page here. If you followed a link to a token or a transaction, it may have been on a network that has since been reset.</p>
+      <div className="nf-actions">
+        <Link className="btn" to="/">Go to ThruPad</Link>
+        <Link className="btn secondary" to="/activity">View Activity</Link>
+      </div>
+    </div>
+  )
+}
+
+/* The explorer says what it is before anything else. */
+function ExplorerNote() {
+  return (
+    <div className="page explorer-note">
+      <p className="notice"><Icon name="warning" size={18} /><span>ThruScan explorer is temporary; not the official Thru explorer.</span></p>
     </div>
   )
 }
@@ -3349,10 +3370,10 @@ export default function App() {
         <Counted />
         <Routes>
           <Route path="/" element={<HomeRoute />} />
-          <Route path="/explorer" element={<Tabs tabs={[
+          <Route path="/explorer" element={<><ExplorerNote /><Tabs tabs={[
             { key: 'overview', label: 'Overview', el: <LandingPage /> },
             { key: 'explorer', label: 'Blocks and transactions', el: <HomePage /> },
-          ]} />} />
+          ]} /></>} />
           {/* The launchpad is the front door now. Every link anybody has
               shared still lands in the right place. */}
           <Route path="/launch" element={<Navigate to="/" replace />} />
@@ -3388,6 +3409,7 @@ export default function App() {
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/community" element={<CommunityPage />} />
+          <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Shell>
       </ToastHost>

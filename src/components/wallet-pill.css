@@ -321,7 +321,7 @@
   gap: 8px;
   padding: 9px 11px;
   border-radius: 9px;
-  border: 1px solid rgba(128, 128, 128, 0.2);
+  border: 1px solid var(--border-default);
   background: rgba(128, 128, 128, 0.05);
 }
 
@@ -387,8 +387,8 @@
 @media (max-width: 819px) { .tabstrip-tab { min-height: 44px; } }
 
 :root[data-theme='dark'] .btn.danger:hover:not(:disabled) {
-    border-color: rgba(255, 138, 128, 0.7);
-    background: rgba(255, 138, 128, 0.1);
+    border-color: var(--status-negative);
+    background: transparent;
   }
 
 /* The little uppercase word above every page title ("TRADE", "BUILDERS",
@@ -412,16 +412,16 @@
 .btn[aria-current="true"],
 .btn.ghost[aria-current="true"],
 button[aria-current="true"] {
-  background: var(--signal-soft, #edf0fd);
-  border-color: var(--signal-line, #c9d4f8);
-  color: var(--signal, #2f55e0);
+  background: var(--signal-soft, var(--bg-sunken));
+  border-color: var(--signal-line, var(--border-default));
+  color: var(--text-link);
   font-weight: 600;
 }
 
 .btn[aria-current="true"]:hover:not(:disabled),
 .btn.ghost[aria-current="true"]:hover:not(:disabled) {
-  background: var(--signal-soft, #edf0fd);
-  border-color: var(--signal, #2f55e0);
+  background: var(--signal-soft, var(--bg-sunken));
+  border-color: var(--text-link);
 }
 
 /* ===========================================================================
@@ -443,15 +443,15 @@ button[aria-current="true"] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 0;
-  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border: 1px solid var(--line, var(--border-default));
   border-radius: var(--r-md, 12px);
-  background: var(--surface, #fff);
+  background: var(--bg-surface);
   overflow: hidden;
 }
 
 .stat-cell {
   padding: 14px 16px;
-  border-right: 1px solid var(--line, rgba(128,128,128,0.2));
+  border-right: 1px solid var(--line, var(--border-default));
 }
 
 .stat-cell:last-child { border-right: 0; }
@@ -459,7 +459,7 @@ button[aria-current="true"] {
 .stat-cell .k {
   display: block;
   font-size: 11.5px;
-  color: var(--muted, #6f7178);
+  color: var(--muted, var(--text-secondary));
   margin-bottom: 4px;
 }
 
@@ -477,9 +477,9 @@ button[aria-current="true"] {
 
 .curve-box {
   position: relative;
-  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border: 1px solid var(--line, var(--border-default));
   border-radius: var(--r-md, 12px);
-  background: var(--surface, #fff);
+  background: var(--bg-surface);
   padding: 16px;
 }
 
@@ -490,7 +490,7 @@ button[aria-current="true"] {
   justify-content: space-between;
   margin-top: 10px;
   font-size: 11.5px;
-  color: var(--muted, #6f7178);
+  color: var(--muted, var(--text-secondary));
 }
 
 .progress-track {
@@ -502,7 +502,7 @@ button[aria-current="true"] {
 
 .progress-fill {
   height: 100%;
-  background: var(--signal, #2f55e0);
+  background: var(--text-link);
   border-radius: 4px;
   transition: width 0.4s ease;
 }
@@ -516,9 +516,9 @@ button[aria-current="true"] {
   gap: 12px;
   align-items: center;
   padding: 11px 13px;
-  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border: 1px solid var(--line, var(--border-default));
   border-radius: var(--r-md, 12px);
-  background: var(--surface, #fff);
+  background: var(--bg-surface);
   margin-bottom: 10px;
   text-decoration: none;
   color: inherit;
@@ -526,12 +526,12 @@ button[aria-current="true"] {
 }
 
 .launch-row:hover {
-  border-color: var(--signal-line, #c9d4f8);
+  border-color: var(--signal-line, var(--border-default));
   transform: translateY(-1px);
 }
 
 .launch-row .nm { font-weight: 600; }
-.launch-row .sy { font-size: 12px; color: var(--muted, #6f7178); margin-left: 6px; }
+.launch-row .sy { font-size: 12px; color: var(--muted, var(--text-secondary)); margin-left: 6px; }
 .launch-row .bar { margin-top: 8px; max-width: 320px; }
 .launch-row .rt { text-align: right; font-size: 13px; }
 
@@ -544,11 +544,11 @@ button[aria-current="true"] {
    =========================================================================== */
 
 .position {
-  border: 1px solid var(--line, rgba(128,128,128,0.2));
+  border: 1px solid var(--line, var(--border-default));
   border-radius: var(--r-md, 12px);
   padding: 14px 16px;
   margin-top: 10px;
-  background: var(--surface, #fff);
+  background: var(--bg-surface);
 }
 
 .position-head {
@@ -560,7 +560,7 @@ button[aria-current="true"] {
 }
 
 .position-pair { font-weight: 600; }
-.position-share { font-size: 13px; color: var(--signal, #2f55e0); font-weight: 600; }
+.position-share { font-size: 13px; color: var(--text-link); font-weight: 600; }
 
 /* The wallet button inside the pill. A destination of its own, so it gets its
    own hit area rather than being an item inside the menu that the pill opens. */
@@ -592,7 +592,7 @@ button[aria-current="true"] {
 
 .wall-msg {
   padding: 14px 0;
-  border-bottom: 1px solid var(--line, rgba(128, 128, 128, 0.2));
+  border-bottom: 1px solid var(--line, var(--border-default));
 }
 
 .wall-msg:last-child { border-bottom: 0; }
@@ -617,13 +617,13 @@ button[aria-current="true"] {
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(128, 128, 128, 0.16);
-  color: var(--muted, #6f7178);
+  background: var(--border-default);
+  color: var(--muted, var(--text-secondary));
   text-transform: lowercase;
 }
 
-.wall-badge.ok { background: var(--signal-soft, #edf0fd); color: var(--signal, #2f55e0); }
-.wall-badge.you { background: rgba(128, 128, 128, 0.16); }
+.wall-badge.ok { background: var(--signal-soft, var(--bg-sunken)); color: var(--text-link); }
+.wall-badge.you { background: var(--border-default); }
 
 .wall-msg-body {
   margin: 8px 0 0;
@@ -705,7 +705,7 @@ button[aria-current="true"] {
 /* The leaderboard's Points and Streaks toggle uses .tab-btn rather than the
    strip's markup, and like aria-current it had no selected style of its own. */
 .tab-btn[aria-selected="true"] {
-  color: var(--signal, #2f55e0);
+  color: var(--text-link);
   font-weight: 600;
   border-bottom: 2px solid currentColor;
 }
@@ -756,7 +756,7 @@ button[aria-current="true"] {
   padding: 0 12px 0 0;
   border: 1px solid var(--line, rgba(128, 128, 128, 0.25));
   border-radius: var(--r-md, 12px);
-  background: var(--surface, #fff);
+  background: var(--bg-surface);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -770,7 +770,7 @@ button[aria-current="true"] {
 
 .name-field .field:focus { outline: none; box-shadow: none; }
 
-.name-suffix { color: var(--muted, #6f7178); white-space: nowrap; }
+.name-suffix { color: var(--muted, var(--text-secondary)); white-space: nowrap; }
 
 .name-verdict {
   flex: 0 0 auto;
@@ -785,17 +785,17 @@ button[aria-current="true"] {
 .name-field[data-state="empty"] .name-verdict { display: none; }
 
 .name-field[data-state="checking"] .name-verdict {
-  background: rgba(128, 128, 128, 0.16);
-  color: var(--muted, #6f7178);
+  background: var(--border-default);
+  color: var(--muted, var(--text-secondary));
 }
 
-.name-field[data-state="free"] { border-color: #2f9e64; background: rgba(47, 158, 100, 0.05); }
-.name-field[data-state="free"] .name-verdict { background: rgba(47, 158, 100, 0.16); color: #1f7a4a; }
+.name-field[data-state="free"] { border-color: var(--status-positive); background: transparent; }
+.name-field[data-state="free"] .name-verdict { background: var(--bg-sunken); color: var(--status-positive); }
 
 .name-field[data-state="taken"],
-.name-field[data-state="invalid"] { border-color: rgba(200, 60, 60, 0.55); background: rgba(200, 60, 60, 0.04); }
+.name-field[data-state="invalid"] { border-color: var(--status-negative); background: transparent; }
 .name-field[data-state="taken"] .name-verdict,
-.name-field[data-state="invalid"] .name-verdict { background: rgba(200, 60, 60, 0.14); color: #c0392b; }
+.name-field[data-state="invalid"] .name-verdict { background: var(--bg-sunken); color: var(--status-negative); }
 
 @media (max-width: 560px) {
   .name-field { flex-wrap: wrap; padding: 8px 12px; }
@@ -841,8 +841,8 @@ button[aria-current="true"] {
   .card > .btn { width: 100%; }
 
   .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stat-cell { border-right: 0; border-bottom: 1px solid var(--line, rgba(128,128,128,0.2)); }
-  .stat-cell:nth-child(odd) { border-right: 1px solid var(--line, rgba(128,128,128,0.2)); }
+  .stat-cell { border-right: 0; border-bottom: 1px solid var(--line, var(--border-default)); }
+  .stat-cell:nth-child(odd) { border-right: 1px solid var(--line, var(--border-default)); }
 
   .swap-amount { font-size: 26px; }
   .modal-card { padding: 18px; }
@@ -885,13 +885,13 @@ button[aria-current="true"] {
 .board-foot {
   margin: 12px 0 0;
   padding-top: 10px;
-  border-top: 1px solid var(--line, rgba(128, 128, 128, 0.2));
+  border-top: 1px solid var(--line, var(--border-default));
   text-align: center;
 }
 
 /* A name that is taken, but taken by you. Not an error and not an invitation. */
-.name-field[data-state="yours"] { border-color: var(--signal, #2f55e0); background: var(--signal-soft, #edf0fd); }
-.name-field[data-state="yours"] .name-verdict { background: rgba(47, 85, 224, 0.16); color: var(--signal, #2f55e0); }
+.name-field[data-state="yours"] { border-color: var(--text-link); background: var(--signal-soft, var(--bg-sunken)); }
+.name-field[data-state="yours"] .name-verdict { background: var(--bg-sunken); color: var(--text-link); }
 
 /* Builders: findings as a tight two-part list, title then one line. */
 .findings { display: grid; gap: 0; }
@@ -925,7 +925,7 @@ button[aria-current="true"] {
 .activity-row:hover .activity-what b { color: var(--signal); }
 .activity-what { min-width: 0; display: flex; gap: 8px; align-items: baseline; }
 .activity-what b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.activity-failed, .bad-text { color: #c2412d; font-size: 12px; }
+.activity-failed, .bad-text { color: var(--status-negative); font-size: 12px; }
 .activity-when { white-space: nowrap; }
 @media (max-width: 640px) {
   .activity-row { grid-template-columns: 1fr auto; }
@@ -969,11 +969,11 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
   border-top: 1px solid var(--line);
 }
 .move-row:first-child { border-top: 0; }
-.move-error { grid-column: 2 / -1; color: #c2412d; }
+.move-error { grid-column: 2 / -1; color: var(--status-negative); }
 
 /* Activity opens in a side panel from the Wallet page title. */
 .activity-open { display: inline-flex; align-items: center; gap: 6px; }
-.drawer-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(22, 24, 29, 0.28); display: flex; justify-content: flex-end; }
+.drawer-scrim { position: fixed; inset: 0; z-index: 60; background: var(--scrim); display: flex; justify-content: flex-end; }
 .drawer {
   position: relative;
   width: min(460px, 100%);
@@ -1007,7 +1007,7 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 }
 .trade-row:hover .mono:first-of-type { text-decoration: underline; text-underline-offset: 3px; }
 .trade-side { font-weight: 600; }
-.trade-side.sell { color: #c2412d; }
+.trade-side.sell { color: var(--status-negative); }
 @media (max-width: 560px) { .trade-row { grid-template-columns: 40px 1fr auto; } .trade-row > :last-child { display: none; } }
 
 /* Amounts under each activity row. */
@@ -1027,7 +1027,7 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 
 /* The small green "live" marker, also used outside the explorer pages. */
 .home-live { font-size: 12px; font-weight: 400; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
-.home-live i { width: 7px; height: 7px; border-radius: 50%; background: #1fa971; box-shadow: 0 0 0 3px rgba(31, 169, 113, .18); }
+.home-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-primary); box-shadow: 0 0 0 3px var(--bg-sunken); }
 
 /* Wallet page: Send, Receive and Activity as small tiles beside the title. */
 .quick-row { display: flex; gap: 10px; }

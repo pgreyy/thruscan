@@ -29,7 +29,7 @@ import {
   hasWallet, storedWallet, isUnlocked, currentAddress,
   registerAndFund, openTokenAccount, tokenBalances, accountExists,
   deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
-  claimNativeThru, claimTusd, nativeBalance,
+  claimNativeThru, nativeBalance,
   importPhrase, exportPhrase, hasPhrase,
   transferToken, releaseName, claimNameFor, sendNativeThru, checkName,
 } from '../lib/wallet.js'
@@ -41,6 +41,8 @@ import {
 } from '../lib/external.js'
 import { customMints, addCustomMint, removeCustomMint, lookupToken, onCustomMintsChange } from '../lib/customTokens.js'
 import { Activity } from '../components/Activity.jsx'
+import { Icon, Spinner } from '../components/Icon.jsx'
+import { TokenIcon } from '../components/TokenMeta.jsx'
 import { useConfirm } from '../components/Confirm.jsx'
 import { withSuffix, decodeDomain, ROOT_SUFFIX } from '../lib/names.js'
 import { phraseProblem, phraseWords } from '../lib/seed.js'
@@ -653,76 +655,47 @@ export function AddToken({ onAdded, known = [], compact = false }) {
  */
 export function TopUpCard() {
   const wallet = useWallet()
-  const [busy, setBusy] = useState(null)
+  const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
   const [error, setError] = useState(null)
 
-  const claimTokens = async () => {
-    setBusy('tusd'); setError(null); setNote(null)
-    try {
-      const j = await claimTusd()
-      setNote(`${fmt(j.amount)} tUSD on the way.`)
-      await new Promise((r) => setTimeout(r, 2500))
-      await wallet.refresh()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
+  /* THRU only. tUSD was the other claim and that mint no longer exists, so
+     offering it was offering a transaction that cannot succeed. THRU pays
+     fees and wraps one for one into the WTHRU every curve is priced in. */
   const claimGas = async () => {
-    setBusy('thru'); setError(null); setNote(null)
+    setBusy(true); setError(null); setNote(null)
     try {
       await claimNativeThru()
-      setNote('10,000 THRU on the way. That is what pays your transaction fees.')
+      setNote('10,000 THRU on the way.')
       await new Promise((r) => setTimeout(r, 3000))
       await wallet.refresh()
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
 
   return (
-    <section className="card">
-      <div className="card-head">
+    <section className="card faucet-card">
+      <div className="faucet-card-head">
+        <span className="faucet-mark"><TokenIcon mint="THRU" symbol="THRU" size={40} /></span>
         <div>
-          <h2 className="h2">Top up</h2>
-          <p className="sub">tUSD to trade with, THRU to pay fees with</p>
+          <h2 className="h3">THRU</h2>
+          <p className="sub">From Thru&rsquo;s faucet. Pays fees, and wraps one for one into WTHRU.</p>
         </div>
       </div>
-
-      <div className="rows" style={{ marginTop: 12 }}>
-        <div className="row">
-          <span>
-            <b>tUSD</b>{' '}
-            <span className="fine">what pools and launches are priced in</span>
-          </span>
-          <button className="btn" onClick={claimTokens} disabled={busy !== null}>
-            {busy === 'tusd' ? 'Sending' : 'Claim 500'}
-          </button>
-        </div>
-        <div className="row">
-          <span>
-            <b>THRU</b>{' '}
-            <span className="fine">
-              the network's own asset, {wallet.native?.toString() ?? '0'} held
-            </span>
-          </span>
-          <button className="btn ghost" onClick={claimGas} disabled={busy !== null}>
-            {busy === 'thru' ? 'Claiming' : 'Claim 10,000'}
-          </button>
-        </div>
+      <div className="faucet-row">
+        <span className="mono">{(wallet.native ?? 0n).toLocaleString('en-US')} THRU held</span>
+        <button className="btn" onClick={claimGas} disabled={busy}>
+          {busy ? <><Spinner />Claiming</> : 'Claim 10,000 THRU'}
+        </button>
       </div>
-
-      {note && <p className="notice" style={{ marginTop: 14 }}>{note}</p>}
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-
-      <p className="fine" style={{ marginTop: 12, lineHeight: 1.65 }}>
-        tUSD: 500 a day, 10,000 max held. THRU: up to 10,000 a claim from Thru's faucet.
-      </p>
+      {note && (
+        <p className="notice" role="status"><Icon name="success" size={18} /><span>{note} <Link to="/swap">Next: swap for WTHRU</Link>.</span></p>
+      )}
+      {error && <p className="notice bad" role="alert">{error}</p>}
+      <p className="why">Up to 10,000 THRU a claim. When the faucet says you have reached its limit, it says when you can claim again.</p>
     </section>
   )
 }
