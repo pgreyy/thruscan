@@ -24,6 +24,14 @@ const SHAPES = {
   'arrow-left': <path d="M16 10H4M8 6L4 10L8 14" />,
   'arrow-right': <path d="M4 10H16M12 6L16 10L12 14" />,
   menu: <path d="M3 6H17M3 10H17M3 14H17" />,
+  /* Update 02: the bell, the carousel arrows and the wall. */
+  bell: <><path d="M5 14V9A5 5 0 0 1 15 9V14L16.5 15.5H3.5Z" /><path d="M8 17.5H12" /></>,
+  'chevron-left': <path d="M12 5L7 10L12 15" />,
+  'chevron-right': <path d="M8 5L13 10L8 15" />,
+  message: <path d="M3.5 4.5H16.5V13.5H9L5.5 16.5V13.5H3.5Z" />,
+  coins: <><circle cx="8" cy="8" r="4.5" /><path d="M11.5 5.5A4.5 4.5 0 1 1 8 15.5" /></>,
+  receive: <path d="M10 3.5V14M5.5 9.5L10 14L14.5 9.5M4 16.5H16" />,
+  send: <path d="M10 16.5V6M5.5 10.5L10 6L14.5 10.5M4 3.5H16" />,
 }
 
 export function Icon({ name, size = 20, stroke = 1.6, className, title }) {
