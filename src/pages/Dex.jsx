@@ -60,7 +60,8 @@ import {
 import { useDismiss } from '../lib/dismiss.js'
 import { connectWallet } from '../lib/connect.js'
 import { Icon } from '../components/Icon.jsx'
-import { TxDialog, useTxFlow, NETWORK_ROW } from '../components/TxDialog.jsx'
+import { TxDialog } from '../components/TxDialog.jsx'
+import { useTxFlow, NETWORK_ROW } from '../lib/txflow.js'
 import { useTab } from '../lib/useTab.js'
 import './launch.css'
 
@@ -224,7 +225,7 @@ export function useChainData(registry, decode, vaultsOf, mintsOf) {
         } catch { tickers[m] = null; decimals[m] = displayDecimals(m, DECIMALS) }
       })
 
-      setState({ loading: false, error: null, data, balances, tickers, decimals })
+      setState({ loading: false, error: null, data, balances, tickers, decimals, readAt: Date.now() })
     } catch (err) {
       /* A failed poll keeps what is on screen. Prices that were right ten
          seconds ago beat an error where the page was. */

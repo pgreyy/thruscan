@@ -268,7 +268,6 @@ export function MarketHome() {
   const [mobileTab, setMobileTab] = useState('top') // top | new | activity
   const [showAll, setShowAll] = useState(false)
   const [meta, setMeta] = useState({})
-  const [readAt, setReadAt] = useState(null)
   const now = useNow()
   const wallet = useWallet()
   const connected = !!wallet.address && hasWallet()
@@ -285,7 +284,7 @@ export function MarketHome() {
 
   // When the registry was last read, for "Read from chain" and for the time in
   // the banner if a later read fails.
-  useEffect(() => { if (pad.data) setReadAt(Date.now()) }, [pad.data, pad.balances])
+  const readAt = pad.readAt ?? null
 
   useEffect(() => {
     let alive = true
