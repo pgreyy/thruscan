@@ -22,7 +22,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
-  decodeSwapRegistry, quoteSwap, buildSwapInstruction, buildSwapPayingInThru, toHex,
+  decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru, toHex,
   buildAddLiquidityInstruction, buildRemoveLiquidityInstruction,
 } from '../lib/swap.js'
 import {
@@ -92,6 +92,20 @@ function fmt(units, decimals = DECIMALS, maxFrac = 4) {
   if (!isFinite(n)) return '0'
   if (n !== 0 && Math.abs(n) < 10 ** -maxFrac) return `<${10 ** -maxFrac}`
   return n.toLocaleString(undefined, { maximumFractionDigits: maxFrac })
+}
+
+/**
+ * A fee as text, and never as zero when the rate is not.
+ *
+ * The programs round a fee down to whole base units, and WTHRU's smallest unit
+ * is one whole THRU (it is drawn without decimals so that it matches the THRU
+ * it wraps). So a small trade can owe less than one unit and the chain charges
+ * none, which is true but reads as "no fee" beside a rate of 1%. "<1 WTHRU"
+ * says the same thing without that.
+ */
+function feeLabel(fee, decimals, ticker, bps) {
+  if (fee > 0n) return `${fmt(fee, decimals)} ${ticker}`
+  return Number(bps) > 0 ? `<${fmt(1n, decimals, decimals || 4)} ${ticker}` : `0 ${ticker}`
 }
 
 /** Readable figure back to base units, as BigInt, with no float drift. */
@@ -1134,7 +1148,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
     return `1 ${from.ticker} = ${fmt((reserveOut * 10n ** BigInt(from.decimals)) / reserveIn, to.decimals)} ${to.ticker}`
   })()
   const feeText = pool ? `${(pool.feeBps / 100).toFixed(2)}%` : null
-  const feeAmount = pool && amountIn > 0n ? `${fmt((amountIn * BigInt(pool.feeBps)) / 10000n, from.decimals)} ${from.ticker}` : '–'
+  const feeAmount = pool && amountIn > 0n ? feeLabel(poolFee(amountIn, pool.feeBps), from.decimals, from.ticker, pool.feeBps) : '–'
   const outText = quote?.amountOut > 0n && to ? fmt(quote.amountOut, to.decimals ?? DECIMALS) : null
 
   /* What the button says, and why when it cannot be pressed. */
@@ -2550,7 +2564,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
           <div className="swap-rows tp-rows">
             <div><span>Average price</span><span className="mono">{avg !== null ? fullPrice(avg) : '–'}</span></div>
             <div><span>Price after</span><span className="mono">{after !== null ? fullPrice(after) : '–'}</span></div>
-            <div><span className="term" title="Set by the creator at launch, up to 10%, taken on every trade.">Creator fee</span><span className="mono">{(launch.feeBps / 100).toFixed(2)}%{amountIn > 0n && out > 0n ? ` · ${fmt(q.creatorFee, quoteDecimals)} ${quote}` : ''}</span></div>
+            <div><span className="term" title="Set by the creator at launch, up to 10%, taken on every trade.">Creator fee</span><span className="mono">{(launch.feeBps / 100).toFixed(2)}%{amountIn > 0n && out > 0n ? ` · ${feeLabel(q.creatorFee, quoteDecimals, quote, launch.feeBps)}` : ''}</span></div>
             {side === 'buy' && tax > 0n && (
               <div><span>Anti-snipe tax</span><span className="mono">{(Number(tax) / 100).toFixed(1)}%{q.snipeTax > 0n ? ` · ${fmt(q.snipeTax, quoteDecimals)} ${quote}` : ''}</span></div>
             )}
@@ -2571,7 +2585,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
         rows={[
           { k: 'Average price', v: avg !== null ? `${fullPrice(avg)} ${quote}` : '–' },
           { k: 'Price after', v: after !== null ? `${fullPrice(after)} ${quote}` : '–' },
-          { k: `Creator fee (${(launch.feeBps / 100).toFixed(2)}%)`, v: `${fmt(q.creatorFee, quoteDecimals)} ${quote}` },
+          { k: `Creator fee (${(launch.feeBps / 100).toFixed(2)}%)`, v: feeLabel(q.creatorFee, quoteDecimals, quote, launch.feeBps) },
           ...(side === 'buy' && q.snipeTax > 0n ? [{ k: 'Anti-snipe tax', v: `${fmt(q.snipeTax, quoteDecimals)} ${quote}` }] : []),
           { k: 'Minimum received', v: 'No minimum set' },
           NETWORK_ROW,

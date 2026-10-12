@@ -13,6 +13,7 @@ import {
   WORDLE_PROGRAM, G2048_PROGRAM, ID_PROGRAM, MULTICALL_PROGRAM, WTHRU_PROGRAM,
 } from './addresses.js'
 import { ROOT_REGISTRAR, ROOT_SUFFIX } from './names.js'
+import { displayDecimals } from './wthru.js'
 
 export const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 /* Where `thru program create` and `upgrade` land; every deployment is a call to it. */
@@ -278,7 +279,10 @@ export function movements(item, extra, me) {
   const scale = (tokenAccount, mint, amount) => {
     const m = mint ?? acc[tokenAccount]?.mint
     const info = acc[m]
-    const decimals = info?.kind === 'mint' ? info.decimals : 6
+    /* WTHRU declares 8 decimals but is drawn on the scale of the THRU it wraps
+       everywhere else (see displayDecimals), so an amount here has to be read
+       the same way: 5,000 wrapped is "5,000 WTHRU", not "0.00005 WTHRU". */
+    const decimals = displayDecimals(m, info?.kind === 'mint' ? info.decimals : 6)
     const label = info?.kind === 'mint' && info.ticker ? info.ticker : (m ? `${m.slice(0, 4)}…` : 'tokens')
     return [label, Number(amount) / 10 ** decimals]
   }

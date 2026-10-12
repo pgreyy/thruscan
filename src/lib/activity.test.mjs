@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { describe, movements, withDetail } from './activity.js'
 import { buildWrap, buildUnwrap, WTHRU_MINT_ADDRESS } from './wthru.js'
 import { MULTICALL_PROGRAM } from './addresses.js'
+import { poolFee, quoteSwap } from './swap.js'
 
 const PAYER = 'taWQKThxZZv8C9sKZp9GusPTCM3qt9XEGol3xp_QEl7VIM'
 const DEST = 'taTOT29zfAzbPtz15_hZNkNVOp8gi_8tQnmsqxjLgOw3Md'
@@ -58,4 +59,39 @@ test('a bundle that is not a wrap stays a program call', () => {
   const d = describe({ program: MULTICALL_PROGRAM, feePayer: PAYER, rw: [], ro: [], data: b64(new Uint8Array([0, 0])) }, null)
   assert.equal(d.label, 'Program call')
   assert.equal(d.detail, undefined)
+})
+
+test("WTHRU amounts are read on the THRU scale, not the mint's 8 decimals", () => {
+  const wrap = itemOf(buildWrap({ payer: PAYER, dest: DEST, amount: 5000 }))
+  const extra = {
+    events: { tsX: [{ op: 'mint', mint: WTHRU_MINT_ADDRESS, to: DEST, amount: '5000' }] },
+    accounts: {
+      [DEST]: { kind: 'token', owner: PAYER, mint: WTHRU_MINT_ADDRESS },
+      [WTHRU_MINT_ADDRESS]: { kind: 'mint', decimals: 8, ticker: 'WTHRU' },
+    },
+  }
+  // 5,000 wrapped is 5,000 WTHRU base units. At the mint's 8 decimals this read +0.00005.
+  assert.deepEqual(movements(wrap, extra, PAYER), [{ label: 'THRU', delta: -5000 }, { label: 'WTHRU', delta: 5000 }])
+})
+
+test('a token with its own decimals keeps them', () => {
+  const swap = { program: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL', feePayer: PAYER, rw: [], ro: [], data: '', ok: true, signature: 'tsY' }
+  const BNTEST = 'tadRs4WoP6-sxx6FgiEXMVOIkDhw3g9CU3xCMgNyCtSYo3'
+  const extra = {
+    events: { tsY: [{ op: 'transfer', from: 'taH7fb-E5-dsPfneas-8eQRBqZmgJ3RYg0nXizj-T0O0vO', to: DEST, amount: '98029507' }] },
+    accounts: { [DEST]: { kind: 'token', owner: PAYER, mint: BNTEST }, [BNTEST]: { kind: 'mint', decimals: 6, ticker: 'BNTEST' } },
+  }
+  assert.deepEqual(movements(swap, extra, PAYER), [{ label: 'BNTEST', delta: 98.029507 }])
+})
+
+test('the pool fee is what thruswap withholds, which never rounds a real fee to nothing', () => {
+  // The swap on betanet: 100 base units in, 30 basis points.
+  assert.equal(poolFee(100n, 30), 1n)         // 100 * 30 / 10000 floors to 0; the pool kept 1
+  assert.equal(poolFee(10_000n, 30), 30n)
+  assert.equal(poolFee(2n, 30), 1n)
+  assert.equal(poolFee(0n, 30), 0n)
+  // And it matches the quote's own arithmetic: 100 in leaves 99 to price against.
+  const q = quoteSwap({ reserveIn: 10_000n, reserveOut: 10_000_000_000n, amountIn: 100n, feeBps: 30 })
+  assert.equal(100n - poolFee(100n, 30), 99n)
+  assert.ok(q.amountOut > 0n)
 })
