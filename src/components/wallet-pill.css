@@ -814,10 +814,7 @@ button[aria-current="true"] {
 @media (max-width: 720px) {
   /* Cards and page gutters. A 24px gutter on a 360px screen spends 13% of the
      width on nothing. */
-  .wrap { padding-left: 14px; padding-right: 14px; }
-  .card { padding: 14px; border-radius: 12px; }
-  .h1 { font-size: clamp(22px, 7vw, 30px); }
-  .lede { font-size: 14px; }
+  .card { padding: 14px; }
 
   /* A label and a value on one line become two lines rather than a squeeze. */
   .row {
@@ -857,7 +854,6 @@ button[aria-current="true"] {
 }
 
 @media (max-width: 480px) {
-  .wrap { padding-left: 12px; padding-right: 12px; }
   .stat-strip { grid-template-columns: 1fr; }
   .stat-cell { border-right: 0 !important; }
   .stat-cell:last-child { border-bottom: 0; }

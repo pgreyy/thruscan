@@ -286,7 +286,7 @@ function BackupCard({ wallet }) {
             Type the words or scan the code on another device to restore this wallet.
           </p>
           <div className="inline" style={{ marginTop: 14 }}>
-            <button className="btn" onClick={() => setShown(shown ? null : exportPhrase())}>
+            <button className="btn secondary" onClick={() => setShown(shown ? null : exportPhrase())}>
               {shown ? 'Hide phrase' : 'Show phrase'}
             </button>
             <button className="btn ghost" onClick={() => setShowQR((q) => !q)}>
@@ -710,7 +710,7 @@ function Danger({ wallet }) {
         Works in the CLI too. Anyone who sees it controls the account.
       </p>
 
-      <div className="form-row" style={{ marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
+      <div className="inline" style={{ marginTop: 14, flexWrap: 'wrap' }}>
         <button className="btn ghost" onClick={() => setShown(shown ? null : exportPrivateKey())}>
           {shown ? 'Hide key' : 'Show private key'}
         </button>
@@ -721,7 +721,7 @@ function Danger({ wallet }) {
           Lock
         </button>
         <button
-          className="btn ghost"
+          className="btn danger"
           onClick={() => {
             if (confirm('This deletes the key from this browser. Export it first if you want it back. Continue?')) {
               forgetWallet()
@@ -1349,7 +1349,7 @@ export function WalletPage() {
           </div>
           <div className="row">
             <span>Paid for by ThruScan</span>
-            <span className="fine">Registering the wallet, .id names, the tUSD faucet</span>
+            <span className="fine">Registering the wallet, .id names, the THRU faucet</span>
           </div>
           <div className="row">
             <span>Paid for and signed by you</span>
