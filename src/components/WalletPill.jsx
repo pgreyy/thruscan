@@ -245,8 +245,8 @@ function Panel({ wallet, pfp, onClose }) {
           </button>
         )
         : (
-          <a className="pill-row" href={EXTENSION_URL} target="_blank" rel="noreferrer">
-            <span>Get ThruScan Wallet</span><span>↗</span>
+          <a className="pill-row" href={EXTENSION_URL} target="_blank" rel="noopener noreferrer">
+            <span>Get ThruScan Wallet</span><Icon name="external" size={16} />
           </a>
         ))}
       {!externalConnected() && <div className="pill-divider" />}
@@ -293,9 +293,10 @@ function ConnectMenu({ onClose }) {
           <span className="connect-text"><b>ThruScan Wallet</b><span className="fine">{busy ? 'Approve in the extension' : 'Extension, detected'}</span></span>
         </button>
       ) : (
-        <a className="connect-option" href={EXTENSION_URL} target="_blank" rel="noreferrer">
+        <a className="connect-option" href={EXTENSION_URL} target="_blank" rel="noopener noreferrer">
           <span className="connect-mark"><Symbol size={24} /></span>
-          <span className="connect-text"><b>ThruScan Wallet</b><span className="fine">Get the Chrome extension</span></span>
+          <span className="connect-text"><b>Get ThruScan Wallet</b><span className="fine">Add to Chrome</span></span>
+          <Icon name="external" size={16} />
         </a>
       )}
       <Link className="connect-option" to="/wallet" onClick={onClose}>

@@ -47,6 +47,7 @@
 .mk-step.done .mk-step-n { background: var(--text-primary); color: var(--bg-surface); }
 .mk-step-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mk-step-t b { font-size: 14px; }
+.mk-step-t b svg { vertical-align: -2px; margin-left: 4px; }
 .mk-step-t span { font-size: 13px; color: var(--text-secondary); }
 .mk-intro-x { display: grid; place-items: center; border: 0; background: none; color: var(--text-secondary); cursor: pointer; border-radius: 0 var(--r-panel) var(--r-panel) 0; }
 .mk-intro-x:hover { background: var(--fill-hover); color: var(--text-primary); }

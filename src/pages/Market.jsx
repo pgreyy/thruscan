@@ -20,6 +20,7 @@ import { hasWallet } from '../lib/wallet.js'
 import { relTime, fullUtc, clock, since } from '../lib/when.js'
 import { TokenIcon } from '../components/TokenMeta.jsx'
 import { Icon } from '../components/Icon.jsx'
+import { EXTENSION_URL } from '../lib/external.js'
 import { useWallet } from './Wallet.jsx'
 import { useChainData, CreateLaunchCard } from './Dex.jsx'
 import './market.css'
@@ -163,17 +164,29 @@ function useIntro(connected) {
   return { show: !dismissed && (reopened || !connected), dismiss }
 }
 
+/* One step. "Get a wallet" leaves the site for the Chrome Web Store, so it is a
+   plain link that opens a new tab; the rest are routes. */
+function Step({ s, n, children }) {
+  const cls = `mk-step${s.done ? ' done' : ''}`
+  const body = (
+    <>
+      <span className="mk-step-n" aria-hidden="true">{s.done ? <Icon name="success" size={14} stroke={2.2} /> : n}</span>
+      <span className="mk-step-t"><b>{s.title}{s.href && <Icon name="external" size={14} />}</b><span>{s.sub}</span></span>
+      {children}
+    </>
+  )
+  return s.href
+    ? <a href={s.href} target="_blank" rel="noopener noreferrer" className={cls}>{body}</a>
+    : <Link to={s.to} className={cls}>{body}</Link>
+}
+
 function NewHere({ steps, onClose }) {
   const [open, setOpen] = useState(false)
   return (
     <section className="mk-intro" aria-label="New here? Four steps to your first trade">
       <div className="mk-intro-lead"><b>New here?</b></div>
       {steps.map((s, i) => (
-        <Link key={s.title} to={s.to} className={`mk-step${s.done ? ' done' : ''}`}>
-          <span className="mk-step-n" aria-hidden="true">{s.done ? <Icon name="success" size={14} stroke={2.2} /> : i + 1}</span>
-          <span className="mk-step-t"><b>{s.title}</b><span>{s.sub}</span></span>
-          {s.done && <span className="sr-only">(done)</span>}
-        </Link>
+        <Step key={s.title} s={s} n={i + 1}>{s.done && <span className="sr-only">(done)</span>}</Step>
       ))}
       <button className="mk-intro-x" onClick={onClose} aria-label="Hide these steps for good"><Icon name="failed" size={16} /></button>
 
@@ -184,12 +197,7 @@ function NewHere({ steps, onClose }) {
       </button>
       {open && (
         <div className="mk-intro-list">
-          {steps.map((s, i) => (
-            <Link key={s.title} to={s.to} className={`mk-step${s.done ? ' done' : ''}`}>
-              <span className="mk-step-n" aria-hidden="true">{s.done ? <Icon name="success" size={14} stroke={2.2} /> : i + 1}</span>
-              <span className="mk-step-t"><b>{s.title}</b><span>{s.sub}</span></span>
-            </Link>
-          ))}
+          {steps.map((s, i) => <Step key={s.title} s={s} n={i + 1} />)}
           <button className="btn tertiary sm" onClick={onClose}>Hide for good</button>
         </div>
       )}
@@ -344,7 +352,7 @@ export function MarketHome() {
     : null
 
   const steps = [
-    { title: 'Get a wallet', sub: 'Extension or in-browser', to: '/get-wallet', done: hasWallet() },
+    { title: 'Get a wallet', sub: 'ThruScan Wallet for Chrome', href: EXTENSION_URL, done: hasWallet() },
     { title: 'Get test tokens', sub: 'THRU from the faucet', to: '/faucet', done: (wallet.native ?? 0n) > 0n },
     { title: 'Swap for WTHRU', sub: 'Launches are priced in WTHRU', to: '/swap', done: !!(wthru?.exists && wthru.amount > 0n) },
     { title: 'Launch or trade', sub: 'Then check Activity', to: '/activity', done: !!wallet.address && rows.some((r) => r.creator === wallet.address) },
