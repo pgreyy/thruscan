@@ -308,8 +308,8 @@ export function MarketHome() {
     // The launch's age, from the slot it started in and the chain's own block
     // time. Slots are close to evenly spaced, so this is near enough to say
     // "3d"; the tooltip says where it comes from.
-    const startMs = ov?.finalized && ov?.blockTimeMs && l.startSlot
-      ? Date.now() - Math.max(0, Number(ov.finalized) - Number(l.startSlot)) * ov.blockTimeMs
+    const ageMs = ov?.finalized && ov?.blockTimeMs && l.startSlot
+      ? Math.max(0, Number(ov.finalized) - Number(l.startSlot)) * ov.blockTimeMs
       : null
     return {
       ...l,
@@ -321,9 +321,9 @@ export function MarketHome() {
       raised: Number(raised) / 10 ** qd,
       trades: Number(l.tradeCount),
       progress: l.graduated ? 1 : graduationProgress(raised, data.gradThreshold),
-      startMs,
+      ageMs,
     }
-  }), [data, balances, tickers, decimals, ov?.finalized, ov?.blockTimeMs])
+  }), [data, balances, tickers, decimals, ov])
 
   const top = useMemo(() => [...rows].sort((a, b) => (b.raised ?? 0) - (a.raised ?? 0)), [rows])
   const nearGrad = useMemo(() => rows.filter((r) => !r.graduated).sort((a, b) => b.progress - a.progress), [rows])
@@ -463,7 +463,7 @@ export function MarketHome() {
                       ? <span className="dim">Graduated</span>
                       : <><Bar progress={l.progress} /><span className="mono">{(l.progress * 100).toFixed(0)}%</span></>}
                   </span>
-                  <span className="mono dim" role="cell" title={l.startMs ? `Started ~${fullUtc(l.startMs)}` : undefined}>{l.startMs ? relTime(l.startMs) : '–'}</span>
+                  <span className="mono dim" role="cell" title={l.ageMs !== null ? `Started ~${fullUtc(now - l.ageMs)}` : undefined}>{l.ageMs !== null ? relTime(now - l.ageMs, now) : '–'}</span>
                 </Link>
               )
             })}
@@ -502,7 +502,7 @@ export function MarketHome() {
               {data && rows.length === 0 && <p className="mk-note">No launches yet.</p>}
               {newest.map((l) => (
                 <CompactToken key={l.id} l={l} meta={meta[l.mint]}
-                  right={<span className="mono dim" title={l.startMs ? fullUtc(l.startMs) : undefined}>{l.startMs ? relTime(l.startMs) : '–'}</span>} />
+                  right={<span className="mono dim" title={l.ageMs !== null ? fullUtc(now - l.ageMs) : undefined}>{l.ageMs !== null ? relTime(now - l.ageMs, now) : '–'}</span>} />
               ))}
             </div>
           </section>
