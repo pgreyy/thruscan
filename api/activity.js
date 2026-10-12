@@ -33,6 +33,7 @@ import { join } from 'node:path'
 import { resolveClient, withTimeout } from './rpc.js'
 import { makeDecoder } from '../indexer/decode.mjs'
 import { addressesFor } from '../indexer/addresses.mjs'
+import { activeAddresses } from '../src/lib/networks.js'
 
 export const config = { runtime: 'nodejs', maxDuration: 15 }
 
@@ -45,7 +46,7 @@ const KINDS = new Set([
   'pad', 'launch', 'buy', 'sell', 'claim', 'graduate', 'migrate',
   'pool', 'liquidity', 'swap',
   'token', 'account', 'transfer', 'mint', 'burn',
-  'faucet', 'name', 'nft', 'wall', 'bundle', 'noop', 'oracle', 'other',
+  'faucet', 'name', 'nft', 'wall', 'game', 'bundle', 'noop', 'oracle', 'other',
 ])
 
 /* What the chain does by itself. The node writes a do-nothing transaction per
@@ -175,13 +176,51 @@ async function querySqlite({ kind, address, cursor, limit }) {
 const MAX_PAGES = 4
 /* Block times cost a read each, so only the newest slots get one. The rest
    show their slot number, which is true, rather than a guessed time. */
-const MAX_TIME_READS = 30
+const MAX_TIME_READS = 60
+
+/* ThruScan's own accounts, whose transactions make up the feed when there is
+ * no indexer. Everything the site does touches one of these: the pad and swap
+ * registries (launches, trades, pools, liquidity), the two programs (which also
+ * lists their deployment), the name root (every ThruID), and the wall and the
+ * game boards. Blank means not deployed on this network, and is skipped.
+ *
+ * Thru's own programs are deliberately not here. The global listing is mostly
+ * other projects' calls and the chain's own keepalives, and walking it for
+ * "the newest 50" pushed ThruScan's rows out of the window within minutes. */
+const OWN_ACCOUNTS = [
+  'THRUPAD_REGISTRY', 'THRUSWAP_REGISTRY', 'THRUPAD_PROGRAM', 'THRUSWAP_PROGRAM',
+  'NAME_ROOT', 'WALL_ACCOUNT', 'WORDLE_BOARD', 'G2048_BOARD', 'ID_REGISTRY',
+]
 
 async function queryChain({ kind, address, cursor, limit }) {
   const { client, url } = await resolveClient()
-  const A = await addressesFor(url)
+  /* The decoder needs every program the site deploys to label it, and the
+     site's own table is the one place that lists them all, overrides included.
+     The indexer's table adds what it knows on top. */
+  const A = { ...(await addressesFor(url)), ...activeAddresses() }
+  const own = [...new Set(OWN_ACCOUNTS.map((k) => A[k]).filter(Boolean))]
   const decode = makeDecoder(A)
   const { PageRequest } = await import('@thru/sdk')
+
+  /* How many listings gave up. The node now and then closes a stream with an
+     internal error (NGHTTP2_INTERNAL_ERROR, about one call in fifty), and
+     with nine listings in flight that would silently drop an account from the
+     feed about one request in six. So each page is tried again, and a listing
+     that still fails is counted so the answer can say it is short. */
+  let failed = 0
+
+  const listPage = async (fetchPage, pageToken) => {
+    let last
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await withTimeout(fetchPage(new PageRequest({ pageSize: 200, pageToken })), CALL_MS)
+      } catch (e) {
+        last = e
+        await new Promise((r) => setTimeout(r, 120 * (attempt + 1)))
+      }
+    }
+    throw last
+  }
 
   /* Walk one listing, newest first, and keep what survives the filters. */
   const walk = async (fetchPage, pages) => {
@@ -190,8 +229,9 @@ async function queryChain({ kind, address, cursor, limit }) {
     for (let i = 0; i < pages && rows.length < limit; i++) {
       let listed
       try {
-        listed = await withTimeout(fetchPage(new PageRequest({ pageSize: 200, pageToken })), CALL_MS)
+        listed = await listPage(fetchPage, pageToken)
       } catch {
+        failed++
         break
       }
       for (const txn of listed.transactions ?? []) {
@@ -214,29 +254,25 @@ async function queryChain({ kind, address, cursor, limit }) {
   let out
   if (address) {
     out = await walk((page) => client.transactions.listForAccount(address, { page }), MAX_PAGES)
-  } else {
-    /* Two listings rather than one, and the second is the point.
-     *
-     * The global listing only reaches back as far as the pages we are willing
-     * to read, which on a chain filling every slot with keepalive traffic is
-     * about a quarter of an hour. A token launched this morning would simply
-     * not be in it, and a launchpad whose front page cannot show the last
-     * launch is not much of a launchpad.
-     *
-     * Asking the pad's registry for its own transactions costs one more call
-     * and reaches all the way back, because everything the launchpad has ever
-     * done touches that account. The indexer removes the need for this; until
-     * it is running, this is what keeps the feed honest. */
-    const [recent, pad] = await Promise.all([
-      walk((page) => client.transactions.list({ page }), MAX_PAGES),
-      A.THRUPAD_REGISTRY
-        ? walk((page) => client.transactions.listForAccount(A.THRUPAD_REGISTRY, { page }), 2)
-        : Promise.resolve([]),
-    ])
+  } else if (own.length) {
+    /* One listing per account of ours, newest first, in parallel, merged by
+     * time. Each listing is already sorted, so keeping the first `limit` of
+     * each is enough to know the first `limit` of all of them; a transaction
+     * that touches two accounts (a launch touches the registry and the
+     * program) turns up twice and is counted once. Paging is the same cursor
+     * as everywhere else: strictly before a (slot, offset), applied inside
+     * each walk, so "show older" asks every account for what is older than
+     * the last row and merges again. */
+    const lists = await Promise.all(own.map((a) => walk((page) => client.transactions.listForAccount(a, { page }), MAX_PAGES)))
     const seen = new Set()
-    out = [...recent, ...pad]
+    out = lists.flat()
       .filter((r) => (seen.has(r.signature) ? false : seen.add(r.signature)))
       .sort((a, b) => (b.slot - a.slot) || (b.blockOffset - a.blockOffset))
+  } else {
+    /* Nothing of ours is deployed on this network, so there is nothing to
+       filter to: show the chain's own newest, which is what the page did
+       before. */
+    out = await walk((page) => client.transactions.list({ page }), MAX_PAGES)
   }
   out = out.slice(0, limit)
 
@@ -245,15 +281,20 @@ async function queryChain({ kind, address, cursor, limit }) {
   const slots = [...new Set(out.map((r) => r.slot))].slice(0, MAX_TIME_READS)
   const times = new Map()
   await Promise.all(slots.map(async (slot) => {
-    try {
-      const b = await withTimeout(client.blocks.get({ slot }), 4000)
-      if (b?.blockTimeNs != null) times.set(slot, String(b.blockTimeNs))
-    } catch { /* it keeps its slot number */ }
+    /* Twice, for the same reason the listings are retried: a stream the node
+       closes under load is not a block that has no time. */
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const b = await withTimeout(client.blocks.get({ slot }), 4000)
+        if (b?.blockTimeNs != null) times.set(slot, String(b.blockTimeNs))
+        return
+      } catch { /* try once more, then it keeps its slot number */ }
+    }
   }))
 
   /* Shaped like a database row, because the caller reshapes them all the same
      way afterwards and one of these paths should not know about the other. */
-  return out.map((r) => ({
+  const shaped = out.map((r) => ({
     signature: r.signature,
     slot: r.slot,
     block_offset: r.blockOffset,
@@ -270,6 +311,10 @@ async function queryChain({ kind, address, cursor, limit }) {
     rw: r.rw,
     ro: r.ro,
   }))
+  /* Carried on the array so the handler can read it without changing what the
+     two other paths return. */
+  shaped.partial = failed > 0
+  return shaped
 }
 
 const CALL_MS = 8000
@@ -315,11 +360,14 @@ export default async function handler(req, res) {
        takes repeat visitors off the database entirely. The chain path gets a
        longer one because it is the expensive one: every miss is a page of
        transactions plus a block read per slot. */
+    const partial = rows.partial === true
     res.setHeader(
       'cache-control',
-      source === 'chain'
-        ? 'public, s-maxage=15, stale-while-revalidate=60'
-        : 'public, s-maxage=5, stale-while-revalidate=30',
+      partial
+        ? 'public, s-maxage=2'     // short, so a hiccup is not what everyone sees for a minute
+        : source === 'chain'
+          ? 'public, s-maxage=15, stale-while-revalidate=60'
+          : 'public, s-maxage=5, stale-while-revalidate=30',
     )
 
     const items = rows.map(shape)
@@ -331,6 +379,10 @@ export default async function handler(req, res) {
       /* Which path answered. The browser does not change what it draws, but
          it is the first thing to look at when the feed is slow or short. */
       source,
+      /* Present only when a listing failed even after retrying, so the page
+         can say it may be missing rows instead of presenting a short list as
+         the whole truth. */
+      ...(partial ? { partial: true } : {}),
     }))
   } catch (e) {
     res.statusCode = 500

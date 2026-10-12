@@ -46,7 +46,7 @@ const site = rewriteBlock('src/lib/networks.js', 'const OURS_BETANET = {', '\n}\
 
 /* The indexer only recognises programs and the pad registry. */
 const idx = rewriteBlock('indexer/addresses.mjs', '  betanet: {', '\n  },\n', (b) => {
-  const keys = ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'WALL_PROGRAM']
+  const keys = ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'WALL_PROGRAM', 'WORDLE_PROGRAM', 'G2048_PROGRAM', 'ID_PROGRAM']
   const lines = keys.filter((k) => A[k]).map((k) => `    ${k}: '${A[k]}',`)
   return `  betanet: {\n${lines.join('\n')}`
 })

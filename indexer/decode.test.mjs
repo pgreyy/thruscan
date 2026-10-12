@@ -22,6 +22,9 @@ const A = {
   THRUSWAP_PROGRAM: 'taCXE0eEQbUHU90dyZ__Bz1yfQabjyaD4xaSHKUw3Q1M4N',
   PALS_PROGRAM: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
   WALL_PROGRAM: 'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH',
+  WORDLE_PROGRAM: 'tar7SW2hDhnizBJT8gcJ6XBfBgNobwsxTwNcUvCrDQu-eF',
+  G2048_PROGRAM: 'taXyq3jDXavyDXwVEq85vInMz5YfKpprmTGgSa4ayd4mSa',
+  ID_PROGRAM: 'taSXTzs8mjKZoBAbYPXQHh8LNkbn-eRqgBhdY4-CA_UV-z',
 }
 
 const decode = makeDecoder(A)
@@ -200,4 +203,21 @@ test('the do-nothing program is read by the flag, not the program', () => {
   // an empty slot. Only the create-fee-payer flag tells them apart.
   assert.equal(decode(txn({ program: A.NOOP_PROGRAM, data: new Uint8Array(0), flags: 1 })).kind, 'account')
   assert.equal(decode(txn({ program: A.NOOP_PROGRAM, data: new Uint8Array(0), flags: 0 })).kind, 'noop')
+})
+
+test('the games, the leaderboard registry, the name root and deployments are named', () => {
+  const cases = [
+    [A.WORDLE_PROGRAM, bytes(1), 'game', 'Played Wordle'],
+    [A.G2048_PROGRAM, bytes(1), 'game', 'Started 2048'],
+    [A.G2048_PROGRAM, bytes(2), 'game', 'Moved in 2048'],
+    [A.ID_PROGRAM, bytes(1), 'game', 'Set a leaderboard name'],
+    [A.THRUSWAP_PROGRAM, bytes(0), 'pad', 'Opened Swap'],
+    [A.NAME_SERVICE_PROGRAM, u32le(0), 'name', 'Created a name root'],
+    [A.MANAGER_PROGRAM, bytes(0, 3, 0, 2), 'other', 'Program deployment'],
+  ]
+  for (const [program, data, kind, label] of cases) {
+    const r = decode(txn({ program, data }))
+    assert.equal(r.kind, kind, label)
+    assert.equal(r.label, label)
+  }
 })

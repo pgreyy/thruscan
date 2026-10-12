@@ -30,6 +30,9 @@ export const SYSTEM = {
      slots with, so the decoder tells those apart by the transaction's
      create-fee-payer flag rather than by the program. */
   NOOP_PROGRAM: 'taNOOPV4A7S3WTsirr149To2GoGZ9q8zllQaBrbekHfkJT',
+  /* Where `thru program create` and `upgrade` land. Every deployment of ours
+     is a call to it, which is worth naming rather than showing as a mystery. */
+  MANAGER_PROGRAM: 'taMGRmPoSTkUtF6UlmCIq58K8OYsnXshOMPdobxxHytqmu',
   /* The price oracle. It posts updates continuously, bundled through the
      multicall program, and on a quiet chain those are most of the traffic.
      Infrastructure rather than anybody's activity, so the feed hides it. */
@@ -58,6 +61,9 @@ export const OURS = {
     THRUPAD_REGISTRY: 'ta3KpHenF6JwYBZk_MLqEVyvn2binYGuT5UOp6prEzSTah',
     THRUSWAP_PROGRAM: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL',
     WALL_PROGRAM: 'ta0HkkkvXQTe4MkfWBZlqlvyLlxilHr-w6Cxrkm0SqYlaS',
+    WORDLE_PROGRAM: 'taEUig8UQA9RpP1DTRz3zyPI90v3JnGlA_z-_DZFzXyZWY',
+    G2048_PROGRAM: 'ta3UKLl5x0j0l-wO1qyYlO1-7UA9scLHVA6kkIh_ckCQ_H',
+    ID_PROGRAM: 'taTusdvqObMobC8XzdHB-WfRiXfNFmoAKgfMmUV3L6KXNA',
   },
 }
 
@@ -82,7 +88,7 @@ export async function addressesFor(rpcUrl) {
     console.warn('indexer: set THRU_NETWORK, or the program addresses directly, to see ours.')
   }
   const out = { ...SYSTEM, ...ours }
-  for (const key of ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'PALS_PROGRAM', 'WALL_PROGRAM', 'AMM_PROGRAM', 'CLOB_PROGRAM']) {
+  for (const key of ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'PALS_PROGRAM', 'WALL_PROGRAM', 'WORDLE_PROGRAM', 'G2048_PROGRAM', 'ID_PROGRAM', 'AMM_PROGRAM', 'CLOB_PROGRAM']) {
     if (process.env[key]) out[key] = process.env[key]
   }
   return out

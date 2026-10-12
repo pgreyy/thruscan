@@ -70,7 +70,7 @@ function registeredName(b) {
    Anything not listed sorts last. */
 const RANK = [
   'launch', 'graduate', 'migrate', 'buy', 'sell', 'swap', 'claim', 'pad',
-  'pool', 'liquidity', 'nft', 'name', 'wall', 'mint', 'burn', 'transfer',
+  'pool', 'liquidity', 'nft', 'name', 'wall', 'game', 'mint', 'burn', 'transfer',
   'faucet', 'token', 'account', 'bundle', 'other', 'oracle', 'noop',
 ]
 const rank = (k) => { const i = RANK.indexOf(k); return i < 0 ? RANK.length : i }
@@ -131,6 +131,10 @@ export function makeDecoder(addresses) {
     [A.THRUSWAP_PROGRAM]: 'Swap',
     [A.PALS_PROGRAM]: 'Pixel Pals',
     [A.WALL_PROGRAM]: 'Wall',
+    [A.WORDLE_PROGRAM]: 'Wordle',
+    [A.G2048_PROGRAM]: '2048',
+    [A.ID_PROGRAM]: 'Leaderboard names',
+    [A.MANAGER_PROGRAM]: 'Program manager',
   }
 
   const PAD = {
@@ -151,6 +155,7 @@ export function makeDecoder(addresses) {
   }
 
   const SWAP = {
+    0: ['pad', 'Opened Swap'],
     1: ['pool', 'Created a pool'],
     2: ['liquidity', 'Added liquidity'],
     3: ['liquidity', 'Removed liquidity'],
@@ -213,7 +218,7 @@ export function makeDecoder(addresses) {
           const n = registeredName(data)
           label = n ? `Registered ${n}` : 'Registered a name'
         } else {
-          label = { 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' }[nop] ?? 'Name service'
+          label = { 0: 'Created a name root', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' }[nop] ?? 'Name service'
         }
         break
       }
@@ -225,6 +230,28 @@ export function makeDecoder(addresses) {
       case A.WALL_PROGRAM: {
         kind = 'wall'
         label = 'Posted to the wall'
+        break
+      }
+      /* The games record results, one transaction each. Their own kind, so the
+         feed can say "played" instead of "program call" and a filter can find
+         them. */
+      case A.WORDLE_PROGRAM: {
+        kind = 'game'
+        label = op === 1 ? 'Played Wordle' : 'Wordle'
+        break
+      }
+      case A.G2048_PROGRAM: {
+        kind = 'game'
+        label = { 1: 'Started 2048', 2: 'Moved in 2048' }[op] ?? '2048'
+        break
+      }
+      case A.ID_PROGRAM: {
+        kind = 'game'
+        label = op === 1 ? 'Set a leaderboard name' : 'Leaderboard names'
+        break
+      }
+      case A.MANAGER_PROGRAM: {
+        label = 'Program deployment'
         break
       }
       case A.MULTICALL_PROGRAM: {

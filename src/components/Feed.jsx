@@ -54,7 +54,7 @@ const EVENT_WORD = {
   pad: 'Pad', launch: 'Launch', buy: 'Buy', sell: 'Sell', claim: 'Claim',
   graduate: 'Graduate', migrate: 'Migrate', swap: 'Swap',
   pool: 'Pool', liquidity: 'Liquidity', nft: 'NFT', name: 'Name',
-  wall: 'Post', mint: 'Mint', burn: 'Burn', transfer: 'Transfer',
+  wall: 'Post', game: 'Game', mint: 'Mint', burn: 'Burn', transfer: 'Transfer',
   faucet: 'Faucet', token: 'Token', account: 'Account',
   bundle: 'Bundle', oracle: 'Oracle', noop: 'Idle', other: 'Call',
 }

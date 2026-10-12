@@ -10,10 +10,13 @@
 import {
   THRUSWAP_PROGRAM, THRUPAD_PROGRAM, WALL_PROGRAM, TOKEN_PROGRAM,
   NAME_SERVICE_PROGRAM, NATIVE_FAUCET_PROGRAM, TUSD_MINT, WTHRU_MINT,
+  WORDLE_PROGRAM, G2048_PROGRAM, ID_PROGRAM,
 } from './addresses.js'
 import { ROOT_REGISTRAR, ROOT_SUFFIX } from './names.js'
 
 export const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
+/* Where `thru program create` and `upgrade` land; every deployment is a call to it. */
+const MANAGER_PROGRAM = 'taMGRmPoSTkUtF6UlmCIq58K8OYsnXshOMPdobxxHytqmu'
 
 export async function fetchHistory(addresses, pages = null) {
   const list = [...new Set(addresses.filter(Boolean))].slice(0, 6)
@@ -56,9 +59,9 @@ export function describe(item, me) {
 
   switch (item.program) {
     case THRUSWAP_PROGRAM:
-      return { label: ({ 1: 'Created a pool', 2: 'Added liquidity', 3: 'Removed liquidity', 4: 'Swap' })[op] ?? 'Swap program' }
+      return { label: ({ 0: 'Opened Swap', 1: 'Created a pool', 2: 'Added liquidity', 3: 'Removed liquidity', 4: 'Swap' })[op] ?? 'Swap program' }
     case THRUPAD_PROGRAM:
-      return { label: ({ 1: 'Launched a token', 2: 'Bought on ThruPad', 3: 'Sold on ThruPad', 4: 'Claimed creator fees', 5: 'Graduated a launch' })[op] ?? 'ThruPad' }
+      return { label: ({ 0: 'Opened ThruPad', 1: 'Launched a token', 2: 'Bought on ThruPad', 3: 'Sold on ThruPad', 4: 'Claimed creator fees', 5: 'Graduated a launch' })[op] ?? 'ThruPad' }
     case WALL_PROGRAM:
       return { label: 'Wall message' }
     case NAME_SERVICE_PROGRAM: {
@@ -69,7 +72,7 @@ export function describe(item, me) {
         const ours = item.rw?.includes(ROOT_REGISTRAR)
         return { label: n ? `Registered ${ours ? `${n}.${ROOT_SUFFIX}` : `"${n}"`}` : 'Registered a name' }
       }
-      return { label: ({ 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[nop] ?? 'Name service' }
+      return { label: ({ 0: 'Created a name root', 2: 'Set a name record', 3: 'Removed a name record', 4: 'Released a name' })[nop] ?? 'Name service' }
     }
     case TOKEN_PROGRAM: {
       if (op === 2) return { label: !me ? 'Token transfer' : byMe ? 'Sent tokens' : 'Received tokens' }
@@ -136,6 +139,10 @@ export function programName(address) {
     [THRUSWAP_PROGRAM]: 'ThruSwap',
     [THRUPAD_PROGRAM]: 'ThruPad',
     [WALL_PROGRAM]: 'ThruWall',
+    [WORDLE_PROGRAM]: 'Wordle',
+    [G2048_PROGRAM]: '2048',
+    [ID_PROGRAM]: 'Leaderboard names',
+    [MANAGER_PROGRAM]: 'Program manager',
     [TOKEN_PROGRAM]: 'Token program',
     [NAME_SERVICE_PROGRAM]: 'Name service',
     [NATIVE_FAUCET_PROGRAM]: 'Thru faucet',
