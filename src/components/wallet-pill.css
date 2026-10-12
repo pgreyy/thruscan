@@ -919,7 +919,7 @@ button[aria-current="true"] {
 }
 .activity-row:first-child { border-top: 0; }
 .activity-row:hover .activity-what b { color: var(--signal); }
-.activity-what { min-width: 0; display: flex; gap: 8px; align-items: baseline; }
+.activity-what { min-width: 0; display: flex; gap: 8px; align-items: center; }
 .activity-what b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-failed, .bad-text { color: var(--status-negative); font-size: 12px; }
 .activity-when { white-space: nowrap; }
@@ -1009,8 +1009,6 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 /* Amounts under each activity row. */
 .activity-what { flex-wrap: wrap; row-gap: 2px; }
 .activity-moves { display: flex; flex-wrap: wrap; gap: 4px 10px; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.activity-moves .in { color: #1f8a5c; }
-.activity-moves .out { color: var(--muted); }
 
 /* A link that reads as text until pointed at. */
 .plain-link { color: inherit; text-decoration: none; }

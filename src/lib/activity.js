@@ -199,7 +199,7 @@ export function programName(address) {
     [THRUPAD_PROGRAM]: 'ThruPad',
     [WALL_PROGRAM]: 'ThruWall',
     [WORDLE_PROGRAM]: 'Wordle',
-    [G2048_PROGRAM]: '2048',
+    [G2048_PROGRAM]: 'Retired game',
     [ID_PROGRAM]: 'Leaderboard names',
     [MANAGER_PROGRAM]: 'Program manager',
     [TOKEN_PROGRAM]: 'Token program',

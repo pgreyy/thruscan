@@ -8,7 +8,7 @@ export function QRImage({ text, size = 200 }) {
   const [svg, setSvg] = useState(null)
   useEffect(() => {
     let alive = true
-    QRCode.toString(text, { type: 'svg', margin: 1, width: size, errorCorrectionLevel: 'M' })
+    QRCode.toString(text, { type: 'svg', margin: 1, width: size, errorCorrectionLevel: 'H' })
       .then((s) => { if (alive) setSvg(s) }).catch(() => {})
     return () => { alive = false }
   }, [text, size])

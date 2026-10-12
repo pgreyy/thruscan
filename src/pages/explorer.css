@@ -1,0 +1,112 @@
+/* The Explorer (Update 02, 5e-5g).
+   H1, the three URL tabs, then the tab. Blocks & transactions: six stat
+   boxes (3 x 2 on a desktop, 2 across on a phone) and two lists on a
+   0.8fr / 1.2fr grid. Wall: the composer in a 380px column beside the list;
+   on a phone, a floating Write button and a bottom sheet. */
+
+.ex { display: flex; flex-direction: column; gap: 20px; }
+.ex > * { min-width: 0; }
+.ex-h1 { margin: 0; }
+.ex .ex-tabs { margin: 0; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+.ex .ex-tabs::-webkit-scrollbar { display: none; }
+.ex-tabs .tab-btn { white-space: nowrap; flex: none; }
+.ex-panel-body { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
+/* ---- stat boxes ---- */
+.ex-stats { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ex-stat {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 16px 18px;
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel);
+}
+.ex-stat dt { font-size: 13px; line-height: 18px; color: var(--text-secondary); }
+.ex-stat dd { margin: 0; font-size: 28px; line-height: 34px; font-weight: 500; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 819px) {
+  .ex-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ex-stat { padding: 12px 14px; gap: 2px; }
+  .ex-stat dt { font-size: 12px; }
+  .ex-stat dd { font-size: 20px; line-height: 26px; }
+}
+
+/* ---- latest blocks / transactions ---- */
+.ex-lists { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
+@media (max-width: 1023px) { .ex-lists { grid-template-columns: minmax(0, 1fr); } }
+.ex-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ex-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.ex-panel-head h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 700; }
+.ex-panel-head a { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.ex-table { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
+.ex-tr {
+  display: grid; align-items: center; column-gap: 12px; min-height: 48px; padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle); font-size: 14px; color: var(--text-primary); text-decoration: none;
+}
+.ex-tr:last-child { border-bottom: 0; }
+a.ex-tr:hover { background: var(--bg-canvas); color: var(--text-primary); }
+.ex-tr > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-tr .r { text-align: right; }
+.ex-th { min-height: 38px; font-size: 12px; font-weight: 600; color: var(--text-secondary); background: var(--bg-canvas); border-bottom: 1px solid var(--border-default); }
+[data-theme="dark"] .ex-th { background: var(--bg-sunken); }
+.ex-blocks { grid-template-columns: minmax(0, 1fr) 70px 70px; }
+.ex-txs { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) 60px; }
+.ex-sig { color: var(--text-link); text-decoration: underline; text-underline-offset: 2px; }
+.ex-pad { padding: 14px 16px; margin: 0; }
+@media (max-width: 519px) {
+  .ex-txs { grid-template-columns: minmax(0, 1fr) auto auto 44px; padding: 0 12px; }
+  .ex-tr { font-size: 13px; }
+}
+
+/* ---- the Wall tab ---- */
+.wall-grid { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 1023px) { .wall-grid { grid-template-columns: minmax(0, 1fr); } }
+.wall-side { position: sticky; top: calc(var(--h-bar) + 16px); }
+.wall-compose {
+  display: flex; flex-direction: column; gap: 14px; padding: 20px;
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel);
+}
+.wall-sheet .wall-compose { border: 0; padding: 4px 0 0; background: none; }
+.wall-compose-title { margin: 0; font-size: 17px; line-height: 24px; font-weight: 700; }
+.wall-compose .form-row { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.wall-textarea { height: 96px; min-height: 96px; resize: vertical; font-size: 15px; line-height: 22px; padding: 10px 12px; }
+.field-help { margin: 0; font-size: 12px; line-height: 16px; color: var(--text-secondary); display: flex; gap: 4px; align-items: center; }
+.field-help.bad { color: var(--status-negative); }
+.wall-count { justify-content: flex-end; }
+.wall-note { margin: 0; line-height: 1.5; }
+
+.wall-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.wall-chips { padding: 0; }
+.wall-list { display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
+.wall-msg { display: flex; flex-direction: column; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--border-subtle); border-left: 3px solid transparent; }
+.wall-msg:last-child { border-bottom: 0; }
+.wall-msg.to-me { border-left-color: var(--action-primary); }
+.wall-msg-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
+.wall-msg-who { display: flex; align-items: center; gap: 0; font-size: 13px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wall-msg-who a { color: var(--text-primary); text-decoration: none; }
+.wall-msg-who a:hover { text-decoration: underline; }
+.wall-chip {
+  flex: none; margin-left: 8px; padding: 1px 6px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 11px; line-height: 16px;
+  background: var(--tint-brand-bg); color: var(--tint-brand-fg);
+}
+.wall-msg-time { flex: none; font-size: 12px; color: var(--text-secondary); }
+.wall-msg-body {
+  margin: 0; font-size: 16px; line-height: 24px; color: var(--text-primary);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.wall-msg-body.open { display: block; -webkit-line-clamp: unset; }
+.wall-more { align-self: flex-start; font-size: 13px; }
+.wall-msg-foot { display: flex; align-items: center; gap: 12px; }
+.wall-msg-foot .btn.tertiary { margin-left: -10px; }
+.wall-tx { font-size: 12px; color: var(--text-link); }
+.wall-empty { margin: 0; padding: 24px 18px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); color: var(--text-secondary); }
+.wall-older { align-self: center; }
+
+/* The phone's Write button: 52px, amber, bottom right, above the tab bar. */
+.wall-fab {
+  position: fixed; right: 16px; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px); z-index: 60;
+  height: 52px; padding: 0 20px; display: inline-flex; align-items: center; gap: 8px;
+  border: 0; border-radius: 26px; background: var(--action-primary); color: var(--action-primary-text);
+  font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-popover);
+}
+.wall-fab:hover { background: var(--action-primary-hover); }
+.wall-sheet { position: relative; }
+.wall-sheet-x { position: absolute; top: 12px; right: 16px; }

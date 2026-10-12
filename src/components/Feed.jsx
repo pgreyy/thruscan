@@ -26,6 +26,7 @@ import {
 import { network } from '../lib/networks.js'
 import { relTime, fullUtc, clock, since } from '../lib/when.js'
 import { Icon } from './Icon.jsx'
+import { EventPill, StatusPill, Amount } from './Pill.jsx'
 import './feed-table.css'
 
 /* What to say when there is nothing.
@@ -45,18 +46,6 @@ function emptyMessage(problem, group) {
     default:
       return group === 'all' ? 'Nothing has happened on chain yet.' : 'Nothing of this kind yet.'
   }
-}
-
-/* The word in the Event column. The kind is already a word, so this mostly
-   capitalises it; the few that differ are the ones whose internal name would
-   read oddly in a table. */
-const EVENT_WORD = {
-  pad: 'Pad', launch: 'Launch', buy: 'Buy', sell: 'Sell', claim: 'Claim',
-  graduate: 'Graduate', migrate: 'Migrate', swap: 'Swap',
-  pool: 'Pool', liquidity: 'Liquidity', nft: 'NFT', name: 'Name',
-  wall: 'Post', game: 'Game', wrap: 'Wrap', mint: 'Mint', burn: 'Burn', transfer: 'Transfer',
-  faucet: 'Faucet', token: 'Token', account: 'Account',
-  bundle: 'Bundle', oracle: 'Oracle', noop: 'Idle', other: 'Call',
 }
 
 /* A click on a link or a button inside a row is that link's, not the row's. */
@@ -90,7 +79,6 @@ function Row({ item, names, extra, now }) {
   const amounts = amountsOf(item, extra)
   const lead = primaryAmount(amounts)
   const fee = feeOf(item)
-  const word = EVENT_WORD[item.kind] ?? item.kind
   const failure = !item.ok && item.error !== null && item.error !== undefined ? ` · error ${item.error}` : ''
   const detail = detailOf(item) + failure
   /* Amounts that still need the chain's token events are a short grey bar,
@@ -110,8 +98,8 @@ function Row({ item, names, extra, now }) {
     <div role="row" tabIndex={0} className={`act-tr${item.ok ? '' : ' failed'}`} onClick={open} onKeyDown={onKey}>
       {/* Wide: one cell per column. */}
       <span role="cell" className="act-event">
-        {word}
-        {!item.ok && <span className="act-failed">FAILED</span>}
+        <EventPill kind={item.kind} />
+        {!item.ok && <StatusPill ok={false} />}
       </span>
       <span role="cell" className="act-detail" title={detail}>{detail}</span>
       <span role="cell" className="act-hash">
@@ -126,7 +114,7 @@ function Row({ item, names, extra, now }) {
             ? <i className="skel-line" aria-label="Still reading the amount" />
             : amounts.length === 0
               ? <span className="act-none">—</span>
-              : amounts.slice(0, 2).map((a) => <span key={a.label}>{a.text}</span>)}
+              : amounts.slice(0, 2).map((a) => <Amount key={a.label} delta={a.delta} text={a.text} />)}
       </span>
       <span role="cell" className="act-fee" title={fee ? 'Fee paid by the sender' : 'Not recorded for this transaction'}>
         {fee ?? <span className="act-none">—</span>}
@@ -137,8 +125,8 @@ function Row({ item, names, extra, now }) {
       <span className="act-c" aria-hidden="true">
         <span className="act-c1">
           <span className="act-c-what">
-            <b>{word}</b>
-            {!item.ok && <span className="status-pill bad">Failed</span>}
+            <EventPill kind={item.kind} />
+            {!item.ok && <StatusPill ok={false} />}
             <span className="act-c-detail">{detail ? ` · ${detail}` : ''}</span>
           </span>
           <span className="mono dim">{item.time ? relTime(item.time, now) : '—'}</span>
@@ -147,7 +135,7 @@ function Row({ item, names, extra, now }) {
           <span className="mono act-c-amt">
             {notSent
               ? <span className="act-none">—</span>
-              : pending ? <i className="skel-line" /> : lead ? lead.text : <span className="act-none">—</span>}
+              : pending ? <i className="skel-line" /> : lead ? <Amount delta={lead.delta} text={lead.text} /> : <span className="act-none">—</span>}
           </span>
           <span className="mono act-c-hash">{item.signature.slice(0, 4)}…</span>
         </span>
@@ -166,9 +154,11 @@ function SkeletonRows({ n = 6 }) {
   ))
 }
 
-const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', name: 'ThruID' }
+const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', wall: 'Wall', name: 'ThruID' }
 
-export function Feed({ address = null, limit = 30, showFilters = true }) {
+/* `embedded` drops the page heading, for the Explorer's Activity tab, which
+   has its own. `address` narrows the feed to one wallet. */
+export function Feed({ address = null, limit = 30, showFilters = true, embedded = false }) {
   const [group, setGroup] = useState('all')
   const [items, setItems] = useState([])
   const [next, setNext] = useState(null)
@@ -288,8 +278,12 @@ export function Feed({ address = null, limit = 30, showFilters = true }) {
     <section className="act">
       <div className="act-head-row">
         <div className="act-head-text">
-          <h1 className="act-h1">Activity</h1>
-          <p className="act-lead">Everyone&rsquo;s launches, trades, swaps, mints and names on Thru {net}, read from the chain.</p>
+          {!embedded && <h1 className="act-h1">Activity</h1>}
+          <p className="act-lead">
+            {address
+              ? <>Transactions involving <Link className="mono" to={`/account/${address}`}>{shortId(address)}</Link> on Thru {net}. <Link to="/explorer?tab=activity">Show everyone&rsquo;s</Link></>
+              : <>Everyone&rsquo;s launches, trades, swaps, mints and names on Thru {net}, read from the chain.</>}
+          </p>
         </div>
         {status}
       </div>

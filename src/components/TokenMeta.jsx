@@ -14,6 +14,7 @@ import {
   signUserMessage, signAndSend, waitForResult, deriveTokenAccount, openTokenAccount,
 } from '../lib/wallet.js'
 import { buildClaimInstruction } from '../lib/pad.js'
+import { notifyTx } from '../lib/notify.js'
 import { THRUPAD_PROGRAM as PAD_PROGRAM, THRUPAD_REGISTRY as PAD_REGISTRY, WTHRU_MINT, TUSD_MINT } from '../lib/addresses.js'
 import { displayDecimals } from '../lib/wthru.js'
 import { useUnlockGate, isDismissal } from './Unlock.jsx'
@@ -155,7 +156,11 @@ export function TokenMetaCard({ launch, address, decimals = 6, quoteTicker = 'tU
       })
       const sig = await signAndSend({ program: PAD_PROGRAM, ...built })
       const r = await waitForResult(sig)
-      if (r.settled && !r.succeeded) throw new Error(`The chain rejected it (error ${r.userError || r.vmError}).`)
+      if (r.settled && !r.succeeded) {
+        notifyTx({ address, type: 'fees', title: 'Claim failed', body: `error ${r.userError || r.vmError}`, sig, ok: false })
+        throw new Error(`The chain rejected it (error ${r.userError || r.vmError}).`)
+      }
+      notifyTx({ address, type: 'fees', title: 'Creator fees claimed', body: `${fmtFees(owed)} ${quoteTicker} from ${launch.symbol}`, sig })
       setNote(`Claimed ${fmtFees(owed)} ${quoteTicker}.`)
       await onClaimed?.()
     } catch (e) {

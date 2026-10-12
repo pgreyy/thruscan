@@ -8,10 +8,12 @@ A Chrome extension wallet for Thru. Self-custody: the keys are made in the brows
 - Unlock with a password; locks itself after a set number of idle minutes
 - THRU balance first, then every token the wallet holds
 - Activate a new address on chain, signed and paid for by the address itself
-- Claim test THRU from Thru's faucet
+- Swap and Faucet open ThruScan's own pages in a tab
 - Send THRU or any token to an address or a `.id` name, with Max and the balance shown
 - Receive with a QR code
-- Activity, each item linking to its ThruScan transaction page
+- Activity grouped by day, green for what arrived and red for what left, each item linking to its ThruScan transaction page
+- Dark by default, with a light theme (or follow the system) in Settings
+- A transaction the wallet cannot read is flagged, and Reject is the default action
 - Connected sites, with disconnect
 - Show the 12 words or private key (asks for the password again)
 - Change the RPC address, remove the wallet from the browser

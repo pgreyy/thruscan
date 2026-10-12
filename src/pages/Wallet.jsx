@@ -374,7 +374,7 @@ function CreateWallet({ onDone }) {
           <p className="sub">
             {mode === 'create' ? 'Made in this browser, with a phrase you can write down'
               : mode === 'phrase' ? 'Twelve words from another device'
-              : 'A raw key, so the CLI and the browser are one account'}
+              : 'A raw private key from another wallet'}
           </p>
         </div>
         <div className="inline">
@@ -708,7 +708,7 @@ function Danger({ wallet }) {
     <section className="card">
       <h2 className="h2">Your key</h2>
       <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-        Works in the CLI too. Anyone who sees it controls the account.
+        Anyone who sees it controls the account. Keep it somewhere only you can reach.
       </p>
 
       <div className="inline" style={{ marginTop: 14, flexWrap: 'wrap' }}>
@@ -891,7 +891,7 @@ function toUnitsBig(text, decimals) {
   return BigInt(w || '0') * 10n ** BigInt(decimals) + BigInt((f + '0'.repeat(decimals)).slice(0, decimals) || '0')
 }
 
-function SendForm({ wallet }) {
+export function SendForm({ wallet }) {
   const confirm = useConfirm()
   const [asset, setAsset] = useState('THRU')
   const [amount, setAmount] = useState('')
@@ -1008,7 +1008,7 @@ function SendForm({ wallet }) {
 }
 
 /** A small centred window for Send and Receive. Escape or a click outside closes it. */
-function QuickModal({ title, onClose, children }) {
+export function QuickModal({ title, onClose, children }) {
   useEffect(() => {
     const key = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', key)
@@ -1028,7 +1028,7 @@ function QuickModal({ title, onClose, children }) {
   )
 }
 
-function ReceiveBody({ address }) {
+export function ReceiveBody({ address }) {
   return (
     <div className="quick-receive">
       <QRImage text={address} size={190} />

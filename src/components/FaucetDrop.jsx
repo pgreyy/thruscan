@@ -9,8 +9,8 @@
 // two claim buttons in place.
 //
 // It is deliberately only the two buttons. Everything else the faucet page
-// says (what each currency is for, the daily limits, giving funds back, the
-// CLI recipe) stays on the page, which is still there and still linked.
+// says (what each currency is for, the daily limits, giving funds back)
+// stays on the page, which is still there and still linked.
 
 import { useCallback, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -136,7 +136,7 @@ export function FaucetDrop() {
           {error && <p className="faucet-note bad">{error}</p>}
 
           <Link className="faucet-more" to="/faucet" onClick={() => setOpen(false)}>
-            Limits, giving it back, and the CLI recipe
+            Limits, and giving it back
           </Link>
         </div>
       )}

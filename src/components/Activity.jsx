@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchHistory, describe, timeAgo, fetchEvents, movements, formatDelta } from '../lib/activity.js'
+import { kindOfLabel } from '../lib/pills.js'
+import { EventPill, StatusPill, Amount } from './Pill.jsx'
 
 const short = (s) => (s ? `${s.slice(0, 6)}…${s.slice(-4)}` : '')
 
@@ -82,13 +84,12 @@ export function Activity({ addresses, me, title = 'Activity' }) {
             return (
               <Link className="activity-row" key={t.signature} to={`/tx/${t.signature}`}>
                 <span className="activity-what">
+                  <EventPill kind={kindOfLabel(label)} />
                   <b>{label}</b>
-                  {t.ok === false && <span className="activity-failed">failed</span>}
+                  {t.ok === false && <StatusPill ok={false} />}
                   {moves.length > 0 && (
-                    <span className="activity-moves">
-                      {moves.map((m) => (
-                        <span key={m.label} className={m.delta < 0 ? 'out' : 'in'}>{formatDelta(m)}</span>
-                      ))}
+                    <span className="activity-moves mono">
+                      {moves.map((m) => <Amount key={m.label} delta={m.delta} text={formatDelta(m)} />)}
                     </span>
                   )}
                 </span>

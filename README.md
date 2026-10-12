@@ -1,24 +1,24 @@
 # ThruScan
 
-A community explorer and app suite for [Thru](https://thru.org) alphanet. Live at **[thruscan.vercel.app](https://thruscan.vercel.app)**.
+A launchpad, swap and explorer for [Thru](https://thru.org)'s test network (betanet by default; the network comes from `VITE_THRU_NETWORK`). Live at **[thruscan.vercel.app](https://thruscan.vercel.app)**.
 
 Everything on the site is read from the chain or written to it. There is no database of balances, trades or names: when ThruScan shows something, it read it from Thru a moment ago.
 
-Not affiliated with Unto Labs. Alphanet tokens have no value, and every balance disappears when the network resets.
+Not affiliated with Unto Labs. Test network tokens have no value, and every balance disappears when the network resets.
 
 ## What's on it
 
 | Page | What it does |
 | --- | --- |
-| **Explorer** | Search any address, transaction or `.id` name. Live chain stats, latest blocks and transactions, and a page for every transaction and account. |
-| **Wall** | Public messages stored on chain, signed by whoever sent them, optionally addressed to someone. |
+| **ThruPad** | Launch a fixed-supply token on a bonding curve, trade it, claim creator fees, and see its price history. Trending, and lists by market cap, newest, most active, near graduation and graduated. |
+| **Explorer** | `/explorer`, three tabs: Blocks & transactions (chain and ThruPad stats, latest blocks and transactions), Activity (everyone's launches, trades, swaps, mints, names and wall posts) and Wall (public messages stored on chain, signed by the sender, optionally addressed to someone). A page for every transaction and account. |
 | **Wallet** | A browser wallet. The key is made and encrypted in the browser and never sent anywhere. Balances, activity with amounts, backup phrase, and moving everything to another wallet. |
 | **Swap** | Constant-product pools: swap, add and remove liquidity. |
-| **Launchpad** | Launch a fixed-supply token on a bonding curve, trade it, and see its price history. |
 | **Faucet** | Test tUSD from ThruScan and THRU from Thru's own faucet. |
 | **ThruID** | Free `.id` names on Thru's name service, with records such as `x`, `url` and `avatar`. |
-| **Games** | Wordle and 2048, with scores recorded on chain. |
-| **Builders** | The programs behind all of this, and what building on Thru taught us. |
+| **Assets** | `/profile`: your tokens with an estimated value, ThruIDs and NFTs, the tokens you launched, and your activity. |
+| **Notifications** | The bell: your own transactions, wall messages to you, tokens received, and creator fees ready to claim. |
+| **Wordle** | Five letters, six tries, results recorded on chain. |
 
 Plus **ThruScan Wallet**, a Chrome extension wallet in [`extension/`](extension/README.md): self-custody, 12 words or a private key, and a `window.thru` provider so any Thru app can connect to it.
 
@@ -72,7 +72,7 @@ The pages load, but anything that reads the chain needs the `api/` functions, wh
 | `VITE_CF_BEACON` | `src/components/Counters.jsx` | Optional: a Cloudflare Web Analytics token. The beacon only loads when it is set |
 | `VITE_*` | `src/lib/addresses.js` | Optional: override program and account addresses after a redeploy |
 
-Program and account addresses have working defaults in `src/lib/addresses.js`. After an alphanet reset they change, and that file is where to update them.
+Program and account addresses have working defaults in `src/lib/addresses.js`. After a network reset they change, and that file is where to update them.
 
 ## Repository layout
 

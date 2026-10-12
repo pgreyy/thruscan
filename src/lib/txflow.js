@@ -7,6 +7,23 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from './toasts.js'
 import { network } from './networks.js'
+import { notifyTx } from './notify.js'
+import { currentAddress } from './wallet.js'
+
+/* Every landed or failed transaction is also a notification (Update 02, 5b).
+   `words.type` files it: 'trade' for swaps, buys and sells, 'fees' for a
+   claim, 'wall', or 'tx' for the rest; `words.side` colours a trade. */
+function note(words, ok, signature, body) {
+  notifyTx({
+    address: currentAddress(),
+    type: words.type ?? 'tx',
+    side: words.side,
+    title: ok ? (words.landed ?? 'Transaction confirmed') : (words.failed ?? 'Transaction failed'),
+    body,
+    sig: signature ?? undefined,
+    ok,
+  })
+}
 
 /** A wallet's "no": the extension's 4001, or the message wallet.js gives it. */
 export const isRejection = (e) =>
@@ -48,10 +65,12 @@ export function useTxFlow() {
       if (r?.signature) setSignature(r.signature)
       if (r && r.ok === false) {
         setError(r.error ?? null); setPhase('failed')
+        note(words, false, r.signature, `${r.error ?? ''} Nothing was spent but the fee.`.trim())
         if (closedRef.current) toast({ kind: 'failed', title: words.failed ?? 'Transaction failed', sub: `${r.error ?? ''} Nothing was spent but the fee.`, signature: r.signature })
         return r
       }
       setPhase('landed')
+      note(words, true, r?.signature, words.landedSub)
       if (closedRef.current) toast({ kind: 'confirmed', title: words.landed ?? 'Transaction confirmed', sub: words.landedSub, signature: r?.signature })
       return r
     } catch (e) {
@@ -60,6 +79,7 @@ export function useTxFlow() {
         if (closedRef.current) toast({ kind: 'rejected', title: 'Rejected in wallet', sub: 'Nothing was sent. You can try again.' })
       } else {
         setError(String(e?.message ?? e)); setPhase('failed')
+        note(words, false, null, String(e?.message ?? e))
         if (closedRef.current) toast({ kind: 'failed', title: words.failed ?? 'Transaction failed', sub: String(e?.message ?? e) })
       }
       return null

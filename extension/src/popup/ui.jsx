@@ -89,20 +89,77 @@ export function Copy({ value, label = 'Copy', className = 'btn ghost small' }) {
   const [done, setDone] = useState(false)
   return (
     <button className={className} onClick={() => { navigator.clipboard.writeText(value); setDone(true); setTimeout(() => setDone(false), 1400) }}>
-      {done ? 'Copied' : label}
+      {done ? '✓ Copied' : label}
     </button>
+  )
+}
+
+/* The icon set: a 20px grid, 1.6 stroke, the website's shapes (2c) plus the
+   wallet's own. currentColor, so they follow the text they sit in. */
+const ICONS = {
+  back: <path d="M16 10H4M8 6L4 10L8 14" />,
+  send: <path d="M10 16.5V6M5.5 10.5L10 6L14.5 10.5M4 3.5H16" />,
+  receive: <path d="M10 3.5V14M5.5 9.5L10 14L14.5 9.5M4 16.5H16" />,
+  swap: <path d="M4 7H16L12.5 3.5M16 13H4L7.5 16.5" />,
+  faucet: <path d="M10 3s5 5.4 5 9.2a5 5 0 0 1-10 0C5 8.4 10 3 10 3z" />,
+  wallet: <><rect x="3" y="5" width="14" height="11" rx="2" /><path d="M12.5 10.5H17" /></>,
+  activity: <><circle cx="10" cy="10" r="6.5" /><path d="M10 6.5V10L12.5 11.5" /></>,
+  settings: <><circle cx="10" cy="10" r="2.5" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" /></>,
+  lock: <><rect x="4.5" y="9" width="11" height="8" rx="1.5" /><path d="M7 9V6.5C7 4.8 8.3 3.5 10 3.5S13 4.8 13 6.5V9" /></>,
+  copy: <><rect x="7" y="7" width="9" height="9" rx="1.5" /><path d="M4 13V5.5C4 4.7 4.7 4 5.5 4H13" /></>,
+  external: <path d="M11 4H16V9M16 4L9 11M8 5H4V16H15V12" />,
+  success: <path d="M4.5 10.5L8 14L15.5 6.5" />,
+  failed: <path d="M5 5L15 15M15 5L5 15" />,
+  warning: <><path d="M10 3L18 16.5H2Z" /><path d="M10 8V11.5M10 13.5V14.5" /></>,
+  message: <path d="M3.5 4.5H16.5V13.5H9L5.5 16.5V13.5H3.5Z" />,
+  expand: <path d="M6 8L10 12L14 8" />,
+  key: <><circle cx="7" cy="13" r="3.5" /><path d="M9.5 10.5L16.5 3.5M13.5 6.5L15.5 8.5" /></>,
+  search: <><circle cx="9" cy="9" r="5.5" /><path d="M13 13L17 17" /></>,
+}
+export function Icon({ name, size = 20, stroke = 1.6 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={stroke}
+      strokeLinecap="square" strokeLinejoin="miter" aria-hidden="true">{ICONS[name]}</svg>
+  )
+}
+
+/* The Passage mark: a rounded block with a T-shaped channel cut through it.
+   The tile turns light on the dark theme by itself (--tile). */
+export function Mark({ size = 28 }) {
+  return (
+    <svg className="mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="var(--tile)" />
+      <path d="M6 8H26V14H19V32H13V14H6Z" fill="#FEAE39" />
+    </svg>
   )
 }
 
 export function Header({ title, back, right }) {
   return (
     <header className="bar">
-      {back ? <button className="icon-btn" aria-label="Back" onClick={() => (typeof back === 'function' ? back() : go(back))}>←</button> : <span className="mark">T</span>}
+      {back
+        ? <button className="icon-btn" aria-label="Back" onClick={() => (typeof back === 'function' ? back() : go(back))}><Icon name="back" /></button>
+        : <Mark size={28} />}
       <h1>{title}</h1>
       <div className="bar-right">{right}</div>
     </header>
   )
 }
+
+/** Wallet · Activity · Settings, along the bottom of the main screens. */
+export function TabBar({ on }) {
+  const tabs = [['/', 'Wallet', 'wallet'], ['/activity', 'Activity', 'activity'], ['/settings', 'Settings', 'settings']]
+  return (
+    <nav className="tabs-bar" aria-label="Wallet">
+      {tabs.map(([path, label, icon]) => (
+        <button key={path} className={on === path ? 'on' : ''} aria-current={on === path ? 'page' : undefined} onClick={() => go(path)}>
+          <Icon name={icon} size={22} />{label}
+        </button>
+      ))}
+    </nav>
+  )
+}
+
 
 export function Notice({ kind = 'bad', children }) {
   if (!children) return null

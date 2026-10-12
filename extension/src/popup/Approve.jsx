@@ -1,11 +1,12 @@
 // extension/src/popup/Approve.jsx
 //
-// The window a website's request opens: connect, sign a transaction, or sign
-// a message. Nothing happens until the user presses Approve; closing the
-// window is a no.
+// The window a website's request opens (6i-6k): connect, sign a transaction,
+// or sign a message. Nothing happens until the user presses Approve; closing
+// the window is a no. When the wallet cannot read the program, Reject is the
+// amber action and approving takes a deliberate second choice.
 
 import { useEffect, useState } from 'react'
-import { bg, Notice, PasswordField, useAction, short } from './ui.jsx'
+import { bg, Notice, PasswordField, useAction, short, Icon, Mark } from './ui.jsx'
 import { networkFor } from '../lib/networks.js'
 
 const PROGRAM_NAMES = {
@@ -88,7 +89,7 @@ export function Approve({ id, state, onUnlocked }) {
   if (req === null) {
     return (
       <div className="screen welcome">
-        <div className="welcome-top"><h1>Request expired</h1><p className="muted">The site's request is no longer waiting. Try again from the site.</p></div>
+        <div className="welcome-top"><Mark size={56} /><h1>Request expired</h1><p className="muted">The site's request is no longer waiting. Try again from the site.</p></div>
         <button className="btn" onClick={() => window.close()}>Close</button>
       </div>
     )
@@ -114,36 +115,52 @@ export function Approve({ id, state, onUnlocked }) {
 
   const summary = p.program ? explain(p.program, p.dataHex ?? '', net) : null
   const accounts = [...(p.readWrite ?? []).map((a) => [a, 'can change']), ...(p.readOnly ?? []).map((a) => [a, 'read only'])]
+  const unreadable = Boolean(p.program && !names[p.program])
+  const pays = summary && /^(Sends|Moves|Mints a Pixel Pal)/.test(summary)
+  const writable = (p.readWrite ?? []).length
+  const dataBytes = Math.floor((p.dataHex ?? '').length / 2)
+  const netLine = `Thru ${net.label.replace(/\s*\(.*\)$/, '').toLowerCase()}${net.test ? ' (test)' : ''}`
+  const yes = req.method === 'connect' ? 'Connect' : req.method === 'signMessage' ? 'Sign' : unreadable ? 'Approve anyway' : 'Approve'
 
   return (
     <div className="screen">
-      <header className="bar">
-        <span className="mark">T</span>
-        <h1>{title}</h1>
-      </header>
       <div className="body stack">
-        <div className="origin">
+        <div className="origin-big">
           <span className="favicon">{host.slice(0, 1).toUpperCase()}</span>
-          <div><b>{host}</b><span className="fine">{req.origin.startsWith('https://') ? 'Secure site' : 'Not a secure (https) site'}</span></div>
+          <h1 className="lead-title">{req.method === 'connect' ? 'Connect to this site?' : title}</h1>
+          <b>{host}</b>
+          <span className="fine">{req.origin.startsWith('https://') ? 'Secure site' : 'Not a secure (https) site'}</span>
         </div>
 
         {req.method === 'connect' && (
-          <div className="card">
-            <p>This site wants to:</p>
-            <ul className="ticks">
-              <li>See your address <span className="mono fine">{short(state.account.address)}</span></li>
-              <li>Ask you to approve transactions</li>
-            </ul>
-            <p className="fine">It cannot move anything without asking you here first.</p>
+          <>
+            <div className="card perm">
+              <div><Icon name="success" size={16} stroke={2} />See your address and balances</div>
+              <div><Icon name="success" size={16} stroke={2} />Ask you to approve transactions</div>
+              <div><Icon name="success" size={16} stroke={2} />It can&rsquo;t move tokens without you</div>
+            </div>
+            <div className="card kv">
+              <div><span>Account</span><b>{state.account.name ?? short(state.account.address)}</b></div>
+              <div><span>Network</span><span>{netLine}</span></div>
+            </div>
+          </>
+        )}
+
+        {unreadable && (
+          <div className="unreadable" role="alert">
+            <Icon name="warning" size={20} />
+            <span><b>ThruScan Wallet can&rsquo;t read this.</b>Only approve if you trust this site and know what it does.</span>
           </div>
         )}
 
         {p.program && (
           <div className="card kv">
-            <div><span>Program</span><b>{names[p.program] ?? <span className="mono">{short(p.program, 8)}</span>}</b></div>
-            {summary && <div><span>Does</span><b>{summary}</b></div>}
-            <div><span>Fee</span><span>1 THRU at most</span></div>
-            <div><span>Network</span><span>{net.label}{net.test ? ' (test)' : ''}</span></div>
+            {summary && <div><span>Does</span><b className={pays ? 'pay' : ''}>{summary}</b></div>}
+            <div><span>Program</span><b>{names[p.program] ? `${names[p.program]} · ` : ''}<span className="mono">{short(p.program, 5)}</span></b></div>
+            {unreadable && <div><span>Instruction data</span><span className="mono">{dataBytes} B</span></div>}
+            {unreadable && <div><span>Writable accounts</span><span className="mono">{writable}{(p.readWrite ?? []).includes(state.account.address) ? ' incl. yours' : ''}</span></div>}
+            <div><span>Fee paid by</span><span>this wallet · 1 THRU at most</span></div>
+            <div><span>Network</span><span>{netLine}</span></div>
           </div>
         )}
         {elsewhere && (
@@ -152,12 +169,11 @@ export function Approve({ id, state, onUnlocked }) {
             The same key works on both. Check this is the network you meant.
           </p>
         )}
-        {p.review && <p className="fine">The site describes it as: “{String(p.review).slice(0, 200)}”. Only the details above come from the transaction itself.</p>}
-        {!names[p.program] && p.program && <p className="notice warn">A program ThruScan Wallet does not recognise. Only approve if you trust {host}.</p>}
+        {p.review && <p className="fine">The site describes it as: &ldquo;{String(p.review).slice(0, 200)}&rdquo;. Only the details above come from the transaction itself.</p>}
 
         {p.program && (
           <details className="card" open={showData} onToggle={(e) => setShowData(e.target.open)}>
-            <summary>Accounts and data</summary>
+            <summary>Raw details · {accounts.length} accounts</summary>
             <p className="fine">Program <span className="mono">{p.program}</span></p>
             {accounts.map(([a, what]) => (
               <p key={a} className="fine"><span className="mono">{short(a, 8)}</span> {a === state.account.address ? '(you) ' : ''}{what}</p>
@@ -173,16 +189,15 @@ export function Approve({ id, state, onUnlocked }) {
         {locked && (
           <label className="field">
             <span>Password to unlock</span>
-            <PasswordField value={password} onChange={setPassword} autoFocus onEnter={() => password && decide(true)} />
+            <PasswordField value={password} onChange={setPassword} autoFocus onEnter={() => password && !unreadable && decide(true)} />
           </label>
         )}
         <Notice>{act.error}</Notice>
       </div>
       <footer className="foot two">
-        <button className="btn ghost" disabled={act.busy} onClick={() => decide(false)}>Cancel</button>
-        <button className="btn" disabled={act.busy || (locked && !password)} onClick={() => decide(true)}>
-          {req.method === 'connect' ? 'Connect' : req.method === 'signMessage' ? 'Sign' : 'Approve'}
-        </button>
+        {/* One amber action. On a transaction the wallet cannot read, that is Reject. */}
+        <button className={unreadable ? 'btn' : 'btn ghost'} disabled={act.busy} onClick={() => decide(false)}>Reject</button>
+        <button className={unreadable ? 'btn ghost' : 'btn'} disabled={act.busy || (locked && !password)} onClick={() => decide(true)}>{yes}</button>
       </footer>
     </div>
   )

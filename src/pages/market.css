@@ -1,28 +1,20 @@
-/* ThruPad home (Core Screens 3a-3e).
-   Desktop: page padding 40/32/48, header row, the "New here?" strip, the
-   stats row, then a 1fr / 380px pair. Below 820px the tables become two-line
-   rows behind a Top / New / Activity switch. */
+/* ThruPad home (Core Screens 3a-3e, Update 02 5c).
+   Desktop: the title row, the "New here?" strip, Trending, then a 1fr / 380px
+   pair. Below 820px the table becomes two-line rows and the tabs scroll. */
 
 .mk { display: flex; flex-direction: column; gap: 32px; padding-top: 8px; }
 .mk > * { min-width: 0; }
 @media (max-width: 819px) { .mk { gap: 18px; padding-top: 0; } }
 
 /* ---- header ---- */
-.mk-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; }
-.mk-head-text { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
+.mk-head { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
 .mk-h1 { margin: 0; font-size: 44px; line-height: 44px; font-weight: 700; letter-spacing: -0.03em; }
-.mk-lead { margin: 0; font-size: 17px; line-height: 1.45; color: var(--text-body); text-wrap: pretty; }
 .mk-actions { display: flex; gap: 10px; align-items: flex-start; flex: none; }
 .mk-create { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .mk-actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
-@media (max-width: 1023px) {
-  .mk-head { flex-direction: column; align-items: stretch; gap: 18px; }
-}
 @media (max-width: 819px) {
-  .mk-head-text { gap: 6px; }
+  .mk-head { flex-direction: column; align-items: stretch; gap: 14px; }
   .mk-h1 { font-size: 32px; line-height: 36px; }
-  .mk-lead { font-size: 15px; }
-  .mk-lead-more { display: none; }
   .mk-actions { flex-direction: column-reverse; align-items: stretch; }
   .mk .mk-actions .btn { width: 100%; }
   .mk-create { align-items: stretch; }
@@ -73,28 +65,6 @@
 .mk-warn .btn.plain { vertical-align: baseline; }
 .mk-stale { margin-top: -24px; }
 
-/* ---- stats row: an ink rule on top, a hairline under, no cards ---- */
-.mk-stats {
-  margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--text-primary); border-bottom: 1px solid var(--border-default);
-}
-.mk-stat { padding: 16px 0 16px 24px; display: flex; flex-direction: column; gap: 4px; min-width: 0; border-left: 1px solid var(--border-default); }
-.mk-stat:first-child { padding-left: 0; border-left: 0; }
-.mk-stat dt { font-size: 13px; line-height: 18px; color: var(--text-secondary); }
-.mk-stat dd { margin: 0; font-size: 28px; line-height: 34px; font-weight: 500; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mk-narrow { display: none; }
-@media (max-width: 819px) {
-  .mk-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 0; }
-  .mk-stat { border-bottom: 1px solid var(--border-default); }
-  .mk-stat:nth-child(odd) { padding-left: 0; border-left: 0; }
-  .mk-stat { padding: 12px 0 12px 14px; gap: 2px; }
-  .mk-stat dt { font-size: 12px; }
-  .mk-stat dd { font-size: 20px; line-height: 26px; }
-  /* On a phone the first two are what fits: launches (or your WTHRU) and trades. */
-  .mk-stat:nth-child(n + 3) { display: none; }
-  .mk-wide { display: none; }
-  .mk-narrow { display: inline; }
-}
 
 /* ---- the two columns ---- */
 .mk-cols { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; align-items: start; }
@@ -106,11 +76,10 @@
 }
 .mk-side > section { display: flex; flex-direction: column; gap: 10px; }
 
-.mk-tabs-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.mk .mk-tabs { margin: 0; font-size: 16px; }
-.mk-tabs .tab-btn { font-size: 16px; }
+.mk .mk-tabs { margin: 0; font-size: 16px; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+.mk .mk-tabs::-webkit-scrollbar { display: none; }
+.mk-tabs .tab-btn { font-size: 16px; white-space: nowrap; flex: none; }
 .mk-tabs .tab-btn[aria-selected='true'] { font-weight: 700; }
-.mk-sort { font-size: 13px; }
 
 /* ---- the top tokens table ---- */
 .mk-table { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
@@ -178,23 +147,54 @@ a.mk-tr:hover { background: var(--fill-hover); color: var(--text-primary); }
 .mk-feed-what { display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
 @media (max-width: 819px) { .mk-feed-row { min-height: 48px; } }
 
-/* ---- the phone switch ---- */
-.mk .mk-seg { display: none; }
+/* ---- phones: two-line rows, tabs that scroll ---- */
 .mk-compact { display: none; }
 @media (max-width: 819px) {
-  .mk .mk-seg { display: flex; }
-  .mk-seg button { padding: 9px 0; font-size: 14px; }
-  .mk-tabs-row, .mk-table { display: none; }
+  .mk-tabs .tab-btn { font-size: 15px; }
+  .mk-table { display: none; }
   .mk-compact { display: block; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
-  .mk-cols { gap: 0; }
-  .mk-side { display: block; }
-  .mk-side-head { display: none; }
-  .mk-cols[data-mobile='top'] .mk-side { display: none; }
-  .mk-cols:not([data-mobile='top']) .mk-main { display: none; }
-  .mk-cols[data-mobile='new'] [data-part='activity'] { display: none; }
-  .mk-cols[data-mobile='activity'] [data-part='new'] { display: none; }
+  .mk-cols { gap: 24px; }
   .mk-foot { flex-direction: column; gap: 6px; margin-top: 4px; }
 }
+
+/* ---- Trending (5c) ----
+   A 22/700 title with round prev/next buttons, then 220px cards that snap. */
+.mk-trend { display: flex; flex-direction: column; gap: 14px; }
+.mk-trend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mk-trend-head h2 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.015em; }
+.mk-trend-nav { display: flex; gap: 8px; }
+.mk-round {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; padding: 0;
+  background: var(--bg-surface); border: 1px solid var(--border-default); color: var(--text-primary); cursor: pointer;
+}
+.mk-round:hover { background: var(--fill-hover); }
+.mk-trend-track {
+  display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  scrollbar-width: none; padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+}
+.mk-trend-track::-webkit-scrollbar { display: none; }
+.mk-tcard { flex: 0 0 220px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; color: var(--text-primary); text-decoration: none; }
+.mk-tcard:hover { color: var(--text-primary); }
+.mk-tcard:hover .mk-tcard-art { border-color: var(--text-secondary); }
+.mk-tcard-art {
+  width: 220px; height: 220px; border-radius: 12px; overflow: hidden; display: grid; place-items: center;
+  background: var(--bg-sunken); border: 1px solid var(--border-default);
+}
+.mk-tcard-art img { width: 100%; height: 100%; object-fit: cover; }
+.mk-tcard-art .mono { font-size: 44px; font-weight: 500; color: var(--text-secondary); }
+.mk-tcard-name { font-size: 16px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-tcard-name .mono { font-size: 14px; }
+.mk-tcard-name b { font-weight: 700; }
+.mk-tcard-cap { display: flex; gap: 8px; align-items: baseline; }
+.mk-tcard-cap .mono:first-child { font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+.mk-tcard-cap .mono:last-child { font-size: 14px; }
+@media (max-width: 819px) {
+  .mk-trend-track { gap: 12px; }
+  .mk-tcard { flex-basis: 160px; }
+  .mk-tcard-art { width: 160px; height: 160px; }
+}
+
+.mk-feed-detail { overflow: hidden; text-overflow: ellipsis; color: var(--text-body); }
 
 /* The create view replaces the home page's content while it is open. */
 .mk-create-page { padding-top: 0; }

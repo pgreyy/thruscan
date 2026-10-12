@@ -1,40 +1,36 @@
 // src/pages/Market.jsx
 //
-// The front page: ThruPad (Core Screens 3a-3e).
+// The front page: ThruPad (Core Screens 3a-3e, Update 02 5c).
 //
-// What the page is for, the four steps to a first trade, the launchpad's
-// numbers, the tokens by WTHRU raised, the newest launches and what just
-// happened. Everything here is read from the chain or the indexer; nothing is
-// estimated, and where a number cannot be read the page says so in place
-// rather than leaving a hole. The chain has been unreliable, so every block on
-// this page has a loading state, an empty state and a down state.
+// The title and the two actions, the "New here?" steps, what is trending,
+// then every token under five tabs (market cap, new, active, near graduation,
+// graduated) beside what just happened. The launchpad's totals moved to the
+// Explorer. Everything here is read from the chain or the indexer; where a
+// number cannot be read the page says so in place rather than leaving a hole.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { decodePadRegistry, graduationProgress } from '../lib/pad.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { allTokenMeta } from '../lib/tokenmeta.js'
-import { fetchFeed } from '../lib/feed.js'
-import { THRUPAD_PROGRAM, THRUPAD_REGISTRY, TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
+import { fetchFeed, detailOf } from '../lib/feed.js'
+import { THRUPAD_PROGRAM, THRUPAD_REGISTRY, WTHRU_MINT } from '../lib/addresses.js'
 import { network } from '../lib/networks.js'
 import { hasWallet } from '../lib/wallet.js'
 import { relTime, fullUtc, clock, since } from '../lib/when.js'
+import { usePadMarket } from '../lib/padmarket.js'
 import { TokenIcon } from '../components/TokenMeta.jsx'
 import { Icon } from '../components/Icon.jsx'
+import { EventPill } from '../components/Pill.jsx'
 import { EXTENSION_URL } from '../lib/external.js'
 import { useWallet } from './Wallet.jsx'
-import { useChainData, CreateLaunchCard } from './Dex.jsx'
+import { CreateLaunchCard, compactNumber } from './Dex.jsx'
 import './market.css'
 
-const TOKEN_DECIMALS = 6   // every launch mints at 6
-const QUOTE_DEFAULT = 6
-const TOP_ROWS = 8
-const NEW_ROWS = 6
+const TOP_ROWS = 10
 const FEED_ROWS = 6
+const TRENDING = 10
 const NET = network.label.toLowerCase()
 
 /* ---------- formatting ---------- */
-
-const num = (n) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? '–' : Number(n).toLocaleString('en-US'))
 
 /** A price with sensible precision: 0.00042180, 0.0123, 1.23, 1,234. */
 function price(v) {
@@ -45,8 +41,8 @@ function price(v) {
   return v.toLocaleString('en-US', { maximumSignificantDigits: 4, minimumSignificantDigits: 4 })
 }
 
-/** An amount of the quote asset, to one decimal place like the design. */
-const amount = (v) => (Number.isFinite(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–')
+/** A market cap to one decimal place, like the design. */
+const cap = (v) => (Number.isFinite(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–')
 
 function pct(c) {
   if (c === null || !Number.isFinite(c)) return null
@@ -91,43 +87,6 @@ const readActivity = async () => {
   const r = await fetchFeed({ group: 'all', limit: FEED_ROWS })
   if (r.problem) throw new Error(r.detail || 'The chain is not answering right now.')
   return r.items
-}
-
-/**
- * Recent trade prices for the launches on screen, for the change column.
- *
- * One request per launch, so only for the rows shown, each on its own so one
- * slow history cannot hold up the rest, and slowly: these move when somebody
- * trades, and the price column beside them is already live.
- */
-function useTradeSeries(launches) {
-  const [series, setSeries] = useState({})
-  const key = launches.map((l) => l.mint).join(',')
-  useEffect(() => {
-    if (!launches.length) return undefined
-    let alive = true
-    const load = () => launches.forEach(async (l) => {
-      try {
-        const q = new URLSearchParams({ action: 'launchtrades', quoteVault: l.quoteVault, tokenVault: l.tokenVault, pages: '1' })
-        const j = await readJson(`/api/rpc?${q}`)
-        const prices = j.trades
-          .filter((t) => Number(t.tokens) > 0)
-          .map((t) => (Number(t.quote) / 10 ** l.qd) / (Number(t.tokens) / 10 ** TOKEN_DECIMALS))
-        if (alive) setSeries((s) => ({ ...s, [l.mint]: prices }))
-      } catch { /* the next round tries again */ }
-    })
-    load()
-    const id = setInterval(() => { if (!document.hidden) load() }, 60_000)
-    return () => { alive = false; clearInterval(id) }
-  }, [key])  // eslint-disable-line react-hooks/exhaustive-deps
-  return series
-}
-
-/** From the oldest trade read to the price the curve quotes now. It is not a
- *  24-hour figure, and the column says so. */
-function changeOf(prices, now) {
-  if (!prices?.length || !prices[0] || !Number.isFinite(now)) return null
-  return ((now - prices[0]) / prices[0]) * 100
 }
 
 /** A clock that ticks once a second, for "read 8s ago". */
@@ -214,15 +173,6 @@ function Change({ value }) {
   return <span className={flat ? 'dim' : value > 0 ? 'mk-up' : 'mk-down'}>{flat ? '0.0%' : text}</span>
 }
 
-function Stat({ label, value, title }) {
-  return (
-    <div className="mk-stat" title={title}>
-      <dt>{label}</dt>
-      <dd className="mono">{value}</dd>
-    </div>
-  )
-}
-
 function Bar({ progress, graduated }) {
   return (
     <span className="progress thin mk-bar" role="img" aria-label={graduated ? 'Graduated' : `${(progress * 100).toFixed(0)}% of the curve`}>
@@ -268,12 +218,98 @@ function Skeleton({ rows }) {
   )
 }
 
+/* ---------- Trending (5c) ----------
+ * Top ten by trades in the last 24 hours, then by WTHRU traded. Hidden until
+ * at least three tokens have traded, because a "trending" row of one is a
+ * list of whatever happened last. Swipe on touch; the arrows move one card
+ * and hide at the ends. */
+
+function Trending({ rows, meta }) {
+  const track = useRef(null)
+  const [ends, setEnds] = useState({ start: true, end: false })
+  const list = useMemo(() => rows
+    .filter((r) => r.day?.count > 0)
+    .sort((a, b) => (b.day.count - a.day.count) || (b.day.volume - a.day.volume))
+    .slice(0, TRENDING), [rows])
+
+  const measure = useCallback(() => {
+    const el = track.current
+    if (!el) return
+    setEnds({ start: el.scrollLeft <= 2, end: el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 })
+  }, [])
+  useEffect(() => {
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [measure, list.length])
+
+  if (list.length < 3) return null
+  const step = (dir) => {
+    const el = track.current
+    const card = el?.querySelector('.mk-tcard')
+    if (!el || !card) return
+    el.scrollBy({ left: dir * (card.getBoundingClientRect().width + 16), behavior: 'smooth' })
+  }
+
+  return (
+    <section className="mk-trend" aria-label="Trending">
+      <div className="mk-trend-head">
+        <h2>Trending</h2>
+        <div className="mk-trend-nav">
+          <button type="button" className="mk-round" onClick={() => step(-1)} aria-label="Previous" disabled={ends.start} style={{ visibility: ends.start ? 'hidden' : undefined }}><Icon name="chevron-left" size={18} /></button>
+          <button type="button" className="mk-round" onClick={() => step(1)} aria-label="Next" disabled={ends.end} style={{ visibility: ends.end ? 'hidden' : undefined }}><Icon name="chevron-right" size={18} /></button>
+        </div>
+      </div>
+      <div className="mk-trend-track" ref={track} onScroll={measure}>
+        {list.map((l, i) => (
+          <Link key={l.id} to={`/launch/${l.id}`} className="mk-tcard">
+            <span className="mk-tcard-art">
+              {meta[l.mint]?.image
+                ? <img src={meta[l.mint].image} alt="" loading="lazy" />
+                : <span className="mono">{l.symbol.replace(/^\$/, '').slice(0, 2).toUpperCase()}</span>}
+            </span>
+            <span className="mk-tcard-name"><span className="mono dim">{i + 1}</span> <b>{l.name || l.symbol}</b></span>
+            <span className="mk-tcard-cap">
+              <span className="mono">{compactNumber(l.cap)} {l.unit}</span>
+              <span className="mono"><Change value={l.day?.change ?? null} /></span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ---------- the list tabs ---------- */
+
+const TABS = [
+  { key: 'cap', label: 'Market cap' },
+  { key: 'new', label: 'New' },
+  { key: 'active', label: 'Active' },
+  { key: 'grad', label: 'Near graduation' },
+  { key: 'done', label: 'Graduated' },
+]
+
+function sorted(rows, tab) {
+  switch (tab) {
+    case 'new': return [...rows].sort((a, b) => b.id - a.id)
+    case 'active': return [...rows].sort((a, b) => ((b.day?.count ?? -1) - (a.day?.count ?? -1)) || (b.trades - a.trades))
+    case 'grad': return rows.filter((r) => !r.graduated && r.progress >= 0.5).sort((a, b) => b.progress - a.progress)
+    case 'done': return rows.filter((r) => r.graduated)
+    default: return [...rows].sort((a, b) => (b.cap ?? -1) - (a.cap ?? -1))
+  }
+}
+
+const EMPTY_TAB = {
+  grad: 'No token is past half of its curve yet.',
+  done: 'No token has graduated on this network yet.',
+}
+
 /* ---------- the page ---------- */
 
-export function MarketHome() {
-  const [creating, setCreating] = useState(false)
-  const [tab, setTab] = useState('top')           // top | grad (desktop tabs)
-  const [mobileTab, setMobileTab] = useState('top') // top | new | activity
+export function MarketHome({ create = false }) {
+  const navigate = useNavigate()
+  const [tab, setTab] = useState('cap')
   const [showAll, setShowAll] = useState(false)
   const [meta, setMeta] = useState({})
   const now = useNow()
@@ -281,17 +317,9 @@ export function MarketHome() {
   const connected = !!wallet.address && hasWallet()
   const intro = useIntro(connected)
 
-  const pad = useChainData(
-    THRUPAD_REGISTRY,
-    decodePadRegistry,
-    (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
-    (d) => [d.quoteMint, ...d.launches.map((l) => l.quoteMint)],
-  )
   const overview = usePoll(readOverview, 5000)
+  const pad = usePadMarket(overview.data)
   const activity = usePoll(readActivity, 10_000)
-
-  // When the registry was last read, for the time in the banner if a later
-  // read fails.
   const readAt = pad.readAt ?? null
 
   useEffect(() => {
@@ -302,64 +330,22 @@ export function MarketHome() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  const { data, balances, tickers, decimals } = pad
-  const ov = overview.data
-
-  /* Every launch with what the page shows about it worked out once. */
-  const rows = useMemo(() => (data?.launches ?? []).map((l) => {
-    const qd = decimals?.[l.quoteMint] ?? QUOTE_DEFAULT
-    const vq = Number(l.vq), vt = Number(l.vt)
-    const nowPrice = vt > 0 ? (vq / 10 ** qd) / (vt / 10 ** TOKEN_DECIMALS) : null
-    const held = balances?.[l.quoteVault] ?? 0n
-    const raised = held > l.creatorFees ? held - l.creatorFees : 0n
-    // The launch's age, from the slot it started in and the chain's own block
-    // time. Slots are close to evenly spaced, so this is near enough to say
-    // "3d"; the tooltip says where it comes from.
-    const ageMs = ov?.finalized && ov?.blockTimeMs && l.startSlot
-      ? Math.max(0, Number(ov.finalized) - Number(l.startSlot)) * ov.blockTimeMs
-      : null
-    return {
-      ...l,
-      symbol: l.symbol || `#${l.id}`,
-      qd,
-      unit: tickers?.[l.quoteMint] || (l.quoteMint === WTHRU_MINT ? 'WTHRU' : l.quoteMint === TUSD_MINT ? 'tUSD' : 'THRU'),
-      inWthru: l.quoteMint === WTHRU_MINT,
-      now: nowPrice,
-      raised: Number(raised) / 10 ** qd,
-      trades: Number(l.tradeCount),
-      progress: l.graduated ? 1 : graduationProgress(raised, data.gradThreshold),
-      ageMs,
-    }
-  }), [data, balances, tickers, decimals, ov])
-
-  const top = useMemo(() => [...rows].sort((a, b) => (b.raised ?? 0) - (a.raised ?? 0)), [rows])
-  const nearGrad = useMemo(() => rows.filter((r) => !r.graduated).sort((a, b) => b.progress - a.progress), [rows])
-  const listed = (tab === 'top' ? top : nearGrad).slice(0, showAll ? undefined : TOP_ROWS)
-  const newest = useMemo(() => [...rows].sort((a, b) => b.id - a.id).slice(0, NEW_ROWS), [rows])
-  const series = useTradeSeries(listed)
+  const { data, rows } = pad
+  const listedAll = sorted(rows, tab)
+  const listed = listedAll.slice(0, showAll ? undefined : TOP_ROWS)
   const unit = rows.length && rows.every((r) => r.unit === rows[0].unit) ? rows[0].unit : 'WTHRU'
 
-  const totals = useMemo(() => ({
-    launches: data ? rows.length : null,
-    trades: data ? rows.reduce((s, r) => s + r.trades, 0) : null,
-    held: data ? rows.filter((r) => r.inWthru).reduce((s, r) => s + r.raised, 0) : null,
-  }), [data, rows])
-
   const wthru = wallet.balances?.[WTHRU_MINT]
-  const wthruDecimals = wallet.decimals?.[WTHRU_MINT]
-  const yourWthru = wallet.unlocked && wthru?.exists && wthruDecimals !== undefined
-    ? (Number(wthru.amount) / 10 ** wthruDecimals).toLocaleString('en-US', { maximumFractionDigits: 2 })
-    : null
-
   const steps = [
     { title: 'Get a wallet', sub: 'ThruScan Wallet for Chrome', href: EXTENSION_URL, done: hasWallet() },
     { title: 'Get test tokens', sub: 'THRU from the faucet', to: '/faucet', done: (wallet.native ?? 0n) > 0n },
     { title: 'Swap for WTHRU', sub: 'Launches are priced in WTHRU', to: '/swap', done: !!(wthru?.exists && wthru.amount > 0n) },
-    { title: 'Launch or trade', sub: 'Then check Activity', to: '/activity', done: !!wallet.address && rows.some((r) => r.creator === wallet.address) },
+    { title: 'Launch or trade', sub: 'Then check the Explorer', to: '/explorer?tab=activity', done: !!wallet.address && rows.some((r) => r.creator === wallet.address) },
   ]
 
   const padDown = !!pad.error
-  const staleDown = !pad.error && pad.data && readAt && now - readAt > 30_000
+  const staleDown = !pad.error && data && readAt && now - readAt > 30_000
+  const startCreate = () => { navigate('/create'); window.scrollTo({ top: 0 }) }
 
   if (!THRUPAD_PROGRAM || !THRUPAD_REGISTRY) {
     return (
@@ -367,17 +353,17 @@ export function MarketHome() {
         <Head onCreate={null} />
         <section className="empty">
           <span className="empty-title">ThruPad isn't running on this network yet</span>
-          <p>Swap, Activity and your wallet still work. Launches will appear here once the ThruPad program is deployed and configured.</p>
+          <p>Swap, the Explorer and your wallet still work. Launches will appear here once the ThruPad program is deployed and configured.</p>
           <div className="mk-actions-row">
             <Link className="btn secondary" to="/swap">Go to Swap</Link>
-            <Link className="btn tertiary" to="/activity">View Activity</Link>
+            <Link className="btn tertiary" to="/explorer">Open Explorer</Link>
           </div>
         </section>
       </div>
     )
   }
 
-  if (creating) {
+  if (create) {
     return (
       <div className="page mk-create-page">
         <CreateLaunchCard
@@ -385,19 +371,19 @@ export function MarketHome() {
           registry={THRUPAD_REGISTRY}
           threshold={data?.gradThreshold}
           registryDown={padDown}
-          onClose={() => setCreating(false)}
+          onClose={() => navigate('/')}
           onLaunched={pad.reload}
         />
       </div>
     )
   }
 
-  const createDisabled = padDown
   const loading = pad.loading && !data
+  const age = (l) => (l.ageMs !== null ? relTime(now - l.ageMs, now) : '–')
 
   return (
     <div className="page mk">
-      <Head createDisabled={createDisabled} onCreate={() => { setCreating(true); window.scrollTo({ top: 0 }) }} />
+      <Head createDisabled={padDown} onCreate={startCreate} />
 
       {intro.show && <NewHere steps={steps} onClose={intro.dismiss} />}
 
@@ -407,41 +393,25 @@ export function MarketHome() {
           {readAt ? `The list below is from ${clock(readAt)} and may be out of date.` : 'Launches, prices and trading are unavailable until it reads again.'}
         </Warn>
       )}
-
-      {/* Three numbers, each one the registry or the chain actually gives. */}
-      <dl className="mk-stats">
-        {connected && yourWthru !== null
-          ? <Stat label="Your WTHRU" value={yourWthru} />
-          : <Stat label="Tokens launched" value={num(totals.launches)} />}
-        <Stat label={<><span className="mk-wide">Trades, all time</span><span className="mk-narrow">Trades</span></>} value={num(totals.trades)} title="Every buy and sell on every launch, from the registry" />
-        <Stat label="WTHRU held in curves" value={totals.held === null ? '–' : amount(totals.held)} title="WTHRU in each curve's vault, less unclaimed creator fees" />
-      </dl>
       {staleDown && <p className="why mk-stale">Not refreshed for {since(readAt, now).replace(' ago', '')}; retrying.</p>}
 
-      {/* The phone switch between the three lists. */}
-      <div className="seg mk-seg" role="tablist" aria-label="Lists">
-        {[['top', 'Top'], ['new', 'New'], ['activity', 'Activity']].map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={mobileTab === k} onClick={() => setMobileTab(k)}>{label}</button>
-        ))}
-      </div>
+      <Trending rows={rows} meta={meta} />
 
-      <div className="mk-cols" data-mobile={mobileTab}>
-        <section className="mk-main" data-part="top">
-          <div className="mk-tabs-row">
-            <div className="tabs mk-tabs" role="tablist">
-              <button className="tab-btn" role="tab" aria-selected={tab === 'top'} onClick={() => setTab('top')}>Top tokens</button>
-              <button className="tab-btn" role="tab" aria-selected={tab === 'grad'} onClick={() => setTab('grad')}>Near graduation</button>
-            </div>
-            <span className="fine mk-sort">{tab === 'top' ? `Sorted by ${unit} raised` : 'Sorted by curve progress'}</span>
+      <div className="mk-cols">
+        <section className="mk-main">
+          <div className="tabs mk-tabs" role="tablist" aria-label="Token lists">
+            {TABS.map((t) => (
+              <button key={t.key} className="tab-btn" role="tab" aria-selected={tab === t.key} onClick={() => { setTab(t.key); setShowAll(false) }}>{t.label}</button>
+            ))}
           </div>
 
-          <div className="mk-table" role="table" aria-label={tab === 'top' ? 'Top tokens' : 'Tokens nearest graduation'}>
+          <div className="mk-table" role="table" aria-label={TABS.find((t) => t.key === tab).label}>
             <div className="mk-tr mk-th" role="row">
               <span role="columnheader">#</span>
               <span role="columnheader">Token</span>
               <span role="columnheader">Price ({unit})</span>
-              <span role="columnheader" title="From the oldest of the token's recent trades to the price its curve quotes now. Not a 24-hour figure."><span className="term">Recent</span></span>
-              <span role="columnheader">Raised ({unit})</span>
+              <span role="columnheader" title="Against the last trade before 24 hours ago, or the oldest trade read when the history is shorter">24 h</span>
+              <span role="columnheader" title="Curve price × total supply">Market cap ({unit})</span>
               <span role="columnheader">Curve</span>
               <span role="columnheader" title="From the slot the launch started in and the chain's block time">Age</span>
             </div>
@@ -451,28 +421,25 @@ export function MarketHome() {
               <div className="mk-empty">
                 <span className="empty-title">No tokens on this network yet</span>
                 <p>{network.label} may have been reset recently. The first token launched will show up here.</p>
-                <button className="btn sm" onClick={() => setCreating(true)} disabled={createDisabled}>Create a token</button>
+                <button className="btn sm" onClick={startCreate} disabled={padDown}>Create a token</button>
               </div>
             )}
-            {data && rows.length > 0 && listed.length === 0 && <p className="mk-note">Every token here has graduated.</p>}
-            {listed.map((l, i) => {
-              const c = changeOf(series[l.mint], l.now)
-              return (
-                <Link key={l.id} to={`/launch/${l.id}`} className="mk-tr" role="row">
-                  <span className="mk-rank mono" role="cell">{i + 1}</span>
-                  <span role="cell"><TokenCell l={l} meta={meta[l.mint]} /></span>
-                  <span className="mono" role="cell">{price(l.now)}{l.unit !== unit && <small> {l.unit}</small>}</span>
-                  <span className="mono" role="cell"><Change value={c} /></span>
-                  <span className="mono" role="cell">{amount(l.raised)}</span>
-                  <span className="mk-curve" role="cell">
-                    {l.graduated
-                      ? <span className="dim">Graduated</span>
-                      : <><Bar progress={l.progress} /><span className="mono">{(l.progress * 100).toFixed(0)}%</span></>}
-                  </span>
-                  <span className="mono dim" role="cell" title={l.ageMs !== null ? `Started ~${fullUtc(now - l.ageMs)}` : undefined}>{l.ageMs !== null ? relTime(now - l.ageMs, now) : '–'}</span>
-                </Link>
-              )
-            })}
+            {data && rows.length > 0 && listed.length === 0 && <p className="mk-note">{EMPTY_TAB[tab] ?? 'Nothing here yet.'}</p>}
+            {listed.map((l, i) => (
+              <Link key={l.id} to={`/launch/${l.id}`} className="mk-tr" role="row">
+                <span className="mk-rank mono" role="cell">{i + 1}</span>
+                <span role="cell"><TokenCell l={l} meta={meta[l.mint]} /></span>
+                <span className="mono" role="cell">{price(l.now)}{l.unit !== unit && <small> {l.unit}</small>}</span>
+                <span className="mono" role="cell"><Change value={l.day?.change ?? null} /></span>
+                <span className="mono" role="cell">{cap(l.cap)}</span>
+                <span className="mk-curve" role="cell">
+                  {l.graduated
+                    ? <span className="dim">Graduated</span>
+                    : <><Bar progress={l.progress} /><span className="mono">{(l.progress * 100).toFixed(0)}%</span></>}
+                </span>
+                <span className="mono dim" role="cell" title={l.ageMs !== null ? `Started ~${fullUtc(now - l.ageMs)}` : undefined}>{age(l)}</span>
+              </Link>
+            ))}
           </div>
 
           {/* The same list on a phone: two lines per token. */}
@@ -485,36 +452,34 @@ export function MarketHome() {
                 <p>{network.label} may have been reset recently. The first token launched will show up here.</p>
               </div>
             )}
-            {top.slice(0, showAll ? undefined : TOP_ROWS).map((l) => (
-              <CompactToken key={l.id} l={l} meta={meta[l.mint]} right={<span className="mono">{price(l.now)}</span>}
-                extra={<span className="mono mk-c-chg"><Change value={changeOf(series[l.mint], l.now)} /></span>} />
+            {data && rows.length > 0 && listed.length === 0 && <p className="mk-note">{EMPTY_TAB[tab] ?? 'Nothing here yet.'}</p>}
+            {listed.map((l) => (
+              <Link key={l.id} to={`/launch/${l.id}`} className="mk-crow">
+                <TokenIcon meta={meta[l.mint]} symbol={l.symbol} mint={l.mint} size={36} />
+                <span className="mk-crow-body">
+                  <span className="mk-crow-line">
+                    <span className="mk-crow-name"><b>{l.name || l.symbol}</b></span>
+                    <span className="mono mk-c-chg"><Change value={l.day?.change ?? null} /></span>
+                  </span>
+                  <span className="mk-crow-line">
+                    <span className="mono dim">MC {cap(l.cap)} {l.unit} · {age(l)}</span>
+                  </span>
+                </span>
+              </Link>
             ))}
           </div>
 
           <div className="mk-foot">
             <span>Names and images are set by each token's creator. ThruScan does not review them.</span>
-            {rows.length > TOP_ROWS && (
+            {listedAll.length > TOP_ROWS && (
               <button className="btn plain" onClick={() => setShowAll((s) => !s)}>{showAll ? `Top ${TOP_ROWS}` : 'All tokens'}</button>
             )}
           </div>
         </section>
 
         <aside className="mk-side">
-          <section data-part="new">
-            <div className="mk-side-head"><h2 className="h3">New launches</h2><span className="fine">newest first</span></div>
-            <div className="mk-list">
-              {loading && <Skeleton rows={3} />}
-              {padDown && !data && <p className="mk-note">Unavailable while the registry is unreadable.</p>}
-              {data && rows.length === 0 && <p className="mk-note">No launches yet.</p>}
-              {newest.map((l) => (
-                <CompactToken key={l.id} l={l} meta={meta[l.mint]}
-                  right={<span className="mono dim" title={l.ageMs !== null ? fullUtc(now - l.ageMs) : undefined}>{l.ageMs !== null ? relTime(now - l.ageMs, now) : '–'}</span>} />
-              ))}
-            </div>
-          </section>
-
-          <section data-part="activity">
-            <div className="mk-side-head"><h2 className="h3">Recent activity</h2><Link to="/activity" className="mk-viewall">View all</Link></div>
+          <section>
+            <div className="mk-side-head"><h2 className="h3">Recent activity</h2><Link to="/explorer?tab=activity" className="mk-viewall">View in Explorer</Link></div>
             <div className="mk-feed">
               {activity.loading && !activity.data && <Skeleton rows={3} />}
               {activity.error && !activity.data && <p className="mk-note">Activity can't be read right now.</p>}
@@ -522,8 +487,9 @@ export function MarketHome() {
               {(activity.data ?? []).map((a) => (
                 <Link key={a.signature} to={`/tx/${a.signature}`} className="mk-feed-row">
                   <span className="mk-feed-what">
-                    <b>{a.label}</b>
-                    {!a.ok && <span className="status-pill bad">Failed</span>}
+                    <EventPill kind={a.kind} />
+                    <span className="mk-feed-detail">{detailOf(a)}</span>
+                    {!a.ok && <span className="pill2 negative">Failed</span>}
                   </span>
                   <span className="mono dim" title={fullUtc(a.time)}>{relTime(a.time)}</span>
                 </Link>
@@ -536,37 +502,11 @@ export function MarketHome() {
   )
 }
 
-/** A token on two lines: name and price, then its curve. */
-function CompactToken({ l, meta, right, extra }) {
-  return (
-    <Link to={`/launch/${l.id}`} className="mk-crow">
-      <TokenIcon meta={meta} symbol={l.symbol} mint={l.mint} size={36} />
-      <span className="mk-crow-body">
-        <span className="mk-crow-line">
-          <span className="mk-crow-name"><b>{l.name || l.symbol}</b> <span className="mono">{l.symbol}</span></span>
-          {right}
-        </span>
-        <span className="mk-crow-line">
-          <Bar progress={l.progress} graduated={l.graduated} />
-          <span className="mono dim">{l.graduated ? 'Graduated' : `${(l.progress * 100).toFixed(0)}%`}</span>
-          {extra}
-        </span>
-      </span>
-    </Link>
-  )
-}
-
-/** The header row: H1, the lead, and the two actions. */
+/** The header row: the H1 and the two actions, on one line. */
 function Head({ onCreate, createDisabled }) {
   return (
     <div className="mk-head">
-      <div className="mk-head-text">
-        <h1 className="mk-h1">ThruPad</h1>
-        <p className="mk-lead">
-          Launch a token on a bonding curve, trade it, and see every trade on chain.
-          <span className="mk-lead-more"> Your wallet signs everything; ThruScan can pay fees but can never move your tokens.</span>
-        </p>
-      </div>
+      <h1 className="mk-h1">ThruPad</h1>
       {onCreate && (
         <div className="mk-actions">
           <Link className="btn secondary lg mk-get" to="/faucet">Get test tokens</Link>

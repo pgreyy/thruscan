@@ -34,7 +34,6 @@ import {
   switchToBrowserWallet, switchToConnectedWallet, EXTENSION_URL,
 } from '../lib/external.js'
 import { ThemeRow } from './ThemeSwitch.jsx'
-import { NotificationRows } from './Notifications.jsx'
 import { FaucetRows } from './FaucetDrop.jsx'
 import { Icon } from './Icon.jsx'
 import { Symbol } from './Wordmark.jsx'
@@ -140,7 +139,6 @@ function Panel({ wallet, pfp, onClose }) {
             locked wallet still reaches all three. */}
         <div className="pill-divider" />
         <FaucetRows />
-        <NotificationRows onNavigate={onClose} />
         <div className="pill-divider" />
         <ThemeRow />
         {hasProvider() && (
@@ -189,15 +187,9 @@ function Panel({ wallet, pfp, onClose }) {
 
       <div className="pill-divider" />
 
-      {/* The faucet and the notifications, on phones only.
-       *
-       * The phone bar carries the mark, the search box and this button, and
-       * nothing else fits beside them without the bar becoming a row of icons
-       * with a search field squeezed between. On a desktop bar there is room,
-       * so they stay up there and these are hidden. */}
+      {/* The faucet. Notifications have their own bell in the bar now. */}
       <div>
         <FaucetRows />
-        <NotificationRows onNavigate={onClose} />
         <div className="pill-divider" />
       </div>
 
@@ -418,9 +410,11 @@ export function WalletPill() {
         </>
       ) : (
         <>
-          <button className="wallet-pill connected" onClick={toggle} aria-expanded={open} title={address ?? undefined}>
+          <button className="wallet-pill connected" onClick={toggle} aria-expanded={open} title={address ?? undefined} aria-label={`Wallet ${label}`}>
             {balance && <span className="pill-balance">{balance}</span>}
             <span className="pill-chip">{label}</span>
+            {/* Below 360px the chip collapses to a 36px avatar square (5d). */}
+            <span className="pill-ava" aria-hidden="true"><Avatar address={address} pfp={pfp} size={24} /></span>
           </button>
           {open && <Panel wallet={wallet} pfp={pfp} onClose={() => setOpen(false)} />}
         </>

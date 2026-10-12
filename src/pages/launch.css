@@ -222,7 +222,7 @@ a.ld-tr .ld-trader { color: var(--text-link); text-decoration: underline; text-u
 @media (max-width: 819px) {
   .ld { gap: 16px; padding-bottom: 80px; }
   /* The fixed Buy / Sell bar would sit over the footer's last line. */
-  .shell:has(.ld-bar) .site-foot { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+  .shell:has(.ld-bar) .site-foot { padding-bottom: 72px; }
   .ld-trade-wide { display: none; }
   .ld-head { flex-direction: column; align-items: stretch; gap: 12px; }
   .ld-id { gap: 12px; }
@@ -247,8 +247,9 @@ a.ld-tr .ld-trader { color: var(--text-link); text-decoration: underline; text-u
   .ld-c { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
   .ld-bar {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    /* Above the tab bar (5d), never under it. */
+    position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); z-index: 54;
+    padding: 12px 16px;
     background: var(--bg-surface); border-top: 1px solid var(--border-default);
   }
   .tp-sheet .tp-chips .tp-chip { height: 36px; flex: 1; }
@@ -257,3 +258,72 @@ a.ld-tr .ld-trader { color: var(--text-link); text-decoration: underline; text-u
   .tp-sheet .tp-chips { display: grid; grid-template-columns: 1fr 1fr; }
   .ld-price { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- Update 02: Buy / Sell colours (section 6) ----------
+   Buy is green and Sell is red on the segmented control, the CTA and the
+   phone's sticky bar. White text on both passes 4.5:1 in either theme. Amber
+   stays the primary for everything that is not directional. */
+.tp-seg button.tp-buy[aria-pressed='true'] { background: var(--trade-buy); color: #fff; font-weight: 600; box-shadow: none; }
+.tp-seg button.tp-sell[aria-pressed='true'] { background: var(--trade-sell); color: #fff; font-weight: 600; box-shadow: none; }
+.tp-seg button[aria-pressed='false'] { background: transparent; color: var(--text-secondary); }
+.btn.buy:not(:disabled) { background: var(--trade-buy); border-color: var(--trade-buy); color: #fff; }
+.btn.buy:not(:disabled):hover { background: var(--trade-buy-hover); border-color: var(--trade-buy-hover); color: #fff; }
+.btn.sell:not(:disabled) { background: var(--trade-sell); border-color: var(--trade-sell); color: #fff; }
+.btn.sell:not(:disabled):hover { background: var(--trade-sell-hover); border-color: var(--trade-sell-hover); color: #fff; }
+.btn.buy, .btn.sell { border-radius: var(--r-control); }
+.btn.sell-outline { background: transparent; border: 1.5px solid var(--trade-sell); color: var(--trade-sell); }
+[data-theme="dark"] .btn.sell-outline { color: var(--tint-negative-fg); }
+.btn.sell-outline:hover { background: var(--tint-negative-bg); color: var(--tint-negative-fg); }
+
+/* ---------- Update 02: creator fees (7a, 5h / 5i) ---------- */
+.cf {
+  display: flex; flex-direction: column; gap: 16px; padding: 20px;
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel);
+  scroll-margin-top: calc(var(--h-bar) + 16px);
+}
+.cf-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cf-head h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 700; }
+.cf-you {
+  padding: 2px 6px; border-radius: 4px; background: var(--text-primary); color: var(--bg-surface);
+  font-family: var(--font-mono); font-size: 11px; line-height: 16px;
+}
+.cf-rate { margin-left: auto; font-size: 13px; color: var(--text-secondary); }
+.cf-rate .mono { color: var(--text-primary); }
+.cf-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 20px; align-items: end; }
+.cf-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cf-k { font-size: 13px; line-height: 18px; color: var(--text-secondary); }
+.cf-v { font-size: 30px; line-height: 36px; font-weight: 500; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cf-v small { font-size: 14px; color: var(--text-secondary); letter-spacing: 0; }
+.cf-v2 { font-size: 18px; line-height: 26px; font-weight: 500; }
+.cf-action .btn { height: 48px; }
+.cf-public { padding: 14px 18px; gap: 0; }
+.cf-rows { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px 24px; }
+.cf-rows > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.cf-rows dt { color: var(--text-secondary); }
+.cf-rows dd { margin: 0; }
+@media (max-width: 819px) {
+  .cf { padding: 16px; }
+  .cf-rate { margin-left: 0; width: 100%; }
+  .cf-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .cf-action .btn { width: 100%; }
+  .cf-rows { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- Update 02: fee sharing (7b, behind VITE_FEE_SHARING) ---------- */
+.fs { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.fs-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.fs-head p { margin: 2px 0 0; }
+.fs-field { display: flex; flex-direction: column; gap: 6px; }
+.fs-field .chips { padding: 0; }
+.fs-small { max-width: 140px; }
+.fs-toggle { position: relative; display: inline-flex; cursor: pointer; }
+.fs-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.fs-switch { width: 40px; height: 24px; border-radius: 12px; background: var(--border-default); position: relative; transition: background var(--dur-fast) ease-out; }
+.fs-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-surface); transition: transform var(--dur-fast) ease-out; }
+.fs-toggle input:checked + .fs-switch { background: var(--text-primary); }
+.fs-toggle input:checked + .fs-switch::after { transform: translateX(16px); }
+.fs-toggle input:focus-visible + .fs-switch { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.fs-preview { margin: 0; padding: 12px 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; background: var(--bg-sunken); border-radius: var(--r-control); }
+.fs-preview dt { font-size: 12px; color: var(--text-secondary); }
+.fs-preview dd { margin: 2px 0 0; font-size: 15px; }
+@media (max-width: 519px) { .fs-preview { grid-template-columns: minmax(0, 1fr); } }
