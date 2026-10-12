@@ -5,7 +5,8 @@
     "THRUPAD_PROGRAM": "taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1",
     "THRUSWAP_REGISTRY": "ta1YmqM-0LmEiZvIZ-hkH0itYsHshZlAvsPpPlVkyNCCuV",
     "NAME_ROOT": "taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg",
-    "TEST_MINT": "tadRs4WoP6-sxx6FgiEXMVOIkDhw3g9CU3xCMgNyCtSYo3"
+    "TEST_MINT": "tadRs4WoP6-sxx6FgiEXMVOIkDhw3g9CU3xCMgNyCtSYo3",
+    "THRUPAD_REGISTRY": "ta3KpHenF6JwYBZk_MLqEVyvn2binYGuT5UOp6prEzSTah"
   },
   "signatures": {
     "deploy THRUSWAP_PROGRAM": "created; meta account taRF0az6Ni5MlemTDR0dFcLvCusd7r3KGErvx8aDnTPf5O",
@@ -20,6 +21,15 @@
     "init-root id": "ts_IGKl9zFhyXcn-d_0wC7XJs9hMcOn_tZkUzTY3xo82v_2FVkYqClO8bQxOpxgGz4QUpAT9JbnjlxK3JC3tQkByKF",
     "BNTEST mint": "ts8kZGOkxzj30mJtNTvSAxkRAVC3lB3iIEDvMgKsMDLzTtyoJodgh8zUbF5eRZdI-GeQJ3MVgBdipxzkaUTUY1DRke",
     "BNTEST account (authority)": "tsosAkBV_2t3EmA5Y67l9ZQtWnigEAvA70Y49_rGVJKXwwnUThihh9tnfa3A9Ft1p2oEXjNHGsB6BfF02991aDBB0B",
-    "BNTEST mint_to authority": "tszcdqzXoN6ds-cWh2eIl8Xi0zTVhwc75NLzVcEgNU8RFCRQWGyxyNweFXnenlVv8BNpj01MF9zHuf6iSmJG8oAh4H"
+    "BNTEST mint_to authority": "tszcdqzXoN6ds-cWh2eIl8Xi0zTVhwc75NLzVcEgNU8RFCRQWGyxyNweFXnenlVv8BNpj01MF9zHuf6iSmJG8oAh4H",
+    "init THRUPAD_REGISTRY": "tsNltDnYYCyEuAoC9tSFFfG6UzcTnGN5V0joCMxeCQslWUXt7ac9gccnAVpjAymVh40GmnNKJRWV0vxpthaxtrDxxg",
+    "pool vault WTHRU": "tsqbuoV86TloMDlKuP6z0_xfNJiep5qclHCMM7TUERmrmyo9m0fsIuCk0T-7S72IqwrskmyuVCD2M23IZlRBEnBiBo",
+    "pool vault BNTEST": "tsGW7zPIXz-BSFB13OqH6WxlkNhYS_G-XHbQb7aRYgF5haFZhILdyiKWQ1VqF-qmPx4ycb8OmUhIimA8v1P87ACh8x",
+    "pool LP mint": "ts8IhZnlDQz8GMLQZAdGmQG-TPdmQTqFgFklx69mVLXNNGNtPS4uhfRWXkv03OA_l0JJNRaXs00vGDGgY4M6bxDh9A",
+    "pool CREATE": "tsH02S9hKVyCoWEByUsG2DGqz5E1G-2lMKlQcvpSlxlYwxImCAQwwO_bHZGVB7L99Q3K4Kyo82I7S5T8Vc8WFFDBtl",
+    "WTHRU account (authority)": "tsCoyDy22-R4bYrvmSXKJG3fJ9ISyZJG5w-rMuzp9ynjhdJBjypfDh8DM_-xz7KxfmszuHLKnhEG8IuCaL51wPDyAO",
+    "LP account (authority)": "tsvDYkXYtTiEtIJj0EA-Fsd71EGPf6Y0wXetgr0L0VCua_Qy5-IZOMmEvjJPsG9HCTPuMRr4hO2qjph12YAe1ZDh08",
+    "wrap THRU to WTHRU (authority)": "tsSzf9oy8a8c5YSf8WCvwofOTB1Io8ZimMVA6qkNkRzcd00IOT64m88rn51g4oFcXNfyl60ygjz--NzcmwgDArBSGQ",
+    "pool seed ADD": "tsINhi9K3ey3dZoKp1h7EdEcNwGOQLdzYPMoNTloxJs-OLcv5ag3QXPwoM7fRsZuNjUoDEf4Kdh1PK4-X_ogdpBB_-"
   }
 }

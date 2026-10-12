@@ -55,6 +55,7 @@ export const OURS = {
   },
   betanet: {
     THRUPAD_PROGRAM: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1',
+    THRUPAD_REGISTRY: 'ta3KpHenF6JwYBZk_MLqEVyvn2binYGuT5UOp6prEzSTah',
     THRUSWAP_PROGRAM: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL',
   },
 }
