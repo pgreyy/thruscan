@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getAccount, getTransaction } from '../lib/rpcClient.js'
-import { describe, programName, timeAgo } from '../lib/activity.js'
+import { describe, programName, timeAgo, withDetail } from '../lib/activity.js'
 import { decodeTokenProgramAccount, formatAmount } from '../lib/token.js'
 import { decodeNameServiceAccount } from '../lib/nameservice.js'
 import { ownedNames } from '../lib/holdings.js'
@@ -100,7 +100,7 @@ export function TxPage() {
 
   const exec = tx?.execution
   const failed = exec && (exec.userErrorCode !== '0' || (exec.vmError ?? 0) !== 0)
-  const action = tx ? describe({ program: tx.program, feePayer: tx.feePayer, rw: tx.readWriteAccounts ?? [], data: tx.instructionData }, null).label : null
+  const action = tx ? withDetail(describe({ program: tx.program, feePayer: tx.feePayer, rw: tx.readWriteAccounts ?? [], ro: tx.readOnlyAccounts ?? [], data: tx.instructionData }, null)) : null
   // A wall post carries its text in the transaction itself, so anyone holding
   // the signature can read the message without going near the wall.
   const post = tx?.program === WALL_PROGRAM && tx.instructionData

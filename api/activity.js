@@ -46,7 +46,7 @@ const KINDS = new Set([
   'pad', 'launch', 'buy', 'sell', 'claim', 'graduate', 'migrate',
   'pool', 'liquidity', 'swap',
   'token', 'account', 'transfer', 'mint', 'burn',
-  'faucet', 'name', 'nft', 'wall', 'game', 'bundle', 'noop', 'oracle', 'other',
+  'faucet', 'name', 'nft', 'wall', 'game', 'wrap', 'bundle', 'noop', 'oracle', 'other',
 ])
 
 /* What the chain does by itself. The node writes a do-nothing transaction per

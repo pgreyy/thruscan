@@ -70,7 +70,7 @@ function registeredName(b) {
    Anything not listed sorts last. */
 const RANK = [
   'launch', 'graduate', 'migrate', 'buy', 'sell', 'swap', 'claim', 'pad',
-  'pool', 'liquidity', 'nft', 'name', 'wall', 'game', 'mint', 'burn', 'transfer',
+  'pool', 'liquidity', 'nft', 'name', 'wall', 'game', 'wrap', 'mint', 'burn', 'transfer',
   'faucet', 'token', 'account', 'bundle', 'other', 'oracle', 'noop',
 ]
 const rank = (k) => { const i = RANK.indexOf(k); return i < 0 ? RANK.length : i }
@@ -248,6 +248,15 @@ export function makeDecoder(addresses) {
       case A.ID_PROGRAM: {
         kind = 'game'
         label = op === 1 ? 'Set a leaderboard name' : 'Leaderboard names'
+        break
+      }
+      /* Wrapped THRU. Deposit is op 1 and withdraw op 2 (the first byte of a
+         little endian u32). A wrap arrives inside a multicall with the EOA
+         transfer that funds it, and is named from there; an unwrap is a call
+         of its own. */
+      case A.WTHRU_PROGRAM: {
+        if (op === 1) { kind = 'wrap'; label = 'Wrapped THRU' }
+        else if (op === 2) { kind = 'wrap'; label = 'Unwrapped THRU' }
         break
       }
       case A.MANAGER_PROGRAM: {

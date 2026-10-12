@@ -10,7 +10,7 @@
 import {
   THRUSWAP_PROGRAM, THRUPAD_PROGRAM, WALL_PROGRAM, TOKEN_PROGRAM,
   NAME_SERVICE_PROGRAM, NATIVE_FAUCET_PROGRAM, TUSD_MINT, WTHRU_MINT,
-  WORDLE_PROGRAM, G2048_PROGRAM, ID_PROGRAM,
+  WORDLE_PROGRAM, G2048_PROGRAM, ID_PROGRAM, MULTICALL_PROGRAM, WTHRU_PROGRAM,
 } from './addresses.js'
 import { ROOT_REGISTRAR, ROOT_SUFFIX } from './names.js'
 
@@ -49,6 +49,56 @@ function registeredName(b) {
 }
 
 /**
+ * Wrapping and unwrapping THRU, read from the instruction, or null.
+ *
+ * A wrap is one multicall holding [EOA transfer of `amount` to the WTHRU
+ * vault, WTHRU deposit]; an unwrap is a single WTHRU withdraw. Both have to be
+ * read from the bytes because the programs that run are Thru's own (multicall,
+ * EOA, WTHRU) and say nothing of why. The amounts are native THRU units, which
+ * is also WTHRU base units: one wraps to exactly one.
+ *
+ *   multicall   [count u16] then count x [program_idx u16][size u64][data]
+ *   EOA         [u32 1][u64 amount][u16 from][u16 to]
+ *   deposit     [u32 1] ...
+ *   withdraw    [u32 2][...][u64 amount at byte 16]
+ *
+ * Program indices point into [fee payer, program, ...read-write, ...read-only].
+ * When the read-only list is not there to resolve them (a caller that has only
+ * the read-write accounts), the two calls are recognised by their shape, which
+ * is as specific as the check the wallet extension makes before it tells
+ * somebody what they are signing.
+ */
+export function wrapOf(item, b = bytesOf(item.data)) {
+  const dv = b.length ? new DataView(b.buffer, b.byteOffset, b.length) : null
+  if (item.program === WTHRU_PROGRAM && dv && b.length >= 24 && dv.getUint32(0, true) === 2) {
+    return { kind: 'unwrap', amount: dv.getBigUint64(16, true) }
+  }
+  if (item.program !== MULTICALL_PROGRAM || !dv || b.length < 2) return null
+
+  const accounts = [item.feePayer, item.program, ...(item.rw ?? []), ...(item.ro ?? [])]
+  const resolvable = Array.isArray(item.ro)
+  const calls = []
+  let off = 2
+  const count = dv.getUint16(0, true)
+  for (let i = 0; i < count && off + 10 <= b.length; i++) {
+    const idx = dv.getUint16(off, true)
+    const size = Number(dv.getBigUint64(off + 2, true))
+    off += 10
+    if (off + size > b.length) break
+    calls.push({ program: accounts[idx], data: b.subarray(off, off + size) })
+    off += size
+  }
+  const word = (c) => (c.data.length >= 4 ? new DataView(c.data.buffer, c.data.byteOffset, c.data.length).getUint32(0, true) : null)
+  const transfer = calls.find((c) => (resolvable ? c.program === EOA_PROGRAM : c.data.length === 16) && word(c) === 1)
+  const deposit = calls.find((c) => (resolvable ? c.program === WTHRU_PROGRAM : c.data.length === 12) && word(c) === 1)
+  if (!transfer || !deposit || transfer.data.length < 12) return null
+  return { kind: 'wrap', amount: new DataView(transfer.data.buffer, transfer.data.byteOffset, transfer.data.length).getBigUint64(4, true) }
+}
+
+/** "Wrapped THRU · 5,000 THRU" for the places that have one line to say it in. */
+export const withDetail = ({ label, detail }) => (detail ? `${label} · ${detail}` : label)
+
+/**
  * { label, tone } for one history item. `me` is the viewer's address, used to
  * tell sent from received and a sponsored faucet mint from a self-signed one.
  */
@@ -56,6 +106,14 @@ export function describe(item, me) {
   const b = bytesOf(item.data)
   const op = b[0]
   const byMe = me && item.feePayer === me
+
+  const wrap = wrapOf(item, b)
+  if (wrap) {
+    return {
+      label: wrap.kind === 'wrap' ? 'Wrapped THRU' : 'Unwrapped THRU',
+      detail: `${wrap.amount.toLocaleString('en-US')} THRU`,
+    }
+  }
 
   switch (item.program) {
     case THRUSWAP_PROGRAM:
@@ -144,6 +202,7 @@ export function programName(address) {
     [ID_PROGRAM]: 'Leaderboard names',
     [MANAGER_PROGRAM]: 'Program manager',
     [TOKEN_PROGRAM]: 'Token program',
+    [WTHRU_PROGRAM]: 'Wrapped THRU',
     [NAME_SERVICE_PROGRAM]: 'Name service',
     [NATIVE_FAUCET_PROGRAM]: 'Thru faucet',
     [EOA_PROGRAM]: 'Account program',
@@ -207,6 +266,11 @@ export function movements(item, extra, me) {
   if (item.program === NATIVE_FAUCET_PROGRAM && item.feePayer === me && b.length >= 16) {
     add('THRU', Number(dv.getBigUint64(8, true)))
   }
+  /* Wrapping moves native THRU out and WTHRU in (the WTHRU side is a token
+     event, below); unwrapping is the reverse. The THRU side is not a token
+     event, so it is read from the instruction like any other THRU move. */
+  const wrap = item.feePayer === me ? wrapOf(item, b) : null
+  if (wrap) add('THRU', wrap.kind === 'wrap' ? -Number(wrap.amount) : Number(wrap.amount))
 
   const events = extra?.events?.[item.signature] ?? []
   const acc = extra?.accounts ?? {}

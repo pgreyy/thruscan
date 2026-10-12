@@ -15,6 +15,7 @@ import assert from 'node:assert/strict'
 import { Pubkey, keys } from '@thru/sdk'
 import { makeDecoder } from './decode.mjs'
 import { SYSTEM } from './addresses.mjs'
+import { buildWrap, buildUnwrap, WTHRU_MINT_ADDRESS } from '../src/lib/wthru.js'
 
 const A = {
   ...SYSTEM,
@@ -220,4 +221,16 @@ test('the games, the leaderboard registry, the name root and deployments are nam
     assert.equal(r.kind, kind, label)
     assert.equal(r.label, label)
   }
+})
+
+test('a wrap bundle and an unwrap are named', () => {
+  const wrap = buildWrap({ payer, dest: WTHRU_MINT_ADDRESS, amount: 5000 })
+  const w = decode(txn({ program: wrap.program, data: wrap.data, rw: wrap.readWrite, ro: wrap.readOnly }))
+  assert.equal(w.kind, 'wrap')
+  assert.equal(w.label, 'Wrapped THRU')
+
+  const unwrap = buildUnwrap({ source: WTHRU_MINT_ADDRESS, amount: 40 })
+  const u = decode(txn({ program: unwrap.program, data: unwrap.data, rw: unwrap.readWrite, ro: unwrap.readOnly }))
+  assert.equal(u.kind, 'wrap')
+  assert.equal(u.label, 'Unwrapped THRU')
 })
