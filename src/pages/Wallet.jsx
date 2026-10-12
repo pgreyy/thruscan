@@ -48,6 +48,7 @@ import { withSuffix, decodeDomain, ROOT_SUFFIX } from '../lib/names.js'
 import { phraseProblem, phraseWords } from '../lib/seed.js'
 import { QRImage, QRScanner, canScan } from '../components/QR.jsx'
 import { TUSD_MINT, WTHRU_MINT } from '../lib/addresses.js'
+import { network } from '../lib/networks.js'
 import { getAccount } from '../lib/rpcClient.js'
 import { decodeMintAccount } from '../lib/token.js'
 
@@ -466,7 +467,7 @@ function CreateWallet({ onDone }) {
       {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
 
       <p className="fine" style={{ marginTop: 14 }}>
-        Alphanet: test tokens only, wiped at each reset. Use a throwaway password.
+        {network.label}: test tokens only, wiped at each reset. Use a throwaway password.
       </p>
     </section>
   )
@@ -828,7 +829,7 @@ function LiveWallet({ wallet, mints }) {
 
         {wallet.registered && (
           <div className="rows" style={{ marginTop: 12 }}>
-            <div className="row"><span>Status</span><b>Live on alphanet</b></div>
+            <div className="row"><span>Status</span><b>Live on {network.label}</b></div>
             <div className="row">
               <span>THRU</span>
               <b className="mono">

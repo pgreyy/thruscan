@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { bg, go, Header, Notice, Copy, PasswordField, useAction, short } from './ui.jsx'
 import { PROGRAMS } from '../lib/chain.js'
-import { NETWORKS, networkFor } from '../lib/networks.js'
+import { NETWORKS, DEFAULT_NETWORK, networkFor } from '../lib/networks.js'
 
 export function Settings({ state, onLock, reload }) {
   const [minutes, setMinutes] = useState(String(state.settings.autoLockMinutes))
@@ -121,7 +121,7 @@ export function Settings({ state, onLock, reload }) {
             </label>
             <p className="fine">
               Chrome will ask whether the wallet may talk to that address. A node of your own is assumed to be
-              serving the same chain as {NETWORKS.alphanet.label.toLowerCase()}, because the wallet has no way to
+              serving the same chain as {NETWORKS[DEFAULT_NETWORK].label}, because the wallet has no way to
               ask it which programs it carries.
             </p>
           </details>

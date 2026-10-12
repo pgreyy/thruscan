@@ -39,6 +39,7 @@ import { createHash } from 'node:crypto'
 import { sendLanded } from '../src/lib/sendLanded.js'
 import { decodeConfig, buildAllow, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
 import { MAX_STATE_UNITS } from '../src/lib/addresses.js'
+import { grpcUrl, addressOf, network } from '../src/lib/networks.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -46,12 +47,15 @@ export const config = { runtime: 'nodejs', maxDuration: 60 }
 
 dns.setDefaultResultOrder('ipv4first')
 
-const RPC_URL = process.env.THRU_RPC_URL || 'https://rpc.alphanet.thru.org'
+/* The active network's node; THRU_RPC_URL still overrides it. */
+const RPC_URL = grpcUrl()
 const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'
 const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 const ADDRESS_RE = /^ta[A-Za-z0-9_-]{44}$/
 
-const TUSD_MINT = process.env.THRU_TUSD_MINT || 'ta4OJoJQcZRIx4Sm3MLdEUrn_j5gb4vFeFPhpSJraHZTeB'
+/* Blank on betanet, which has no tUSD; the faucet below says so instead of
+   minting from an address that is not there. */
+const TUSD_MINT = process.env.THRU_TUSD_MINT || addressOf('TUSD_MINT')
 
 /* 500 tUSD a day, and never more than 10,000 held at once.
    The daily figure is enough to trade with and to seed a small pool; the cap is
@@ -397,6 +401,7 @@ async function balances(c, { owner, mints }) {
  * authority index is 0.
  */
 async function faucet(c, { owner, account }) {
+  if (!TUSD_MINT) return { ok: false, error: `There is no tUSD on ${network.label}. Claim THRU from Thru's faucet and wrap it into WTHRU instead.` }
   let dest = account
 
   if (!dest) {
@@ -602,7 +607,7 @@ async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
   if (!(await landed(c, tokenVault.account))) {
     return { ok: false, error: 'The token vault did not land. Try again in a moment.' }
   }
-  const quoteVault = await openTokenAccountFor({ c, mint: quoteMint || TUSD_MINT, owner: pad, seed: randomSeed() })
+  const quoteVault = await openTokenAccountFor({ c, mint: quoteMint || WTHRU_MINT, owner: pad, seed: randomSeed() })
   if (!(await landed(c, quoteVault.account))) {
     return { ok: false, error: 'The quote vault did not land. Try again in a moment.' }
   }
@@ -629,7 +634,7 @@ async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
    guess reverts with no user error code at all. */
 
 const NAME_SERVICE_PROGRAM = 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG'
-const ROOT_REGISTRAR = process.env.THRU_NAME_ROOT || 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
+const ROOT_REGISTRAR = process.env.THRU_NAME_ROOT || addressOf('NAME_ROOT')
 const NAME_FIELD = 64
 const KEY_FIELD = 32
 const VALUE_FIELD = 256

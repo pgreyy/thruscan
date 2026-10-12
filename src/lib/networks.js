@@ -13,19 +13,20 @@
 // So a network is one object. Its node and its programs are chosen together or
 // not at all, and THRU_NETWORK picks which one by name.
 //
-//   THRU_NETWORK=alphanet   (the default; also VITE_THRU_NETWORK in the browser)
+//   THRU_NETWORK=betanet    (the default; also VITE_THRU_NETWORK in the browser)
 //
 // Individual addresses can still be overridden one at a time by environment
 // variable, which is what makes a redeploy of one program a dashboard change
 // rather than a commit. The override wins over the table.
 //
-// A WORD ON ALPHANET AND BETANET, because it is not what anyone assumes:
-// rpc.alphanet.thru.org and rpc.betanet.thru.org are two names for the same
-// chain. Verified on 5 October 2026 by reading slot 2,908,038 from both, which
-// returned the same block hash, and by both reporting chainId 1 within ten
-// slots of each other. They are listed separately below so a build can be
-// pointed at either name, and they carry the same addresses because they are
-// the same state.
+// ALPHANET AND BETANET ARE TWO CHAINS. They were once two names for the same
+// chain (5 October 2026, same block hash at slot 2,908,038 from both). They
+// are not any more: on 12 October 2026 betanet was at height 1.28M with chain
+// id 2 and alphanet at 7.1M with chain id 1, on different node commits, with
+// different chain params (betanet max_active_state_units 11,272,193 and
+// compress_baseline_units 8,388,608; alphanet 65,536 and 32,768). So each has
+// its own address table, and nothing of ours is shared between them.
+// tools/check-networks.mjs reads both and says so if that changes again.
 
 /* Read by the browser bundle and by serverless functions, which have no
    import.meta.env at all: touching it there is a TypeError, not an undefined.
@@ -38,9 +39,9 @@ const env = (() => {
 /**
  * Thru's own programs.
  *
- * The runtime places these at the same address on every network it starts,
- * which I confirmed by reading all of them off two networks before writing
- * this. They are spread into each network below rather than referenced
+ * The runtime places these at the same address on every network it starts.
+ * Read off both betanet and alphanet on 12 October 2026: every one of them is
+ * present on both, at these addresses. They are spread into each network below rather than referenced
  * globally, so that if mainnet ever disagrees, one network can say so without
  * a code change anywhere else.
  */
@@ -61,7 +62,8 @@ const SYSTEM = {
   CLOB_PROGRAM: 'taCLOBcFk1PT8JTHQM1LzsyK6HLv1YkSJKZ2ZyIxo8fiTe',
 }
 
-/** ThruScan's own programs and accounts, as deployed on 28 September 2026. */
+/** ThruScan's own programs and accounts on alphanet, as deployed on 28
+    September 2026. Legacy: alphanet is no longer where ThruScan runs. */
 const OURS_ALPHANET = {
   THRUSWAP_PROGRAM: 'taCXE0eEQbUHU90dyZ__Bz1yfQabjyaD4xaSHKUw3Q1M4N',
   THRUSWAP_REGISTRY: 'taxd8oXrKJTRejpLPUPrrjWMR8PnSFC03SRCphFW2p1Cpj',
@@ -78,6 +80,35 @@ const OURS_ALPHANET = {
   G2048_PROGRAM: 'taXyq3jDXavyDXwVEq85vInMz5YfKpprmTGgSa4ayd4mSa',
   G2048_BOARD: 'ta17eN7VuVh-HgHKxEkmuhyIWwlKd3QggRgjrOy1bJb-vC',
   PALS_PROGRAM: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
+  PALS_CONFIG: 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv',
+  PALS_MARKET: 'ta3CGXulXRnwyrdgZnfb-_J3a-5nw6ff3ulfT-vTFZil--',
+  PALS_NFT_MINT: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr',
+}
+
+/* ThruScan's own programs and accounts on betanet. Filled in by the betanet
+   deploy (tools/betanet/), one key at a time as each one lands, and never
+   copied from alphanet: an alphanet address here would point at nothing.
+   There is no tUSD on betanet; launches and pools are priced in WTHRU.
+   Pixel Pals is not deployed here, so its keys stay blank and its pages say
+   so. */
+const OURS_BETANET = {
+  THRUSWAP_PROGRAM: '',
+  THRUSWAP_REGISTRY: '',
+  THRUPAD_PROGRAM: '',
+  THRUPAD_REGISTRY: '',
+  NAME_ROOT: '',
+  WALL_PROGRAM: '',
+  WALL_ACCOUNT: '',
+  ID_PROGRAM: '',
+  ID_REGISTRY: '',
+  WORDLE_PROGRAM: '',
+  WORDLE_BOARD: '',
+  G2048_PROGRAM: '',
+  G2048_BOARD: '',
+  PALS_PROGRAM: '',
+  PALS_CONFIG: '',
+  PALS_MARKET: '',
+  PALS_NFT_MINT: '',
 }
 
 /* Nothing is deployed on mainnet, and empty is the honest value. Writing
@@ -99,29 +130,30 @@ const OURS_MAINNET = {}
  * chrome, that none of this is real yet.
  */
 export const NETWORKS = {
+  /* Where ThruScan runs. */
+  betanet: {
+    id: 'betanet',
+    label: 'Betanet',
+    test: true,
+    chainId: 2,
+    rpc: [
+      { url: 'https://rpc.betanet.thru.org', protocol: 'grpc' },
+      { url: 'https://rpc.betanet.thru.org', protocol: 'grpc-web' },
+    ],
+    addresses: { ...SYSTEM, ...OURS_BETANET },
+  },
+
+  /* Legacy. A separate chain from betanet now, kept so old links and old
+     records still resolve against the chain they were made on. */
   alphanet: {
     id: 'alphanet',
-    label: 'Alphanet',
+    label: 'Alphanet (legacy)',
     test: true,
     chainId: 1,
     rpc: [
       { url: 'https://rpc.alphanet.thru.org', protocol: 'grpc' },
       { url: 'https://rpc.alphanet.thru.org', protocol: 'grpc-web' },
       { url: 'https://grpc-web.alphanet.thru.org', protocol: 'grpc-web' },
-    ],
-    addresses: { ...SYSTEM, ...OURS_ALPHANET },
-  },
-
-  /* The same chain as alphanet under a second name, not a second chain.
-     Same addresses, deliberately, because the state is the same state. */
-  betanet: {
-    id: 'betanet',
-    label: 'Betanet',
-    test: true,
-    chainId: 1,
-    rpc: [
-      { url: 'https://rpc.betanet.thru.org', protocol: 'grpc' },
-      { url: 'https://rpc.betanet.thru.org', protocol: 'grpc-web' },
     ],
     addresses: { ...SYSTEM, ...OURS_ALPHANET },
   },
@@ -145,19 +177,19 @@ export const NETWORKS = {
 
 /** The network this build is pointed at, by name. */
 export const ACTIVE_NETWORK =
-  (env.VITE_THRU_NETWORK || env.THRU_NETWORK || 'alphanet').toLowerCase()
+  (env.VITE_THRU_NETWORK || env.THRU_NETWORK || 'betanet').toLowerCase()
 
 /* An unknown name is a configuration mistake, and falling back silently to
-   alphanet would hide it behind a working site pointed at the wrong chain.
+   betanet would hide it behind a working site pointed at the wrong chain.
    Shout, then fall back, so at least the console says why. */
 if (!NETWORKS[ACTIVE_NETWORK]) {
   // eslint-disable-next-line no-console
   console.error(
-    `THRU_NETWORK is "${ACTIVE_NETWORK}", which is not one of: ${Object.keys(NETWORKS).join(', ')}. Using alphanet.`,
+    `THRU_NETWORK is "${ACTIVE_NETWORK}", which is not one of: ${Object.keys(NETWORKS).join(', ')}. Using betanet.`,
   )
 }
 
-export const network = NETWORKS[ACTIVE_NETWORK] ?? NETWORKS.alphanet
+export const network = NETWORKS[ACTIVE_NETWORK] ?? NETWORKS.betanet
 
 /**
  * One address, with its environment override applied.
@@ -183,6 +215,15 @@ export function activeAddresses() {
  * THRU_RPC_URL still jumps the queue, because when a host moves the fix has to
  * be available without a deploy.
  */
+/**
+ * The native gRPC endpoint, for serverless functions that build a client
+ * directly instead of going through api/rpc.js's probing. THRU_RPC_URL still
+ * wins, exactly as in rpcCandidates.
+ */
+export function grpcUrl() {
+  return (rpcCandidates().find((c) => c.protocol === 'grpc') ?? rpcCandidates()[0]).url
+}
+
 export function rpcCandidates() {
   const first = env.THRU_RPC_URL
     ? [{ url: env.THRU_RPC_URL, protocol: env.THRU_RPC_PROTOCOL || 'grpc' }]

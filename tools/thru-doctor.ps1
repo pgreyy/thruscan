@@ -20,7 +20,7 @@
 
 param(
   [string]$KeyName = "newkey",
-  [string]$Url = "https://rpc.alphanet.thru.org"
+  [string]$Url = "https://rpc.betanet.thru.org"
 )
 
 $ErrorActionPreference = "Continue"

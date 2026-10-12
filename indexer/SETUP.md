@@ -28,7 +28,7 @@ function when a request arrives and stops it when the response is sent.
 
 ```
 $env:DATABASE_URL="<the connection string>"
-$env:THRU_RPC="https://rpc.alphanet.thru.org"
+$env:THRU_RPC="https://rpc.betanet.thru.org"
 node indexer/index.mjs
 ```
 

@@ -24,7 +24,7 @@ function useStats() {
   const [errors, setErrors] = useState({})
   useEffect(() => {
     let alive = true
-    const load = () => COLLECTIONS.forEach((c) => c.stats()
+    const load = () => COLLECTIONS.filter((c) => c.live !== false).forEach((c) => c.stats()
       .then((s) => { if (alive) { setStats((o) => ({ ...o, [c.slug]: s })); setErrors((o) => ({ ...o, [c.slug]: null })) } })
       .catch((e) => { if (alive) setErrors((o) => ({ ...o, [c.slug]: String(e?.message ?? e) })) }))
     load()
@@ -92,6 +92,7 @@ export function NftsPage() {
                   <b>{c.name}</b>
                   <i>
                     by {c.creator}
+                    {c.live === false && <em> · not on this network</em>}
                     {s?.minting && <em> · Minting {fmt(s.minted)} / {fmt(s.supply)}</em>}
                     {errors[c.slug] && !s && <em> · not loading right now</em>}
                   </i>

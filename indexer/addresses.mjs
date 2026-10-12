@@ -3,8 +3,9 @@
 // Which programs to recognise, per network.
 //
 // Thru's own programs are bootstrap addresses: the runtime places them at the
-// same address on every network, which I confirmed by reading all of them off
-// betanet before writing this. Ours are not. A program's address is derived
+// same address on every network (all of them read off both betanet and
+// alphanet on 12 October 2026). Ours are not. Betanet and alphanet are two
+// separate chains now, so ours are listed per network and never shared. A program's address is derived
 // from whoever deployed it, so ThruScan's programs have one set of addresses on
 // alphanet and will have a different set on betanet, and the indexer has to be
 // told which it is looking at.
@@ -22,8 +23,7 @@ export const SYSTEM = {
   NATIVE_FAUCET_PROGRAM: 'taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16',
   WTHRU_PROGRAM: 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm',
   NFT_PROGRAM: 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5',
-  /* Betanet ships these two; alphanet did not. Harmless to carry on both,
-     because an address that is not there simply never appears in a block. */
+  /* Present on both betanet and alphanet as of 12 October 2026. */
   AMM_PROGRAM: 'taAMMx8gG44RcOyRqNYZ55pDaAJoGS0R8kPYxBN96sO8kD',
   /* The do-nothing program. It is how a wallet with no account gets its
      first transaction accepted, and it is also what the node fills empty
@@ -37,9 +37,9 @@ export const SYSTEM = {
   CLOB_PROGRAM: 'taCLOBcFk1PT8JTHQM1LzsyK6HLv1YkSJKZ2ZyIxo8fiTe',
 }
 
-/* Ours, per network. Betanet is empty until the deploy happens, and empty is
-   the honest value: writing alphanet's addresses in here would make the
-   indexer claim to recognise programs that are not on the chain. */
+/* Ours, per network. Betanet holds what tools/betanet/ deployed, and nothing
+   copied from alphanet: an alphanet address here would make the indexer claim
+   to recognise programs that are not on the chain. */
 export const OURS = {
   alphanet: {
     THRUPAD_PROGRAM: 'tastnRlQL8RGYeByXK2QAzaqdnfvI6pVn0e89JSl6Hiu8I',

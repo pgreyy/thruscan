@@ -21,6 +21,7 @@ import dns from 'node:dns'
 import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
 import { MAX_STATE_UNITS } from '../src/lib/addresses.js'
+import { grpcUrl, addressOf } from '../src/lib/networks.js'
 
 export const config = { runtime: 'nodejs' }
 
@@ -28,7 +29,8 @@ export const config = { runtime: 'nodejs' }
 // Node prefers and then cannot reach.
 dns.setDefaultResultOrder('ipv4first')
 
-const RPC_URL = process.env.THRU_RPC_URL || 'https://rpc.alphanet.thru.org'
+/* The active network's node; THRU_RPC_URL still overrides it. */
+const RPC_URL = grpcUrl()
 
 const NAME_BYTES = 24
 const HANDLE_BYTES = 16
@@ -116,7 +118,12 @@ function validate({ name, handle, message }) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Use POST.' })
 
-  const { THRU_SPONSOR_PUBKEY, THRU_SPONSOR_PRIVKEY, THRU_WALL_PROGRAM, THRU_WALL_ACCOUNT } = process.env
+  /* The wall's addresses come from the network table; the old environment
+     variables still override them for a one-off move. */
+  const {
+    THRU_SPONSOR_PUBKEY, THRU_SPONSOR_PRIVKEY,
+    THRU_WALL_PROGRAM = addressOf('WALL_PROGRAM'), THRU_WALL_ACCOUNT = addressOf('WALL_ACCOUNT'),
+  } = process.env
 
   if (!THRU_SPONSOR_PUBKEY || !THRU_SPONSOR_PRIVKEY || !THRU_WALL_PROGRAM || !THRU_WALL_ACCOUNT) {
     return json(res, 503, { ok: false, error: 'The wall is not set up yet. Check back shortly.' })

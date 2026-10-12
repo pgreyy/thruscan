@@ -16,20 +16,16 @@
 // the DOM nor import.meta.env directly.
 
 import { Pubkey, deriveProgramAddress } from '@thru/sdk'
-
-const env = (() => {
-  try { if (typeof import.meta !== 'undefined' && import.meta.env) return import.meta.env } catch { /* Node */ }
-  return typeof process !== 'undefined' ? process.env : {}
-})()
+import { addressOf } from '../networks.js'
 
 /** The Pixel Pals program (seed thrupals). */
-export const PALS_PROGRAM = env.VITE_PALS_PROGRAM || 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH'
+export const PALS_PROGRAM = addressOf('PALS_PROGRAM')
 /** Its state account (seed config under the program). */
-export const PALS_CONFIG = env.VITE_PALS_CONFIG || 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv'
+export const PALS_CONFIG = addressOf('PALS_CONFIG')
 /** The market: listings and recent sales (seed market under the program). */
-export const PALS_MARKET = env.VITE_PALS_MARKET || 'ta3CGXulXRnwyrdgZnfb-_J3a-5nw6ff3ulfT-vTFZil--'
+export const PALS_MARKET = addressOf('PALS_MARKET')
 /** The collection, a mint of Thru's NFT program (seed pixelpals), whose authority is PALS_PROGRAM. */
-export const PALS_NFT_MINT = env.VITE_PALS_NFT_MINT || 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr'
+export const PALS_NFT_MINT = addressOf('PALS_NFT_MINT')
 
 export const NFT_PROGRAM = 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5'
 export const TOKEN_PROGRAM = 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE'

@@ -885,6 +885,7 @@ export default async function handler(req, res) {
       }
 
       case 'pals': {
+        if (!PALS_PROGRAM) return json(res, 200, { ok: false, live: false, error: `Pixel Pals is not on ${network.label}.` }, { cacheSeconds: 60 })
         // Both accounts at once: the node can be slow, and one after the
         // other doubles the wait.
         const [cfg, mkt] = await Promise.all([palsState(client), marketState(client).catch(() => null)])
@@ -937,6 +938,7 @@ export default async function handler(req, res) {
 
       case 'pal':
       case 'palimg': {
+        if (!PALS_PROGRAM) return json(res, 404, { ok: false, error: `Pixel Pals is not on ${network.label}.` })
         const id = Number(params.id)
         const cfg = await palsState(client)
         const nftId = cfg && Number.isInteger(id) && id >= 0 && id < cfg.supply ? cfg.nftIdOf(id) : null

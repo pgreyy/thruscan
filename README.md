@@ -37,7 +37,7 @@ browser (React + Vite)
    └── wallet in the browser signs everything the user does themselves:
                      swaps, buys, sells, launches, records, transfers
    │
-Thru alphanet (rpc.alphanet.thru.org)
+Thru betanet (rpc.betanet.thru.org)
    └── ThruScan's own C programs: thruswap, thrupad2, thruwall2,
        thruwordle, thru2048, thruid (source in programs/)
 ```

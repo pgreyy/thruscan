@@ -387,7 +387,7 @@ export async function buildSigned(url, signer, { program, readWrite = [], readOn
     program,
     accounts: { readWriteAccounts: readWrite, readOnlyAccounts: readOnly },
     header: {
-      // Pay a fee when there is THRU to pay it with. Alphanet accepts zero.
+      // Pay a fee when there is THRU to pay it with. Betanet and alphanet both accept zero.
       fee: me.balance > 0n ? 1n : 0n,
       nonce: me.nonce,
       startSlot: height.finalized,
@@ -499,7 +499,7 @@ export async function activate(url, signer) {
   throw new Error('The account did not appear yet. Try again in a moment.')
 }
 
-/** Thru's own alphanet faucet: up to 10,000 test THRU per claim, to whoever signs. */
+/** Thru's own faucet: up to 10,000 test THRU per claim, to whoever signs. */
 export async function claimThru(url, signer, amount = FAUCET_MAX) {
   const data = new Uint8Array(16)
   const dv = new DataView(data.buffer)

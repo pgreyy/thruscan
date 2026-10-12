@@ -22,7 +22,7 @@
 import { createThruClient, keys, eoa, proofs, transactions, Pubkey } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
 
-const RPC_URL = 'https://rpc.alphanet.thru.org'
+const RPC_URL = 'https://rpc.betanet.thru.org'
 const CHAIN_ID = 1
 
 const SPONSOR_PUB = 'tasXJdF9qhC9DaAM0iO5exE-ajUdA4f-A3DU3-r8ec2jE5'

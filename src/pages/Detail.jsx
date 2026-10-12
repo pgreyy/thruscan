@@ -2,7 +2,7 @@
 //
 // The transaction page (/tx/:id) and the account page (/account/:id), in the
 // same style as the explorer's front page: search on top, a details card,
-// then everything else. Read live from alphanet through /api/rpc.
+// then everything else. Read live from the active network through /api/rpc.
 
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -16,6 +16,7 @@ import { Activity } from '../components/Activity.jsx'
 import { Search } from './Home.jsx'
 import { decodePostInstruction } from '../lib/wall.js'
 import { WALL_PROGRAM } from '../lib/addresses.js'
+import { network } from '../lib/networks.js'
 import './home.css'
 
 const num = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString())
@@ -93,7 +94,7 @@ export function TxPage() {
           if (alive && r?.times?.[t.slot]) setTime(r.times[t.slot])
         }
       })
-      .catch(() => { if (alive) setError('No transaction with that signature. Alphanet resets can remove old history.') })
+      .catch(() => { if (alive) setError(`No transaction with that signature on ${network.label}. Network resets can remove old history.`) })
     return () => { alive = false }
   }, [id])
 
@@ -185,7 +186,7 @@ export function AccountPage() {
     setAccount(null); setError(null); setNames(null)
     getAccount(id)
       .then((a) => { if (alive) setAccount(a) })
-      .catch(() => { if (alive) setError('Nothing on alphanet at that address. 0 and O look alike in these addresses.') })
+      .catch(() => { if (alive) setError(`Nothing on ${network.label} at that address. 0 and O look alike in these addresses.`) })
     return () => { alive = false }
   }, [id])
 
