@@ -282,8 +282,8 @@ export function MarketHome() {
   const overview = usePoll(readOverview, 5000)
   const activity = usePoll(readActivity, 10_000)
 
-  // When the registry was last read, for "Read from chain" and for the time in
-  // the banner if a later read fails.
+  // When the registry was last read, for the time in the banner if a later
+  // read fails.
   const readAt = pad.readAt ?? null
 
   useEffect(() => {
@@ -400,14 +400,13 @@ export function MarketHome() {
         </Warn>
       )}
 
-      {/* Four numbers, each one the registry or the chain actually gives. */}
+      {/* Three numbers, each one the registry or the chain actually gives. */}
       <dl className="mk-stats">
         {connected && yourWthru !== null
           ? <Stat label="Your WTHRU" value={yourWthru} />
           : <Stat label="Tokens launched" value={num(totals.launches)} />}
         <Stat label={<><span className="mk-wide">Trades, all time</span><span className="mk-narrow">Trades</span></>} value={num(totals.trades)} title="Every buy and sell on every launch, from the registry" />
         <Stat label="WTHRU held in curves" value={totals.held === null ? '–' : amount(totals.held)} title="WTHRU in each curve's vault, less unclaimed creator fees" />
-        <Stat label="Read from chain" value={readAt ? since(readAt, now) : '–'} title={readAt ? fullUtc(readAt) : undefined} />
       </dl>
       {staleDown && <p className="why mk-stale">Not refreshed for {since(readAt, now).replace(' ago', '')}; retrying.</p>}
 

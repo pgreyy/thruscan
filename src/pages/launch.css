@@ -221,6 +221,8 @@ a.ld-tr .ld-trader { color: var(--text-link); text-decoration: underline; text-u
 /* Below 820: the sticky bar and the sheet. */
 @media (max-width: 819px) {
   .ld { gap: 16px; padding-bottom: 80px; }
+  /* The fixed Buy / Sell bar would sit over the footer's last line. */
+  .shell:has(.ld-bar) .site-foot { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
   .ld-trade-wide { display: none; }
   .ld-head { flex-direction: column; align-items: stretch; gap: 12px; }
   .ld-id { gap: 12px; }

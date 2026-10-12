@@ -111,7 +111,7 @@ const TOP_NAV = [
  * anybody gets anything to trade with. Every route stays reachable. */
 const MORE_NAV = [
   { to: '/collections', label: 'Collections', also: ['/pixelpals'] },
-  { to: '/names', label: 'ThruNames', also: ['/profile'] },
+  { to: '/names', label: 'ThruID', also: ['/profile'] },
   { to: '/faucet', label: 'Faucet' },
   { to: EXTENSION_URL, label: 'Get wallet', external: EXTENSION_IS_EXTERNAL, also: ['/get-wallet'] },
   { to: '/explorer', label: 'Explorer', also: ['/tx', '/account'] },
@@ -581,15 +581,55 @@ function Toast({ toast, onClose }) {
 
 /* ---------- shell ---------- */
 
-/* The network badge (2f): which network, and that it is a test one.
+/* The test-network strip can be closed; the badge in the bar cannot, so the
+   site never stops saying it is a test network. The choice is read before the
+   first paint so a closed strip never flashes. */
+const STRIP_KEY = 'thruscan_testnet_banner_dismissed'
+function readStripClosed() {
+  try { return localStorage.getItem(STRIP_KEY) === '1' } catch { return false }
+}
+function saveStripClosed(closed) {
+  try {
+    if (closed) localStorage.setItem(STRIP_KEY, '1')
+    else localStorage.removeItem(STRIP_KEY)
+  } catch { /* private mode: it stays closed for this visit only */ }
+}
+
+/* "How ThruScan works" re-opens the New here? steps on the home page, which
+   is where they live; the home page listens for this. */
+export const INTRO_KEY = 'thruscan_intro'
+function reopenIntro() {
+  try { localStorage.removeItem(`${INTRO_KEY}_dismissed`) } catch { /* private mode */ }
+  window.dispatchEvent(new Event('thruscan-intro'))
+}
+
+/* The networks the menu lists. ThruScan runs on one; when it supports more,
+   they go here and the note under the list goes away. */
+const NETWORKS = [network]
+
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+const titleCase = (w) => w.charAt(0).toUpperCase() + w.slice(1)
+
+/* The network badge (2f): which network, and that it is a test one. It is a
+   button that opens the network menu on click, tap, Enter or Space, never on
+   hover: hover does not exist on touch and closes by accident.
  *
  * The block height is read through the proxy on a timer; it is the one number
  * that proves the site is talking to a real chain, so it stays, in the
  * tooltip. Dashed until the first read answers, red with a cross once a read
  * fails. Never green: "healthy" is not something the site can promise. */
-function NetworkStatus() {
+function NetworkMenu({ stripClosed, onShowStrip }) {
   const [height, setHeight] = useState(null)
   const [down, setDown] = useState(false)
+  const [readAt, setReadAt] = useState(null)
+  /* Open on the page it was opened on, so following a link puts it away. */
+  const { pathname } = useLocation()
+  const [openOn, setOpenOn] = useState(null)
+  const open = openOn === pathname
+  const setOpen = (v) => setOpenOn((was) => ((typeof v === 'function' ? v(was === pathname) : v) ? pathname : null))
+  const wrap = useRef(null)
+  const btn = useRef(null)
+  const pop = useRef(null)
 
   useEffect(() => {
     let alive = true
@@ -602,6 +642,7 @@ function NetworkStatus() {
         if (!alive) return
         setHeight(n == null ? null : String(n))
         setDown(n == null)
+        if (n != null) setReadAt(Date.now())
       } catch {
         if (alive) setDown(true)
       }
@@ -611,50 +652,84 @@ function NetworkStatus() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
+  useEffect(() => {
+    if (!open) return undefined
+    pop.current?.focus()
+    const away = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpenOn(null) }
+    const key = (e) => {
+      if (e.key !== 'Escape') return
+      setOpenOn(null)
+      btn.current?.focus()
+    }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key) }
+  }, [open])
+
   /* The network's name comes from the build rather than from a string typed
      here, so it cannot go on saying "alphanet" on the day that stops being
      true. */
   const name = network.label.toUpperCase()
   const pretty = height && !Number.isNaN(Number(height)) ? Number(height).toLocaleString() : height
   const title = `${network.label}${network.test ? ' (test network)' : ''}${pretty ? ` · block ${pretty}` : ''}`
+  const state = down ? 'down' : !height ? 'checking' : 'ok'
 
-  if (down) {
-    return (
-      <span className="netbadge down" title={title} role="status">
-        <Icon name="failed" size={12} stroke={2.4} />
-        <span className="long">{name} · UNREACHABLE</span><span className="short">UNREACHABLE</span>
-      </span>
-    )
-  }
-  if (!height) {
-    return (
-      <span className="netbadge checking" title={title} role="status">
-        <span className="netbadge-dot" />
-        <span className="long">CHECKING NETWORK</span><span className="short">CHECKING</span>
-      </span>
-    )
-  }
   return (
-    <span className="netbadge" title={title}>
-      <span className="netbadge-dot" />
-      <span className="long">{name}{network.test ? ' · TEST' : ''}</span>
-      <span className="short">{network.test ? 'TEST' : name}</span>
-    </span>
+    <div className="netmenu" ref={wrap}>
+      <button
+        ref={btn} type="button" title={title}
+        className={`netbadge${state === 'ok' ? '' : ` ${state}`}`}
+        aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+      >
+        {state === 'down' && <><Icon name="failed" size={12} stroke={2.4} /><span className="long">{name} · UNREACHABLE</span><span className="short">UNREACHABLE</span></>}
+        {state === 'checking' && <><span className="netbadge-dot" /><span className="long">CHECKING NETWORK</span><span className="short">CHECKING</span></>}
+        {state === 'ok' && <><span className="netbadge-dot" /><span className="long">{name}{network.test ? ' · TEST' : ''}</span><span className="short">{network.test ? 'TEST' : name}</span></>}
+        <Icon name="expand" size={12} stroke={1.8} className="netbadge-chev" />
+      </button>
+      <span className="sr-only" role="status">{state === 'down' ? 'Network unreachable' : state === 'checking' ? 'Checking network' : ''}</span>
+
+      {open && (
+        <>
+          <div className="netmenu-scrim" aria-hidden="true" onPointerDown={() => setOpenOn(null)} />
+          <div className="netmenu-pop" ref={pop} role="dialog" aria-label="Network" tabIndex={-1}>
+            <span className="netmenu-grab" aria-hidden="true" />
+            <div className="netmenu-label">Network</div>
+            {NETWORKS.map((n) => (
+              <div key={n.label} className="netmenu-net">
+                <div className="netmenu-net-top">
+                  <span className="netbadge-dot" />
+                  <b>{titleCase(n.label)}</b>
+                  {n.test && <span className="netmenu-chip">TEST</span>}
+                  {n === network && <Icon name="success" size={16} className="netmenu-check" title="Current network" />}
+                </div>
+                {n.test && <div className="netmenu-sub">Thru test network. Tokens have no value.</div>}
+              </div>
+            ))}
+            <div className={`netmenu-status ${state}`}>
+              <span className="netmenu-status-k">
+                {state === 'down' ? <Icon name="failed" size={12} stroke={2.4} /> : <span className="netbadge-dot" />}
+                {state === 'down' ? 'Unreachable' : state === 'checking' ? 'Checking…' : 'Reachable'}
+              </span>
+              {readAt && <span className="netmenu-time">Last update {hhmm(readAt)}</span>}
+            </div>
+            {NETWORKS.length === 1 && <p className="netmenu-note">Betanet and mainnet aren&rsquo;t available on ThruScan.</p>}
+            <div className="menu-sep" />
+            <Link className="netmenu-item" to="/" onClick={() => { reopenIntro(); setOpen(false) }}>How ThruScan works</Link>
+            {network.test && stripClosed && (
+              <button type="button" className="netmenu-item" onClick={() => { onShowStrip(); setOpen(false); btn.current?.focus() }}>Show test network notice</button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
-/* "How ThruScan works" re-opens the New here? steps on the home page, which
-   is where they live; the home page listens for this. */
-export const INTRO_KEY = 'thruscan_intro'
-function reopenIntro() {
-  try { localStorage.removeItem(`${INTRO_KEY}_dismissed`) } catch { /* private mode */ }
-  window.dispatchEvent(new Event('thruscan-intro'))
-}
-
 /* The test-network strip, under the bar on every page while the network is a
-   test one. It is the product's first promise: nothing here has value. */
-function TestStrip() {
-  if (!network.test) return null
+   test one. It is the product's first promise: nothing here has value. It can
+   be closed because the badge in the bar goes on saying so. */
+function TestStrip({ closed, onClose }) {
+  if (!network.test || closed) return null
   const name = network.label.toLowerCase()
   return (
     <div className="teststrip" role="note">
@@ -667,7 +742,28 @@ function TestStrip() {
       <span className="teststrip-short">
         <b>Test network.</b> Tokens on Thru {name} have no value. <Link to="/" onClick={reopenIntro}>Learn more</Link>
       </span>
+      <button type="button" className="teststrip-x" onClick={onClose} aria-label="Dismiss test network notice">
+        <Icon name="failed" size={20} />
+      </button>
     </div>
+  )
+}
+
+/* On every page, under the content. A second way to pages the More menu also
+   lists, not a replacement for it. */
+function SiteFooter() {
+  return (
+    <footer className="site-foot">
+      <div className="site-foot-in">
+        <p className="site-foot-text">ThruScan is community-built not affiliated with Thru or Unto Labs.</p>
+        <nav className="site-foot-links" aria-label="Footer">
+          <Link to="/get-wallet">ThruScan Wallet</Link>
+          <Link to="/explorer">Explorer</Link>
+          <Link to="/archives">Archives</Link>
+          <Link to="/" onClick={reopenIntro}>How ThruScan works</Link>
+        </nav>
+      </div>
+    </footer>
   )
 }
 
@@ -699,6 +795,9 @@ function Shell({ children }) {
 
   const [drawer, setDrawer] = useState(false)
   const [finding, setFinding] = useState(false)
+  const [stripClosed, setStripClosed] = useState(readStripClosed)
+  const closeStrip = () => { saveStripClosed(true); setStripClosed(true) }
+  const showStrip = () => { saveStripClosed(false); setStripClosed(false) }
   const moreRef = useRef(null)
   const moreTimer = useRef(null)
   useEffect(() => () => clearTimeout(moreTimer.current), [])
@@ -769,7 +868,7 @@ function Shell({ children }) {
 
           <div className="bar-search"><Search bar /></div>
           <span className="bar-spacer" />
-          <NetworkStatus />
+          <NetworkMenu stripClosed={stripClosed} onShowStrip={showStrip} />
           <button className="bar-icon bar-find" onClick={() => setFinding((f) => !f)} aria-label="Search" aria-expanded={finding}>
             <Icon name="search" />
           </button>
@@ -781,7 +880,7 @@ function Shell({ children }) {
         {finding && <div className="bar-searchrow"><Search bar autoFocus /></div>}
       </header>
 
-      <TestStrip />
+      <TestStrip closed={stripClosed} onClose={closeStrip} />
 
       {drawer && (
         <>
@@ -805,6 +904,7 @@ function Shell({ children }) {
       )}
 
       <main className="main">{children}</main>
+      <SiteFooter />
     </div>
   )
 }

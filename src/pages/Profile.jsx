@@ -555,7 +555,7 @@ export function ProfilePage() {
                         </div>
                       )}
                 </Row>
-                <Row title="ThruNames" count={names.length || null}>
+                <Row title="ThruID" count={names.length || null}>
                   {names.length === 0
                     ? <p className="fine">None yet. <Link to="/names">Claim one</Link>, free.</p>
                     : (

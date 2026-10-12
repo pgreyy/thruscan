@@ -16,7 +16,7 @@ Not affiliated with Unto Labs. Alphanet tokens have no value, and every balance 
 | **Swap** | Constant-product pools: swap, add and remove liquidity. |
 | **Launchpad** | Launch a fixed-supply token on a bonding curve, trade it, and see its price history. |
 | **Faucet** | Test tUSD from ThruScan and THRU from Thru's own faucet. |
-| **Names** | Free `.id` names on Thru's name service, with records such as `x`, `url` and `avatar`. |
+| **ThruID** | Free `.id` names on Thru's name service, with records such as `x`, `url` and `avatar`. |
 | **Games** | Wordle and 2048, with scores recorded on chain. |
 | **Builders** | The programs behind all of this, and what building on Thru taught us. |
 

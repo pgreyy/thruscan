@@ -185,7 +185,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
  * bar: the mark, the badge, a search button, the wallet and the menu, with the
  * nav in a drawer. Under it, on every page, the test-network strip. */
 
-.shell { min-height: 100%; display: flex; flex-direction: column; }
+/* At least the window tall, so the footer sits at the bottom of a short page. */
+.shell { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 
 .bar {
   position: sticky; top: 0; z-index: 50;
@@ -293,6 +294,65 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .netbadge.checking .netbadge-dot { background: none; border: 1px solid currentColor; }
 .netbadge.down { border-color: var(--status-negative); color: var(--status-negative); }
 .netbadge .short { display: none; }
+/* The badge is the network menu's button; it looks the same, plus a chevron. */
+button.netbadge { background: none; font-family: var(--font-mono); cursor: pointer; position: relative; }
+.netbadge-chev { flex: none; }
+.netbadge[aria-expanded='true'] .netbadge-chev { transform: rotate(180deg); }
+@media (max-width: 819px) { button.netbadge::after { content: ''; position: absolute; inset: -12px -4px; } }
+
+/* ---------- network menu ----------
+   A popover under the badge, right-aligned to it; a bottom sheet with the
+   phone bar. Lists the one network ThruScan runs on. */
+.netmenu { position: relative; flex: none; display: flex; }
+.netmenu-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 70;
+  width: 280px; padding: 6px;
+  display: flex; flex-direction: column;
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--r-panel); box-shadow: var(--shadow-popover);
+  color: var(--text-primary); font-size: 14px; text-transform: none;
+}
+.netmenu-pop:focus { outline: none; }
+.netmenu-pop:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.netmenu-scrim, .netmenu-grab { display: none; }
+.netmenu-label { padding: 8px 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.netmenu-net { padding: 8px 10px; border-radius: var(--r-control); background: var(--bg-sunken); }
+.netmenu-net-top { display: flex; align-items: center; gap: 8px; }
+.netmenu-net-top b { font-size: 14px; font-weight: 600; }
+.netmenu-chip {
+  padding: 1px 5px; border: 1px solid var(--border-default); border-radius: var(--r-chip);
+  font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--text-secondary);
+}
+.netmenu-check { margin-left: auto; }
+.netmenu-sub { margin-top: 2px; padding-left: 14px; font-size: 12px; color: var(--text-secondary); }
+.netmenu-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 10px 4px; font-size: 13px;
+}
+.netmenu-status-k { display: inline-flex; align-items: center; gap: 6px; }
+.netmenu-status.checking .netmenu-status-k { color: var(--text-secondary); }
+.netmenu-status.checking .netbadge-dot { background: none; border: 1px solid currentColor; }
+.netmenu-status.down .netmenu-status-k { color: var(--status-negative); }
+.netmenu-time { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.netmenu-note { margin: 4px 0 0; padding: 4px 10px 6px; font-size: 12px; color: var(--text-secondary); }
+.netmenu-item {
+  display: flex; align-items: center; min-height: 40px; padding: 0 10px;
+  border: 0; border-radius: var(--r-control); background: none;
+  color: var(--text-primary); font: inherit; font-size: 14px; text-align: left; text-decoration: none; cursor: pointer;
+}
+.netmenu-item:hover { background: var(--fill-hover); color: var(--text-primary); }
+@media (max-width: 1023px) {
+  .netmenu-scrim { display: block; position: fixed; inset: 0; z-index: 80; background: var(--scrim); animation: fade-in var(--dur-base) ease-out; }
+  .netmenu-pop {
+    position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 81;
+    width: auto; max-height: 85vh; overflow-y: auto;
+    padding: 8px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0; border-radius: var(--r-modal) var(--r-modal) 0 0;
+    box-shadow: var(--shadow-modal);
+  }
+  .netmenu-grab { display: block; width: 36px; height: 4px; margin: 0 auto 6px; border-radius: 2px; background: var(--border-default); }
+  .netmenu-item { min-height: 44px; }
+}
 @media (max-width: 519px) {
   .netbadge { font-size: 11px; padding: 3px 5px; gap: 5px; }
   .netbadge .netbadge-dot { width: 5px; height: 5px; }
@@ -317,12 +377,20 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .teststrip a { color: inherit; white-space: nowrap; }
 .teststrip a:hover { color: var(--action-primary); }
 .teststrip .ts-push { flex: 1; }
+.teststrip-x {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; margin: -6px -6px -6px 0;
+  padding: 0; border: 0; border-radius: 6px; background: none; color: var(--banner-test-text); cursor: pointer;
+}
+.teststrip-x:hover { background: rgba(255,255,255,0.08); }
+/* The standard ring is ink, which vanishes on the ink strip in light mode. */
+.teststrip-x:focus-visible { outline-color: var(--banner-test-text); }
 .teststrip-short { display: none; }
 .teststrip-short b { color: var(--action-primary); }
 @media (max-width: 819px) {
-  .teststrip { display: block; padding: 10px var(--page-x); font-size: 13px; line-height: 1.4; }
+  .teststrip { padding: 10px var(--page-x); font-size: 13px; line-height: 1.4; }
   .teststrip-long { display: none; }
-  .teststrip-short { display: inline; }
+  .teststrip-short { display: inline; flex: 1; min-width: 0; }
+  .teststrip-x { width: 44px; height: 44px; margin: -12px -12px -12px 0; }
 }
 
 /* ---------- drawer (below 1024px) ---------- */
@@ -359,6 +427,24 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
    top padding; the default is for pages not yet rebuilt. */
 .main { flex: 1; padding: 32px var(--page-x) 48px; }
 .page { max-width: var(--w-content); margin: 0 auto; }
+
+/* ---------- footer ----------
+   On every page, under the content; not sticky. */
+.site-foot { background: var(--bg-surface); border-top: 1px solid var(--border-default); }
+.site-foot-in {
+  max-width: var(--w-content); margin: 0 auto; padding: 20px var(--page-x); box-sizing: content-box;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  font-family: var(--font-sans); font-size: 13px;
+}
+.site-foot-text { margin: 0; color: var(--text-secondary); }
+.site-foot-links { display: flex; flex-wrap: wrap; gap: 24px; }
+.site-foot-links a { font-weight: 500; color: var(--text-primary); text-decoration: none; text-underline-offset: 2px; }
+.site-foot-links a:hover { text-decoration: underline; color: var(--text-primary); }
+@media (max-width: 819px) {
+  .site-foot-in { flex-direction: column-reverse; align-items: flex-start; gap: 8px; padding: 20px 16px; }
+  .site-foot-links { gap: 0 16px; }
+  .site-foot-links a { display: inline-flex; align-items: center; min-height: 44px; }
+}
 
 .wrap { max-width: 720px; margin: 0 auto; }
 .wrap-wide { max-width: 940px; margin: 0 auto; }

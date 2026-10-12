@@ -75,6 +75,7 @@ function Party({ address, names }) {
 }
 
 function Target({ target, names }) {
+  if (!target.address) return <span className="act-none">—</span>
   if (target.wallet) return <Party address={target.address} names={names} />
   return (
     <Link to={`/account/${target.address}`} className="mono act-prog" title={target.address} onClick={stop}>
@@ -95,7 +96,9 @@ function Row({ item, names, extra, now }) {
   /* Amounts that still need the chain's token events are a short grey bar,
      not a dash: a dash would say "nothing moved" before anybody knows. */
   const pending = item.ok && wantsEvents(item) && !eventsReady(item.signature)
-  const amountText = !item.ok ? (lead ? `${lead.text} (not sent)` : '(not sent)') : null
+  /* A failed transaction moved nothing, so its amount is the same dash as any
+     empty cell; the label keeps the meaning for screen readers. */
+  const notSent = !item.ok
 
   const open = () => {
     if (window.getSelection?.().toString()) return   // somebody was selecting text
@@ -117,8 +120,8 @@ function Row({ item, names, extra, now }) {
       <span role="cell" className="act-from"><Party address={item.who} names={names} /></span>
       <span role="cell" className="act-to"><Target target={target} names={names} /></span>
       <span role="cell" className="act-amount">
-        {amountText
-          ? <span className="dim">{amountText}</span>
+        {notSent
+          ? <span className="act-none" aria-label="Not sent">—</span>
           : pending
             ? <i className="skel-line" aria-label="Still reading the amount" />
             : amounts.length === 0
@@ -142,7 +145,9 @@ function Row({ item, names, extra, now }) {
         </span>
         <span className="act-c2">
           <span className="mono act-c-amt">
-            {amountText ?? (pending ? <i className="skel-line" /> : lead ? lead.text : '—')}
+            {notSent
+              ? <span className="act-none">—</span>
+              : pending ? <i className="skel-line" /> : lead ? lead.text : <span className="act-none">—</span>}
           </span>
           <span className="mono act-c-hash">{item.signature.slice(0, 4)}…</span>
         </span>
@@ -161,7 +166,7 @@ function SkeletonRows({ n = 6 }) {
   ))
 }
 
-const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', name: 'ThruNames' }
+const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', name: 'ThruID' }
 
 export function Feed({ address = null, limit = 30, showFilters = true }) {
   const [group, setGroup] = useState('all')
