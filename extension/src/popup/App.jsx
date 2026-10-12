@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { bg, go, useRoute } from './ui.jsx'
+import { applyTheme } from './nav.js'
 import { Welcome, Create, Import, Ready, Unlock, Forgot } from './Onboard.jsx'
 import { Home, Send, Receive, ActivityScreen, Sites, NftScreen, NftCollection } from './Home.jsx'
 import { Accounts, NewPhraseAccount, ImportAccount } from './Accounts.jsx'
@@ -17,6 +18,7 @@ export default function App() {
   const [state, setState] = useState(null)
   const reload = useCallback(() => bg('state').then(setState), [])
   useEffect(() => { reload() }, [reload])
+  useEffect(() => { applyTheme(state?.settings?.theme ?? 'dark') }, [state?.settings?.theme])
   // Locked by the timer, or changed from another window: follow along.
   useEffect(() => {
     const on = () => reload()
@@ -44,7 +46,7 @@ export default function App() {
   if (route === '/ready') return <Ready />
   if (!state.unlocked) {
     if (route === '/forgot') return <Forgot onGone={gone} />
-    return <Unlock onUnlocked={() => { go('/'); reload() }} />
+    return <Unlock name={state.account?.name} onUnlocked={() => { go('/'); reload() }} />
   }
 
   const nft = route.match(/^\/nft\/(.+)$/)
@@ -54,7 +56,7 @@ export default function App() {
 
   switch (route) {
     case '/send': return <Send settings={state.settings} />
-    case '/receive': return <Receive account={state.account} />
+    case '/receive': return <Receive account={state.account} settings={state.settings} />
     case '/activity': return <ActivityScreen account={state.account} />
     case '/sites': return <Sites />
     case '/accounts': return <Accounts onChanged={reload} />
@@ -64,6 +66,6 @@ export default function App() {
     case '/reveal/phrase': return <Reveal what="phrase" />
     case '/reveal/key': return <Reveal what="key" />
     case '/remove': return <Remove onGone={gone} />
-    default: return <Home account={state.account} onLock={lock} settings={state.settings} />
+    default: return <Home account={state.account} settings={state.settings} />
   }
 }

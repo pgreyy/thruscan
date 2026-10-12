@@ -1,14 +1,15 @@
 // extension/src/popup/Settings.jsx
 //
-// Connected sites, backing up the wallet, auto-lock, network, and removal.
+// Settings (6m): accounts, connected sites, auto-lock, theme, the recovery
+// phrase behind the password, the network, and removal.
 
-import { useState } from 'react'
-import { bg, go, Header, Notice, Copy, PasswordField, useAction, short } from './ui.jsx'
+import { useEffect, useState } from 'react'
+import { bg, go, Header, Notice, Copy, PasswordField, useAction, short, Icon, TabBar } from './ui.jsx'
+import { openSite } from './nav.js'
 import { PROGRAMS } from '../lib/chain.js'
 import { NETWORKS, DEFAULT_NETWORK, networkFor } from '../lib/networks.js'
 
 export function Settings({ state, onLock, reload }) {
-  const [minutes, setMinutes] = useState(String(state.settings.autoLockMinutes))
   const [rpc, setRpc] = useState(state.settings.rpc)
   const [saved, setSaved] = useState(null)
   const active = networkFor(state.settings)
@@ -53,63 +54,67 @@ export function Settings({ state, onLock, reload }) {
     }
   }
 
+  const [sites, setSites] = useState(null)
+  const [accounts, setAccounts] = useState(null)
+  useEffect(() => {
+    bg('sites').then((x) => setSites(Object.keys(x ?? {}).length)).catch(() => {})
+    bg('accounts').then((x) => setAccounts(x?.list?.length ?? null)).catch(() => {})
+  }, [])
+  const theme = state.settings.theme ?? 'dark'
+
   return (
     <div className="screen">
-      <Header title="Settings" back="/" />
+      <Header title="Settings" />
       <div className="body stack">
-        <section className="card">
-          <h2>Connected sites</h2>
-          <button className="btn ghost" onClick={() => go('/sites')}>Manage connected sites</button>
-        </section>
-
-        <section className="card">
-          <h2>Back up</h2>
-          <div className="stack tight">
-            {state.account.kind === 'phrase' && <button className="btn ghost" onClick={() => go('/reveal/phrase')}>Show 12 words</button>}
-            <button className="btn ghost" onClick={() => go('/reveal/key')}>Show private key</button>
-          </div>
-        </section>
-
-        <section className="card">
-          <h2>Security</h2>
-          <label className="field">
-            <span>Lock after this many idle minutes</span>
-            <div className="with-btn">
-              <input value={minutes} inputMode="numeric" onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ''))} />
-              <button className="btn ghost small" disabled={!minutes || Number(minutes) < 1}
-                onClick={() => save({ autoLockMinutes: Math.min(1440, Number(minutes)) })}>Save</button>
-            </div>
+        <div className="set-list">
+          <button className="set-row" onClick={() => go('/accounts')}><span>Accounts</span><span className="fine">{accounts ?? ''}</span></button>
+          <button className="set-row" onClick={() => go('/sites')}><span>Connected sites</span><span className="fine">{sites ?? ''}</span></button>
+          <label className="set-row">
+            <span>Auto-lock</span>
+            <select aria-label="Auto-lock" value={String(state.settings.autoLockMinutes)} onChange={(e) => save({ autoLockMinutes: Number(e.target.value) })}>
+              {[...new Set([5, 15, 30, 60, 240, Number(state.settings.autoLockMinutes)])].sort((x, y) => x - y).map((m) => (
+                <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? '' : 's'}`}</option>
+              ))}
+            </select>
           </label>
-          <button className="btn ghost" onClick={onLock}>Lock now</button>
-        </section>
+          <label className="set-row">
+            <span>Theme</span>
+            <select aria-label="Theme" value={theme} onChange={(e) => save({ theme: e.target.value })}>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="system">System</option>
+            </select>
+          </label>
+          {state.account.kind === 'phrase' && <button className="set-row" onClick={() => go('/reveal/phrase')}><span>Show recovery phrase</span><span className="fine">needs password</span></button>}
+          <button className="set-row" onClick={() => go('/reveal/key')}><span>Show private key</span><span className="fine">needs password</span></button>
+          <button className="set-row" onClick={onLock}><span>Lock now</span></button>
+          <button className="set-row" onClick={() => openSite('/')}><span>Open ThruScan</span><Icon name="external" size={16} /></button>
+        </div>
 
         {/* Network.
          *
-         * This was a text box holding an RPC address and nothing else, which
-         * made switching chains an act of faith: the node changed and the
-         * program addresses did not, so the wallet kept working and every
-         * balance it showed was read from the wrong place. Picking a network by
-         * name moves both together. The box is still here underneath for a node
-         * of your own, and it is labelled as what it is. */}
+         * Picking a network by name moves the node and the program addresses
+         * together. The box underneath is for a node of your own, and it is
+         * labelled as what it is. */}
         <section className="card">
           <h2>Network</h2>
-          <div className="stack tight">
+          <div className="seg" role="group" aria-label="Network">
             {Object.values(NETWORKS).map((n) => (
               <button
                 key={n.id}
-                className={n.id === active.id ? 'btn' : 'btn ghost'}
+                className={n.id === active.id ? 'on' : ''}
                 onClick={() => { setRpc(n.rpc); save({ network: n.id, rpc: n.rpc }) }}
               >
-                {n.label}{n.test ? ' (test)' : ''}
+                {n.label.replace(/\s*\(.*\)$/, '')}
               </button>
             ))}
           </div>
-          <p className="fine" style={{ marginTop: 10 }}>
+          <p className="fine">
             {active.test
               ? 'A test network. Nothing here is worth anything, and nothing here is a rehearsal for a key you would use on mainnet.'
               : 'Thru has not opened mainnet yet, so nothing will load while this is selected. It is here so the wallet is ready the day they do.'}
           </p>
-          <details style={{ marginTop: 10 }}>
+          <details>
             <summary className="fine">Use my own node</summary>
             <label className="field" style={{ marginTop: 8 }}>
               <span>RPC address</span>
@@ -129,23 +134,40 @@ export function Settings({ state, onLock, reload }) {
         <Notice>{problem}</Notice>
         <Notice kind="good">{saved}</Notice>
 
-        <section className="card">
-          <h2>Remove wallet</h2>
-          <p className="fine">Deletes the wallet from this browser. Only your 12 words or private key can bring it back.</p>
-          <button className="btn danger ghost" onClick={() => go('/remove')}>Remove from this browser</button>
-        </section>
+        <div className="set-list">
+          <button className="set-row bad" onClick={() => go('/remove')}><span>Remove wallet from this device</span></button>
+        </div>
 
         {/* The network moved its programs once and every wallet running an
             older build broke in a way that looked like a network fault. The
             token program's address is the cheapest thing to show that says
             which generation this build belongs to. */}
-        <p className="fine center">
-          ThruScan Wallet {chrome.runtime.getManifest().version}
-          <br />
-          <span className="mono" style={{ fontSize: '10px' }}>token program {short(PROGRAMS.TOKEN)}</span>
+        <p className="version" title={`token program ${PROGRAMS.TOKEN}`}>
+          ThruScan Wallet v{chrome.runtime.getManifest().version} · {active.label.replace(/\s*\(.*\)$/, '').toLowerCase()} · token {short(PROGRAMS.TOKEN, 4)}
         </p>
       </div>
+      <TabBar on="/settings" />
     </div>
+  )
+}
+
+/** The phrase, masked until held down, even after the password. */
+function HeldPhrase({ phrase }) {
+  const [held, setHeld] = useState(false)
+  const words = phrase.split(' ')
+  const hide = () => setHeld(false)
+  return (
+    <>
+      <div className="words">{words.map((w, i) => <span key={i}><i>{i + 1}</i>{held ? w : '•••••'}</span>)}</div>
+      <button
+        type="button" className={`hold${held ? ' on' : ''}`}
+        onPointerDown={() => setHeld(true)} onPointerUp={hide} onPointerLeave={hide} onPointerCancel={hide}
+        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setHeld(true) } }}
+        onKeyUp={hide} onBlur={hide}
+      >
+        {held ? 'Release to hide' : 'Hold to reveal'}
+      </button>
+    </>
   )
 }
 
@@ -158,7 +180,7 @@ export function Reveal({ what }) {
 
   return (
     <div className="screen">
-      <Header title={what === 'phrase' ? '12 words' : 'Private key'} back="/settings" />
+      <Header title={what === 'phrase' ? 'Recovery phrase' : 'Private key'} back="/settings" />
       <div className="body stack">
         <p className="notice bad">Anyone who sees this can take everything in the wallet. Never type it into a website or share it with anyone, including ThruScan.</p>
         {!value && (
@@ -168,9 +190,7 @@ export function Reveal({ what }) {
             <button className="btn" disabled={!password || busy} onClick={submit}>Show</button>
           </>
         )}
-        {value && what === 'phrase' && (
-          <div className="words">{value.split(' ').map((w, i) => <span key={i}><i>{i + 1}</i>{w}</span>)}</div>
-        )}
+        {value && what === 'phrase' && <HeldPhrase phrase={value} />}
         {value && what === 'key' && <p className="mono secret">{value}</p>}
         {value && <Copy value={value} className="btn ghost" />}
       </div>

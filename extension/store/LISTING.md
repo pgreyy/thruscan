@@ -23,7 +23,7 @@ Everything in one place
 - THRU balance and every token you hold
 - Send to an address or a .id name, with your balance and Max shown
 - Receive with a QR code
-- Claim test THRU from Thru's faucet
+- Get test THRU from ThruScan's faucet page
 - Full activity, each item linked to its transaction on ThruScan
 
 Connect to Thru apps

@@ -1,13 +1,14 @@
 // extension/src/popup/Home.jsx
 //
-// The wallet itself: balance, tokens, activity, and the Send and Receive
-// screens.
+// The wallet itself (6e-6h): what it holds, Send, Receive, and activity.
 
 import { useCallback, useEffect, useState } from 'react'
 import { QRImage } from './qr.jsx'
 import {
   bg, go, EXPLORER, Header, Notice, Copy, useAction, fmtUnits, toUnits, unitsToText, short, timeAgo,
+  Icon, Mark, TabBar,
 } from './ui.jsx'
+import { openSite } from './nav.js'
 
 // Pixel Pals are sent through the collection's own program (see lib/chain.js).
 /* Pixel Pals, from whichever network the wallet is pointed at. Hardcoded here
@@ -37,23 +38,19 @@ function assetsOf(data) {
   ]
 }
 
-const ICONS = {
-  send: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />,
-  receive: <path d="M12 4v14M5 11l7 7 7-7M5 21h14" />,
-  faucet: <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />,
-  activity: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
-  sites: <><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M8 21h8M12 18v3" /></>,
-  explorer: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
-  settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>,
-  lock: <><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
-  copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
-  key: <><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.8-9.8M16 7l3 3M19 4l2 2" /></>,
+/* WTHRU is THRU wrapped one for one: one native unit is one WTHRU base unit.
+   So the wallet's value in WTHRU is its THRU plus its WTHRU, counted in base
+   units. Other tokens have no price the wallet can read for itself; their
+   value is on ThruScan, and the line under the number says so. */
+function estimate(data, net) {
+  if (!data) return null
+  const wthru = (data.tokens ?? []).find((t) => t.mint === net.WTHRU_MINT || t.ticker === 'WTHRU')
+  return BigInt(data.thru ?? 0) + BigInt(wthru?.amount ?? 0)
 }
-export function Icon({ name, size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
-  )
+
+function initials(name, address) {
+  const n = String(name ?? '').replace(/[^A-Za-z0-9]/g, '')
+  return (n.slice(0, 2) || String(address ?? '').slice(2, 4)).toLowerCase()
 }
 
 /** The site in the active tab, and whether it is connected. */
@@ -74,7 +71,12 @@ function useCurrentSite() {
   return { site, reload: load }
 }
 
-export function Home({ account, onLock, settings }) {
+function Coin({ ticker, mint, net }) {
+  const cls = !mint ? 'coin round thru' : mint === net.WTHRU_MINT || ticker === 'WTHRU' ? 'coin round wthru' : 'coin'
+  return <span className={cls}>{(ticker || '?').slice(0, 2).toUpperCase()}</span>
+}
+
+export function Home({ account, settings }) {
   const net = networkFor(settings)
   const { data, error, reload } = useOverview()
   const { site, reload: reloadSite } = useCurrentSite()
@@ -83,31 +85,23 @@ export function Home({ account, onLock, settings }) {
   const [copied, setCopied] = useState(false)
 
   const activate = () => act.run(async () => { await bg('activate'); setNote('Your account is on chain.'); reload() })
-  const faucet = () => act.run(async () => {
-    const sig = await bg('faucet')
-    setNote('Claiming 10,000 test THRU…')
-    const r = await bg('waitFor', { signature: sig })
-    setNote(r.settled && !r.ok ? null : 'Claimed 10,000 test THRU.')
-    if (r.settled && !r.ok) act.setError(`The faucet refused (error ${r.userError || r.vmError}). It may be empty or rate limited; try again later.`)
-    reload()
-  })
   const copy = () => { navigator.clipboard.writeText(account.address); setCopied(true); setTimeout(() => setCopied(false), 1400) }
 
   const assets = assetsOf(data)
-  const tokens = assets.slice(1)
   const live = data?.exists
   /* False only when the node did not answer at all, which is a different
      problem from an address that is not on chain yet and must not be shown
      as one. */
   const reachable = data ? data.reachable !== false : !error
+  const value = estimate(data, net)
+  const others = assets.filter((a) => a.mint && a.mint !== net.WTHRU_MINT && a.ticker !== 'WTHRU' && BigInt(a.amount ?? 0) > 0n).length
 
+  /* Send is the one amber action. Swap and Faucet open ThruScan in a tab. */
   const tiles = [
-    { icon: 'send', label: 'Send', onClick: () => go('/send'), off: !live },
+    { icon: 'send', label: 'Send', onClick: () => go('/send'), off: !live, main: true },
     { icon: 'receive', label: 'Receive', onClick: () => go('/receive') },
-    /* No faucet on a network that has none, rather than a button that explains
-       itself only once pressed. */
-    { icon: 'faucet', label: act.busy ? 'Claiming…' : 'Faucet', onClick: faucet, off: !live || act.busy || !net.FAUCET_ACCOUNT },
-    { icon: 'explorer', label: 'Explorer', href: `${EXPLORER}/account/${account.address}` },
+    { icon: 'swap', label: 'Swap', onClick: () => openSite('/swap') },
+    { icon: 'faucet', label: 'Faucet', onClick: () => openSite('/faucet') },
   ]
   const [tab, setTab] = useState(() => sessionStorage.getItem('home-tab') || 'tokens')
   const pickTab = (t) => { setTab(t); try { sessionStorage.setItem('home-tab', t) } catch { /* ignore */ } }
@@ -115,39 +109,27 @@ export function Home({ account, onLock, settings }) {
   return (
     <div className="screen">
       <header className="top">
-        <div className="acct-chip">
-          <button className="acct-open" onClick={() => go('/accounts')} title="Switch account">
-            <Icon name="key" size={16} />
-            <b>{account.name ?? 'Account 1'}</b>
-            <span className="mono">{short(account.address, 5)}</span>
-            <span className="chev">▾</span>
-          </button>
-          <button className="chip-copy" onClick={copy} title="Copy address" aria-label="Copy address">{copied ? 'Copied' : <Icon name="copy" size={14} />}</button>
-        </div>
+        <button className="chip-pill" onClick={() => go('/accounts')} title="Switch account">
+          <span className="ava">{initials(account.name, account.address)}</span>
+          <b>{account.name ?? 'Account 1'}</b>
+          <Icon name="expand" size={14} />
+        </button>
+        <span className="net-chip" title={`${net.label}${net.test ? ' (test network)' : ''}`}><i />{net.label.replace(/\s*\(.*\)$/, '')}</span>
         <div className="top-right">
-          <button className="icon-btn" aria-label="Lock" title="Lock" onClick={onLock}><Icon name="lock" size={18} /></button>
-          <button className="icon-btn" aria-label="Settings" title="Settings" onClick={() => go('/settings')}><Icon name="settings" size={18} /></button>
+          <button className="icon-btn" aria-label={copied ? 'Copied' : 'Copy address'} title={copied ? 'Copied' : 'Copy address'} onClick={copy}><Icon name={copied ? 'success' : 'copy'} size={18} /></button>
+          <button className="icon-btn" aria-label="Open ThruScan" title="Open ThruScan" onClick={() => openSite(`/account/${account.address}`)}><Icon name="external" size={18} /></button>
         </div>
       </header>
 
-      <div className="body home">
-        <section className="hero">
-          <div className="hero-top">
-            <span>THRU balance</span>
-            <span className="hero-net"><i />{net.label}</span>
-          </div>
-          <b className="hero-amount">{data && reachable ? fmtUnits(data.thru) : '…'}</b>
-          <div className="hero-chips">
-            {tokens.slice(0, 4).map((t) => <span key={t.key}>{t.ticker}</span>)}
-            {tokens.length > 4 && <span>+{tokens.length - 4}</span>}
-            {data && data.tokens !== null && tokens.length === 0 && <span className="dim">No tokens yet</span>}
-          </div>
+      <div className="body">
+        <section className="value">
+          <span className="value-k">Estimated value</span>
+          <b className="value-v">{data && reachable && value !== null ? fmtUnits(value) : '…'}</b>
+          <span className="value-sub">WTHRU{others > 0 ? ` · THRU and WTHRU only; ${others} other token${others === 1 ? '' : 's'} priced on ThruScan` : ''}</span>
         </section>
 
-        {/* A node that does not answer. The balance used to sit on "…" for ever
-            here, which reads as the wallet being slow rather than the network
-            being unreachable, and on a network that is not live yet that is the
-            normal case rather than a rare one. */}
+        {/* A node that does not answer. Nothing is wrong with the wallet; say
+            so rather than leave the number on "…" for ever. */}
         {(!reachable || (!data && error)) && (
           <section className="card callout">
             <b>Cannot reach {net.label}</b>
@@ -167,47 +149,48 @@ export function Home({ account, onLock, settings }) {
           </section>
         )}
 
-        <nav className="grid">
-          {tiles.map((t) => t.href
-            ? <a key={t.label} className="tile" href={t.href} target="_blank" rel="noreferrer"><Icon name={t.icon} size={22} /><span>{t.label}</span></a>
-            : <button key={t.label} className="tile" onClick={t.onClick} disabled={t.off}><Icon name={t.icon} size={22} /><span>{t.label}</span></button>)}
+        <nav className="tiles">
+          {tiles.map((t) => (
+            <button key={t.label} className={`tile${t.main ? ' main' : ''}`} onClick={t.onClick} disabled={t.off}>
+              <span className="tile-ic"><Icon name={t.icon} size={22} /></span><span>{t.label}</span>
+            </button>
+          ))}
         </nav>
 
         <Notice kind="good">{note}</Notice>
         <Notice>{act.error || error}</Notice>
 
-        <div className="seg tabs">
+        <div className="seg">
           <button className={tab === 'tokens' ? 'on' : ''} onClick={() => pickTab('tokens')}>Tokens</button>
-          <button className={tab === 'nfts' ? 'on' : ''} onClick={() => pickTab('nfts')}>NFTs</button>
-          <button className={tab === 'activity' ? 'on' : ''} onClick={() => pickTab('activity')}>Activity</button>
+          <button className={tab === 'items' ? 'on' : ''} onClick={() => pickTab('items')}>Items</button>
         </div>
 
-        {tab === 'nfts' && <NftGrid address={account.address} />}
-        {tab === 'activity' && <Activity address={account.address} />}
-        {tab === 'tokens' && <div className="list">
+        {tab === 'items' && <NftGrid address={account.address} />}
+        {tab !== 'items' && <div className="list">
           {!data && <p className="fine pad">Reading the chain…</p>}
           {assets.map((a) => (
             <a key={a.key} className="row" target="_blank" rel="noreferrer"
               href={a.mint ? `${EXPLORER}/token/${a.mint}` : `${EXPLORER}/account/${account.address}`}>
-              <span className="coin">{a.ticker.slice(0, 1)}</span>
+              <Coin ticker={a.ticker} mint={a.mint} net={net} />
               <span className="row-main"><b>{a.ticker}</b>{a.mint && <span className="fine mono">{short(a.mint, 4)}</span>}</span>
-              <span className="mono">{fmtUnits(a.amount, a.decimals)}</span>
+              <span className="row-end">{fmtUnits(a.amount, a.decimals)}</span>
             </a>
           ))}
           {data && data.tokens === null && <p className="fine pad">Looking for tokens…</p>}
         </div>}
-
       </div>
-        {site && (
-          <section className="site-bar pinned">
-            <span className="favicon">{site.origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
-            <span className="row-main">
-              <b>{site.origin.replace(/^https?:\/\//, '')}</b>
-              <span className={`fine ${site.connected ? 'on' : ''}`}>{site.connected ? 'Connected' : 'Not connected'}</span>
-            </span>
-            {site.connected && <button className="btn ghost small" onClick={() => bg('revoke', { origin: site.origin }).then(reloadSite)}>Disconnect</button>}
-          </section>
-        )}
+
+      {site && (
+        <section className="site-bar pinned">
+          <span className="favicon">{site.origin.replace(/^https?:\/\//, '').slice(0, 1).toUpperCase()}</span>
+          <span className="row-main">
+            <b>{site.origin.replace(/^https?:\/\//, '')}</b>
+            <span className={`fine ${site.connected ? 'on' : ''}`}>{site.connected ? 'Connected' : 'Not connected'}</span>
+          </span>
+          {site.connected && <button className="btn ghost small" onClick={() => bg('revoke', { origin: site.origin }).then(reloadSite)}>Disconnect</button>}
+        </section>
+      )}
+      <TabBar on="/" />
     </div>
   )
 }
@@ -361,8 +344,9 @@ export function NftScreen({ account: nftAccount, me, settings }) {
 export function ActivityScreen({ account }) {
   return (
     <div className="screen">
-      <Header title="Activity" back="/" />
+      <Header title="Activity" />
       <div className="body"><Activity address={account.address} /></div>
+      <TabBar on="/activity" />
     </div>
   )
 }
@@ -373,7 +357,7 @@ export function Sites() {
   useEffect(() => { load() }, [])
   return (
     <div className="screen">
-      <Header title="Connected sites" back="/" />
+      <Header title="Connected sites" back="/settings" />
       <div className="body stack">
         {sites && Object.keys(sites).length === 0 && <p className="fine">No site is connected. A site asks when it wants to connect, and you decide.</p>}
         {sites && Object.entries(sites).map(([origin, s]) => (
@@ -387,6 +371,28 @@ export function Sites() {
     </div>
   )
 }
+
+/* Activity (6h): grouped by day, a tinted icon square per row, amounts green
+   when they arrive and red when they leave. The word stays on every row, so
+   colour is never the only signal. */
+function dayOf(ms) {
+  if (!ms) return 'Earlier'
+  const d = new Date(ms)
+  const today = new Date()
+  const y = new Date(); y.setDate(today.getDate() - 1)
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  if (d.toDateString() === y.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+function toneOf(i) {
+  if (i.ok === false) return 'negative'
+  const l = String(i.label ?? '').toLowerCase()
+  if (/^(bought|received)|faucet/.test(l) || String(i.delta ?? '').startsWith('+')) return 'positive'
+  if (/^(sold|sent)/.test(l) || /^[−-]/.test(String(i.delta ?? ''))) return 'negative'
+  if (/launch/.test(l)) return 'brand'
+  return 'neutral'
+}
+const ICON_OF = { positive: 'receive', negative: 'send', brand: 'success', neutral: 'swap' }
 
 export function Activity({ address }) {
   const [items, setItems] = useState(null)
@@ -419,41 +425,56 @@ export function Activity({ address }) {
     } catch (e) { setError(e.message) } finally { setMore(false) }
   }
 
+  let lastDay = null
   return (
     <div className="list">
       <Notice>{error}</Notice>
       {items === null && !error && <p className="fine pad">Reading the chain…</p>}
       {items?.length === 0 && <p className="fine pad">Nothing yet.</p>}
-      {items?.map((i) => (
-        <a key={i.signature} className="row" href={`${EXPLORER}/tx/${i.signature}`} target="_blank" rel="noreferrer">
-          <span className={`dot ${i.ok === false ? 'bad' : ''}`} />
-          <span className="row-main">
-            <b>{i.label}{i.ok === false ? ' (failed)' : ''}</b>
-            <span className="fine">{timeAgo(i.time)}</span>
-          </span>
-          {i.delta && <span className="mono small">{i.delta}</span>}
-        </a>
-      ))}
+      {items?.map((i) => {
+        const day = dayOf(i.time)
+        const head = day !== lastDay ? <p className="day" key={`d-${day}`}>{day}</p> : null
+        lastDay = day
+        const tone = toneOf(i)
+        const delta = String(i.delta ?? '')
+        return [
+          head,
+          <a key={i.signature} className="row" href={`${EXPLORER}/tx/${i.signature}`} target="_blank" rel="noreferrer">
+            <span className={`ic-sq ${tone}`}><Icon name={i.ok === false ? 'failed' : ICON_OF[tone]} size={18} /></span>
+            <span className="row-main">
+              <b>{i.label}{i.ok === false ? ' failed' : ''}</b>
+              <span className="fine">{timeAgo(i.time)}</span>
+            </span>
+            <span className={`row-end ${delta.startsWith('+') ? 'amt-pos' : /^[−-]/.test(delta) ? 'amt-neg' : 'muted'}`}>{i.ok === false ? '—' : delta || '—'}</span>
+          </a>,
+        ]
+      })}
       {next && <button className="btn ghost small" disabled={more} onClick={loadMore}>{more ? 'Loading…' : 'Older'}</button>}
     </div>
   )
 }
 
-export function Receive({ account }) {
+export function Receive({ account, settings }) {
+  const net = networkFor(settings)
   return (
     <div className="screen">
       <Header title="Receive" back="/" />
       <div className="body stack center">
-        <QRImage text={account.address} size={190} />
+        <div className="qr-card">
+          <QRImage text={account.address} size={200} />
+          <span className="qr-mark"><Mark size={36} /></span>
+        </div>
+        <b>{account.name ?? 'Account'}</b>
         <p className="mono addr">{account.address}</p>
-        <Copy value={account.address} label="Copy address" className="btn" />
-        <p className="fine">Send only Thru assets to this address.</p>
+        <Copy value={account.address} label="Copy address" className="btn full" />
+        <p className="fine">Only send Thru {net.label.replace(/\s*\(.*\)$/, '').toLowerCase()} tokens to this address.</p>
       </div>
     </div>
   )
 }
 
 export function Send({ settings }) {
+  const net = networkFor(settings)
   const { data } = useOverview()
   const assets = assetsOf(data)
   const [assetKey, setAssetKey] = useState('THRU')
@@ -493,12 +514,14 @@ export function Send({ settings }) {
     const failed = result?.settled && !result.ok
     return (
       <div className="screen">
-        <Header title="Sent" back="/" />
+        <Header title={failed ? 'Not sent' : result?.settled ? 'Sent' : 'Sending'} back="/" />
         <div className="body stack center">
-          <span className={`mark big ${failed ? 'bad' : ''}`}>{failed ? '!' : result?.settled ? '✓' : '…'}</span>
-          <p>{failed ? `The chain rejected it (error ${result.userError || result.vmError}).` : result?.settled ? `${amount} ${asset.ticker} sent.` : 'Waiting for the chain…'}</p>
-          <a className="btn ghost" href={`${EXPLORER}/tx/${result.signature}`} target="_blank" rel="noreferrer">View on ThruScan</a>
-          <button className="btn" onClick={() => go('/')}>Done</button>
+          <span className={`ic-sq ${failed ? 'negative' : result?.settled ? 'positive' : ''}`} style={{ width: 56, height: 56, borderRadius: 16 }}>
+            <Icon name={failed ? 'failed' : result?.settled ? 'success' : 'activity'} size={26} />
+          </span>
+          <p>{failed ? `The chain rejected it (error ${result.userError || result.vmError}). Nothing was sent but the fee.` : result?.settled ? `${amount} ${asset.ticker} sent.` : 'Sent to the network. Waiting for it to land…'}</p>
+          <a className="mono" href={`${EXPLORER}/tx/${result.signature}`} target="_blank" rel="noreferrer">{short(result.signature)}</a>
+          <button className="btn full" onClick={() => go('/')}>Close</button>
         </div>
       </div>
     )
@@ -507,18 +530,22 @@ export function Send({ settings }) {
   if (step === 'review') {
     return (
       <div className="screen">
-        <Header title="Review" back={() => setStep('form')} />
+        <Header title="Review send" back={() => setStep('form')} />
         <div className="body stack">
+          <div className="big-amount"><span className="value-v amt-neg">−{amount} <small className="muted">{asset.ticker}</small></span></div>
           <div className="card kv">
-            <div><span>Sending</span><b>{amount} {asset.ticker}</b></div>
             <div><span>To</span><b className="mono">{resolved.name ?? short(resolved.address)}</b></div>
             {resolved.name && <div><span>Address</span><span className="mono fine">{short(resolved.address, 10)}</span></div>}
-            <div><span>Network</span><span>{networkFor(settings).label}</span></div>
+            <div><span>Network</span><span>{net.label}{net.test ? ' (test)' : ''}</span></div>
+            <div><span>Network fee</span><span className="mono">1 THRU at most</span></div>
           </div>
           {asset.mint && <p className="fine">If the receiver has never held {asset.ticker}, this first opens their {asset.ticker} account, which is a second transaction you sign.</p>}
           <Notice>{act.error}</Notice>
-          <button className="btn" disabled={act.busy} onClick={send}>{act.busy ? 'Sending…' : 'Send'}</button>
         </div>
+        <footer className="foot two">
+          <button className="btn ghost" onClick={() => setStep('form')}>Back</button>
+          <button className="btn" disabled={act.busy} onClick={send}>{act.busy ? 'Sending…' : 'Send'}</button>
+        </footer>
       </div>
     )
   }
@@ -528,31 +555,37 @@ export function Send({ settings }) {
       <Header title="Send" back="/" />
       <div className="body stack">
         <label className="field">
-          <span>Asset</span>
-          <select value={assetKey} onChange={(e) => { setAssetKey(e.target.value); setAmount('') }}>
-            {assets.map((a) => <option key={a.key} value={a.key}>{a.ticker}</option>)}
-          </select>
-        </label>
-        <label className="field">
           <span>To</span>
           <input value={to} placeholder="Address (ta…) or name.id" autoComplete="off" spellCheck={false} onChange={(e) => setTo(e.target.value)} />
-          {resolved?.error && <span className="hint bad">{resolved.error}</span>}
-          {resolved?.name && <span className="hint mono">{short(resolved.address, 10)}</span>}
+          {resolved?.error && <span className="hint bad"><Icon name="failed" size={12} stroke={2.2} />{resolved.error}</span>}
+          {resolved?.name && <span className="hint good"><Icon name="success" size={12} stroke={2.2} />resolves to <span className="mono">{short(resolved.address, 5)}</span></span>}
         </label>
-        <label className="field">
-          <span className="field-row">
-            Amount
-            {asset && <span className="fine">Balance {fmtUnits(asset.amount, asset.decimals)} {asset.ticker}</span>}
+
+        <div className="big-amount">
+          <span className="token-pill">
+            {asset && <Coin ticker={asset.ticker} mint={asset.mint} net={net} />}
+            <select aria-label="Token" value={assetKey} onChange={(e) => { setAssetKey(e.target.value); setAmount('') }}>
+              {assets.map((a) => <option key={a.key} value={a.key}>{a.ticker}</option>)}
+            </select>
           </span>
-          <div className="with-btn">
-            <input value={amount} inputMode="decimal" placeholder="0" onChange={(e) => setAmount(e.target.value)} />
-            <button className="btn ghost small" disabled={!asset || asset.amount === '0'} onClick={() => setAmount(unitsToText(asset.amount, asset.decimals))}>Max</button>
-          </div>
+          <input aria-label="Amount" value={amount} inputMode="decimal" placeholder="0" onChange={(e) => setAmount(e.target.value)} />
+          {asset && (
+            <span className="fine">
+              <span className="mono">{fmtUnits(asset.amount, asset.decimals)} {asset.ticker}</span>
+              <button className="link" disabled={asset.amount === '0'} onClick={() => setAmount(unitsToText(asset.amount, asset.decimals))}>Max</button>
+            </span>
+          )}
           {tooMuch && <span className="hint bad">More than you hold.</span>}
           {amount && units === null && <span className="hint bad">{asset?.decimals === 0 ? 'Whole numbers only.' : `Up to ${asset?.decimals} decimal places.`}</span>}
-        </label>
-        <button className="btn" disabled={!ready} onClick={() => setStep('review')}>Review</button>
+        </div>
+
+        <div className="card kv">
+          <div><span>Network fee</span><span className="mono">1 THRU at most</span></div>
+        </div>
       </div>
+      <footer className="foot">
+        <button className="btn full" disabled={!ready} onClick={() => setStep('review')}>Review send</button>
+      </footer>
     </div>
   )
 }
