@@ -23,7 +23,7 @@ Everything in one place
 - THRU balance and every token you hold
 - Send to an address or a .id name, with your balance and Max shown
 - Receive with a QR code
-- Claim test THRU from Thru's alphanet faucet
+- Claim test THRU from Thru's faucet
 - Full activity, each item linked to its transaction on ThruScan
 
 Connect to Thru apps
@@ -36,7 +36,7 @@ Security
 - Your recovery words and key are only shown after entering your password again
 - No analytics, no tracking, no ThruScan server
 
-Thru alphanet is a test network. Its tokens have no value.
+Thru betanet is a test network. Its tokens have no value.
 
 **Category:** Productivity (or Tools)
 **Language:** English
@@ -53,7 +53,7 @@ A self-custody cryptocurrency wallet for the Thru network: holds the user's keys
 **Permission justifications:**
 - `storage`: keeps the password-encrypted wallet, settings and the list of connected sites on the device.
 - `alarms`: locks the wallet automatically after the idle time the user sets.
-- Host permission `https://rpc.alphanet.thru.org/*`: reads balances and sends the user's approved transactions to the Thru network node.
+- Host permissions `https://rpc.betanet.thru.org/*` (the default) and `https://rpc.alphanet.thru.org/*` (an older test network, selectable in Settings): read balances and send the user's approved transactions to the Thru network node.
 - Content scripts on all https sites (and localhost): adds `window.thru` so any Thru app can ask to connect, the same way other wallets work. It does nothing on a page until that page asks, and nothing is signed or shared without the user approving it in the wallet window.
 
 **Remote code:** No, I am not using remote code. All code is in the package.
