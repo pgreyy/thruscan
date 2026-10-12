@@ -18,6 +18,7 @@
 // number shown here is the number that lands, by either route.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
@@ -30,7 +31,7 @@ import {
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
-import { useWallet, sendBuilt, TopUpCard, AddressChip, AddToken } from './Wallet.jsx'
+import { useWallet, sendBuilt, TopUpCard, AddToken } from './Wallet.jsx'
 import { customMints, customMeta, onCustomMintsChange } from '../lib/customTokens.js'
 import { displayDecimals } from '../lib/wthru.js'
 import {
@@ -38,12 +39,16 @@ import {
   burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances,
 } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
-import { TokenIcon, TokenLinks } from '../components/TokenMeta.jsx'
+import { TokenIcon } from '../components/TokenMeta.jsx'
 import { cleanMeta, saveTokenMeta, allTokenMeta } from '../lib/tokenmeta.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 import { signUserMessage } from '../lib/wallet.js'
 import { Tabs } from '../components/Tabs.jsx'
-import { TradeChart, sig4 } from '../components/TradeChart.jsx'
+import { TradeChart, useTrades } from '../components/TradeChart.jsx'
+import { CopyId } from '../components/CopyId.jsx'
+import { loadNames } from '../lib/feed.js'
+import { relTime, fullUtc } from '../lib/when.js'
+import { network } from '../lib/networks.js'
 import { useConfirm } from '../components/Confirm.jsx'
 import {
   THRUSWAP_PROGRAM as SWAP_PROGRAM,
@@ -114,8 +119,6 @@ function short(addr) {
   return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : ''
 }
 
-const fmtRaw = (units, decimals) => fmt(units, decimals ?? DECIMALS)
-
 /**
  * What a revert probably meant.
  *
@@ -160,112 +163,6 @@ function CopyBlock({ text, label = 'Copy command' }) {
         <pre className="mono" style={{ margin: 0, padding: 12, fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text}</pre>
       </div>
       <button className="btn" style={{ marginTop: 8 }} onClick={copy}>{done ? 'Copied' : label}</button>
-    </div>
-  )
-}
-
-/**
- * A quote becomes a button when there is a wallet, and stays a command when
- * there is not.
- *
- * Both paths send exactly the same bytes. The builders in swap.js and pad.js
- * sort the accounts and derive every index from the sorted order, so what the
- * button signs and what the command would have run are the same transaction,
- * and the number shown above it is the number that lands either way.
- *
- * `needs` maps a name the caller's builder expects to the mint whose token
- * account should fill it. Those accounts are derived rather than asked for, and
- * opened on the spot if they do not exist yet, because "you need a TCAT account
- * before you can be paid in TCAT" is a true but useless thing to tell someone
- * mid-trade.
- */
-function Execute({ program, needs, buildWith, cli, label, spend, onDone }) {
-  const wallet = useWallet()
-  const gate = useUnlockGate()
-  const [step, setStep] = useState(null)
-  const [error, setError] = useState(null)
-  const [done, setDone] = useState(null)
-
-  /* Refuse before sending rather than after. A trade paid for with a token the
-     wallet does not hold comes back as a bare revert with no code, so the only
-     place this can be explained is here. */
-  const shortfall = (() => {
-    if (!spend || !wallet.unlocked) return null
-    const held = wallet.balances?.[spend.mint]?.amount ?? 0n
-    if (spend.amount <= held) return null
-    // The caller knows the ticker because it read the mint to draw the card.
-    // The wallet store only knows mints it has fetched, which is why this said
-    // "you have no tacdgT..._SNg" for a token the page was calling WTHRU.
-    const ticker = spend.ticker || wallet.tickers?.[spend.mint] || short(spend.mint)
-    return held === 0n
-      ? `You have no ${ticker}. Get some first, then come back.`
-      : `You only have ${fmtRaw(held, wallet.decimals?.[spend.mint])} ${ticker}.`
-  })()
-
-  const go = async () => {
-    setError(null); setDone(null)
-    try { await gate.ensure() } catch (e) {
-      if (!isDismissal(e)) setError(String(e?.message ?? e))
-      return
-    }
-    try {
-      const resolved = {}
-      for (const [key, mint] of Object.entries(needs)) {
-        const account = await deriveTokenAccount(mint, wallet.address)
-        const known = wallet.balances[mint]
-        if (!known?.exists) {
-          setStep('opening')
-          const made = await openTokenAccount(mint)
-          // Opening lands a slot or two later, and trading into an account that
-          // is not there yet fails for a reason nobody could guess from the UI.
-          if (!made.already) await new Promise((r) => setTimeout(r, 2800))
-          resolved[key] = made.account ?? account
-        } else {
-          resolved[key] = known.account ?? account
-        }
-      }
-
-      setStep('signing')
-      const built = buildWith(resolved)
-      const result = await sendBuilt(program, built)
-
-      if (result.settled && !result.succeeded) throw new Error(explainRevert(result))
-      setDone(result.signature)
-      await wallet.refresh(Object.values(needs))
-      // The page that owns the numbers re-reads them. A trade that visibly
-      // changes nothing looks like a trade that did not happen.
-      onDone?.()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setStep(null)
-    }
-  }
-
-  if (!hasWallet()) {
-    return (
-      <>
-        <p className="fine" style={{ marginTop: 16, lineHeight: 1.65 }}><Link to="/wallet">Open a wallet</Link>, or run it from a terminal:</p>
-        <CopyBlock text={cli} />
-      </>
-    )
-  }
-
-  return (
-    <div style={{ marginTop: 16 }}>
-      {gate.modal}
-      {shortfall && <p className="notice bad" style={{ marginBottom: 12 }}>{shortfall}</p>}
-      <button className="btn" onClick={go} disabled={step !== null || !!shortfall} style={{ width: '100%' }}>
-        {step === 'opening' ? 'Opening your token account…'
-          : step === 'signing' ? 'Signing…'
-          : label}
-      </button>
-      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
-      {done && (
-        <p className="notice" style={{ marginTop: 12 }}>
-          Done. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
-        </p>
-      )}
     </div>
   )
 }
@@ -1689,7 +1586,6 @@ export function SwapPage() {
   const decimalsOf = useCallback((m) => decimals?.[m] ?? DECIMALS, [decimals])
   const [tab, pick] = useTab(['swap', 'liquidity', 'pools'])
   const [info, setInfo] = useState(null)
-  useEffect(() => { setInfo(null) }, [tab])
 
   if (!SWAP_PROGRAM || !SWAP_REGISTRY) {
     return (
@@ -1712,7 +1608,7 @@ export function SwapPage() {
           <h1 className="swap-h1">Swap</h1>
           <div className="tabs swap-tabs" role="tablist">
             {[['swap', 'Swap'], ['liquidity', 'Liquidity'], ['pools', 'Pools']].map(([k, label]) => (
-              <button key={k} role="tab" className="tab-btn" aria-selected={tab === k} onClick={() => pick(k)}>{label}</button>
+              <button key={k} role="tab" className="tab-btn" aria-selected={tab === k} onClick={() => { setInfo(null); pick(k) }}>{label}</button>
             ))}
           </div>
         </div>
@@ -1928,88 +1824,159 @@ function RegistryDown({ what, error, note, onRetry }) {
   )
 }
 
-/**
- * The bonding curve, drawn.
+/* ---------- the charts (3j) ----------
  *
- * Not a price history. Reconstructing one would mean replaying every trade this
- * launch has ever taken, and it would tell you less than this does, because a
- * constant product curve's whole future is already determined: price is
- * vq/vt, and every token sold moves both terms in a way the maths fixes in
- * advance. So the line is price against supply sold, and the dot is where this
- * launch is on it.
- *
- * What that buys you: the steepness ahead of the dot is exactly what your buy
- * will cost you in slippage, and it is visible rather than discovered.
- */
-function CurveChart({ vq, vt, tokensSold, symbol, quote }) {
-  const W = 560, H = 180, PAD = 4
+ * One panel, two views. Price is what each trade actually paid, read from the
+ * quote vault's history, over the last hour, the last day, or everything read.
+ * Curve is the bonding curve itself: price against supply sold, on a log
+ * scale, with a dot where the launch is now and a dashed line where it
+ * graduates. Ink line, an 18% amber area under it, hairline gridlines, a mono
+ * axis. */
 
-  const { path, area, dot, priceNow, priceAtGrad } = useMemo(() => {
-    const vq0 = Number(vq), vt0 = Number(vt)
-    if (!(vq0 > 0) || !(vt0 > 0)) return {}
+const CW = 800, CH = 260
 
-    // k is fixed, so price at any point is k / t^2 where t is the token
-    // reserve. Walk t down from here and the curve draws itself.
-    const k = vq0 * vt0
-    const sold = Number(tokensSold)
-    const total = vt0 + sold                     // the supply this curve started with
-    const pts = []
-    const N = 64
-    for (let i = 0; i <= N; i++) {
-      const soldAt = (total * 0.98) * (i / N)    // never quite to zero reserve
-      const t = total - soldAt
-      pts.push([soldAt / total, k / (t * t)])
-    }
+function axisPrice(v) {
+  if (!Number.isFinite(v) || v <= 0) return '0'
+  return v.toLocaleString('en-US', { maximumSignificantDigits: 3 })
+}
 
-    const maxP = pts[pts.length - 1][1]
-    const x = (u) => PAD + u * (W - PAD * 2)
-    const y = (pr) => {
-      // log scale: a constant product curve spans orders of magnitude and a
-      // linear axis renders it as a flat line then a wall.
-      const lo = Math.log(pts[0][1]), hi = Math.log(maxP)
-      const f = hi > lo ? (Math.log(pr) - lo) / (hi - lo) : 0
-      return H - PAD - f * (H - PAD * 2)
-    }
+/** A price with four significant figures, as the design writes them: 0.00042180. */
+function fullPrice(v) {
+  if (!Number.isFinite(v) || v <= 0) return '0'
+  if (v >= 1000) return v.toLocaleString('en-US', { maximumFractionDigits: 0 })
+  return v.toLocaleString('en-US', { maximumSignificantDigits: 4, minimumSignificantDigits: 4 })
+}
 
-    const path = pts.map(([u, pr], i) => `${i ? 'L' : 'M'}${x(u).toFixed(1)},${y(pr).toFixed(1)}`).join(' ')
-    const area = `${path} L${x(1).toFixed(1)},${H} L${x(0).toFixed(1)},${H} Z`
+function axisTime(ms, spanMs) {
+  const d = new Date(ms)
+  const p = (n) => String(n).padStart(2, '0')
+  if (spanMs > 2 * 86400000) return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]} ${d.getDate()}`
+  return `${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
-    const u = total > 0 ? sold / total : 0
-    const pNow = k / (vt0 * vt0)
-    return {
-      path, area,
-      dot: [x(u), y(pNow)],
-      priceNow: pNow,
-      priceAtGrad: maxP,
-    }
-  }, [vq, vt, tokensSold])
-
-  if (!path) return null
-
+function PriceLines({ points, nowPrice, nowMs, range, symbol, quote }) {
+  const cutoff = range === '1h' ? nowMs - 3600000 : range === '24h' ? nowMs - 86400000 : -Infinity
+  const shown = points.filter((p) => p.time !== null && p.time >= cutoff)
+  if (!shown.length) {
+    return <p className="lc-empty">{points.length ? `No trades in the last ${range === '1h' ? 'hour' : '24 h'}.` : 'No trades yet. The first buy starts the line.'}</p>
+  }
+  const series = [...shown.map((p) => ({ t: p.time, v: p.price })), ...(Number.isFinite(nowPrice) ? [{ t: nowMs, v: nowPrice }] : [])]
+  const t0 = range === 'All' ? series[0].t : cutoff
+  const t1 = nowMs
+  const vals = series.map((s) => s.v)
+  let lo = Math.min(...vals), hi = Math.max(...vals)
+  if (hi === lo) { lo = lo * 0.9; hi = hi * 1.1 || 1 }
+  const pad = (hi - lo) * 0.12
+  lo = Math.max(0, lo - pad); hi += pad
+  const x = (t) => (t1 === t0 ? CW / 2 : ((t - t0) / (t1 - t0)) * CW)
+  const y = (v) => CH - ((v - lo) / (hi - lo)) * CH
+  const line = series.map((s, i) => `${i ? 'L' : 'M'}${x(s.t).toFixed(1)} ${y(s.v).toFixed(1)}`).join(' ')
+  const area = `${line} L${x(series[series.length - 1].t).toFixed(1)} ${CH} L${x(series[0].t).toFixed(1)} ${CH}Z`
+  const ticks = [0, 1, 2, 3].map((i) => hi - ((hi - lo) * (i + 0.5)) / 4)
+  const span = t1 - t0
+  const times = [0, 1, 2, 3, 4, 5].map((i) => t0 + (span * i) / 5)
   return (
-    <div className="curve-box">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
-           aria-label={`Price of ${symbol} against supply sold`}>
-        <defs>
-          <linearGradient id="curvefill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ink, #16181d)" stopOpacity="0.18" />
-            <stop offset="100%" stopColor="var(--ink, #16181d)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={area} fill="url(#curvefill)" />
-        <path d={path} fill="none" stroke="var(--ink, #16181d)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        <circle cx={dot[0]} cy={dot[1]} r="4.5" fill="var(--ink, #16181d)" />
-        <circle cx={dot[0]} cy={dot[1]} r="9" fill="var(--ink, #16181d)" opacity="0.18" />
-      </svg>
-      <div className="curve-legend">
-        <span>none sold</span>
-        <span>now: {priceNow.toExponential(2)} {quote} per {symbol}</span>
-        <span>whole supply</span>
+    <ChartFrame ticks={ticks.map(axisPrice)} xLabels={times.map((t) => axisTime(t, span))}
+      label={`Price of ${symbol} in ${quote} over ${range === 'All' ? 'every trade read' : `the last ${range}`}`}>
+      <path d={area} className="lc-area" />
+      <path d={line} className="lc-line" vectorEffect="non-scaling-stroke" />
+    </ChartFrame>
+  )
+}
+
+function ChartFrame({ ticks, xLabels, label, children }) {
+  return (
+    <div className="lc-frame">
+      <div className="lc-plot">
+        <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none" role="img" aria-label={label}>
+          <g className="lc-grid">
+            {[1, 3, 5, 7].map((i) => <path key={i} d={`M0 ${(CH * i) / 8}H${CW}`} vectorEffect="non-scaling-stroke" />)}
+          </g>
+          {children}
+        </svg>
+        <div className="lc-y mono" aria-hidden="true">{ticks.map((t, i) => <span key={i}>{t}</span>)}</div>
       </div>
+      <div className="lc-x mono" aria-hidden="true">{xLabels.map((t, i) => <span key={i}>{t}</span>)}</div>
     </div>
   )
 }
 
+/** Price against supply sold, from the curve's own constant. */
+function CurveChart({ vq, vt, tokensSold, raised, threshold, symbol, quote, quoteDecimals }) {
+  const shape = useMemo(() => {
+    const vq0 = Number(vq), vt0 = Number(vt)
+    if (!(vq0 > 0) || !(vt0 > 0)) return null
+    const k = vq0 * vt0
+    const sold = Number(tokensSold)
+    const total = vt0 + sold
+    const scale = 10 ** DECIMALS / 10 ** quoteDecimals
+    const priceAt = (t) => (k / (t * t)) * scale
+    const N = 64
+    const pts = []
+    for (let i = 0; i <= N; i++) {
+      const s = total * 0.98 * (i / N)
+      pts.push([s / total, priceAt(total - s)])
+    }
+    // Where the curve graduates: the quote reserve it reaches when the raised
+    // amount meets the threshold, and the token reserve that leaves.
+    let grad = null
+    const r = Number(raised), th = Number(threshold)
+    if (th > 0) {
+      const vqGrad = vq0 - r + th
+      if (vqGrad > 0) { const tGrad = k / vqGrad; grad = Math.max(0, Math.min(1, (total - tGrad) / total)) }
+    }
+    return { pts, u: total > 0 ? sold / total : 0, now: priceAt(vt0), grad }
+  }, [vq, vt, tokensSold, raised, threshold, quoteDecimals])
+
+  if (!shape) return <p className="lc-empty">The curve can&rsquo;t be drawn until the launch has reserves.</p>
+  const { pts, u, now, grad } = shape
+  const lo = Math.log(pts[0][1]), hi = Math.log(pts[pts.length - 1][1])
+  const x = (f) => f * CW
+  const y = (p) => CH - 6 - ((Math.log(p) - lo) / (hi - lo || 1)) * (CH - 12)
+  const line = pts.map(([f, p], i) => `${i ? 'L' : 'M'}${x(f).toFixed(1)} ${y(p).toFixed(1)}`).join(' ')
+  const area = `${line} L${CW} ${CH} L0 ${CH}Z`
+  const ticks = [0, 1, 2, 3].map((i) => Math.exp(hi - ((hi - lo) * (i + 0.5)) / 4))
+  return (
+    <ChartFrame ticks={ticks.map(axisPrice)} xLabels={['none sold', '', 'half the supply', '', '', 'whole supply']}
+      label={`Price of ${symbol} in ${quote} against supply sold; now ${axisPrice(now)}`}>
+      <path d={area} className="lc-area" />
+      <path d={line} className="lc-line" vectorEffect="non-scaling-stroke" />
+      {grad !== null && <path d={`M${x(grad)} 0V${CH}`} className="lc-grad" vectorEffect="non-scaling-stroke" />}
+      <path d={`M${x(u)} ${y(now)}h0.01`} className="lc-dot" vectorEffect="non-scaling-stroke" />
+    </ChartFrame>
+  )
+}
+
+function LaunchChart({ points, nowPrice, curve, symbol, quote }) {
+  const [view, setView] = useState('price')
+  const [range, setRange] = useState('24h')
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <section className="lc-panel">
+      <div className="lc-head">
+        <div className="seg lc-seg" role="group" aria-label="Chart">
+          <button aria-pressed={view === 'price'} onClick={() => setView('price')}>Price</button>
+          <button aria-pressed={view === 'curve'} onClick={() => setView('curve')}>Curve</button>
+        </div>
+        {view === 'price' && (
+          <div className="lc-ranges" role="group" aria-label="Range">
+            {['1h', '24h', 'All'].map((r) => (
+              <button key={r} className="lc-range mono" aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      {view === 'price'
+        ? (points === null ? <p className="lc-empty">Reading trades from the chain…</p>
+          : <PriceLines points={points} nowPrice={nowPrice} nowMs={nowMs} range={range} symbol={symbol} quote={quote} />)
+        : <CurveChart {...curve} symbol={symbol} quote={quote} />}
+    </section>
+  )
+}
 
 /** One launch in the list. A row that goes somewhere, not a page of its own
  *  stacked ten deep under nine others. */
@@ -2078,33 +2045,42 @@ function LaunchCard({ launch, balances, tickers, decimals, threshold, meta }) {
 }
 
 /**
- * One launch, on its own page.
+ * One launch, on its own page (Core Screens 3j/3k).
  *
- * The black banner is gone. It was a solid slab of ink with three numbers on
- * it, which made the least important part of the card the loudest, and it
- * repeated on every launch in the list so the page read as a stack of dark
- * bars. The numbers are the same; they are now in a strip that does not shout.
+ * The header names the token and who made it, with the curve price on the
+ * right. Below, the chart, the curve's progress with the graduation caveat,
+ * and the trades; the trade panel sits beside them on a desktop, above them
+ * from 820 to 1023, and in a bottom sheet behind a sticky Buy / Sell bar on a
+ * phone. Names, images and links are the creator's and say so.
  */
 export function LaunchDetail({ id }) {
   const launchId = Number(id)
   const [slot, setSlot] = useState(null)
+  const [blockMs, setBlockMs] = useState(null)
   const [allMeta, setAllMeta] = useState({})
+  const [names, setNames] = useState(() => new Map())
+  const [sheet, setSheet] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
   const { loading, error, data, balances, tickers, decimals, reload } = useChainData(
     PAD_REGISTRY,
     decodePadRegistry,
     (d) => d.launches.flatMap((l) => [l.quoteVault, l.tokenVault]),
     /* The registry's own default quote mint is in here too. Without it, a pad
-       with no launches yet has nothing to read a ticker from, and the heading
-       falls back to whatever was hardcoded. */
+       with no launches yet has nothing to read a ticker from. */
     (d) => [d.quoteMint, ...d.launches.map((l) => l.quoteMint)],
   )
 
   useEffect(() => {
     let alive = true
     const tick = () => {
-      fetch('/api/rpc?action=height')
+      fetch('/api/rpc?action=overview')
         .then((r) => r.json())
-        .then((j) => { if (alive && j?.ok) setSlot(BigInt(j.height ?? j.blockHeight ?? 0)) })
+        .then((j) => {
+          if (!alive || !j?.ok) return
+          if (j.finalized) setSlot(BigInt(j.finalized))
+          if (j.blockTimeMs) setBlockMs(j.blockTimeMs)
+          setNow(Date.now())
+        })
         .catch(() => {})
     }
     tick()
@@ -2115,124 +2091,209 @@ export function LaunchDetail({ id }) {
   // Other people's trades move the curve too, so re-read it every few seconds
   // while the page is on screen.
   useEffect(() => {
-    const id3 = setInterval(() => { if (!document.hidden) reload() }, 5000)
+    const id3 = setInterval(() => { if (!document.hidden) reload(true) }, 5000)
     return () => clearInterval(id3)
   }, [reload])
 
   useEffect(() => {
     let alive = true
     allTokenMeta().then((m) => { if (alive) setAllMeta(m) }).catch(() => {})
+    loadNames().then((m) => { if (alive) setNames(m) }).catch(() => {})
     return () => { alive = false }
   }, [])
 
   const launch = data?.launches?.find((l) => l.id === launchId) ?? null
-  const meta = launch ? allMeta[launch.mint] : null
+  const quoteMint = launch?.quoteMint
+  const quoteDecimals = decimals?.[quoteMint] ?? DECIMALS
+  const { trades } = useTrades(launch?.quoteVault, launch?.tokenVault)
+
+  const points = useMemo(() => (trades === null ? null : trades
+    .map((t) => ({
+      ...t,
+      price: (Number(t.quote) / 10 ** quoteDecimals) / (Number(t.tokens) / 10 ** DECIMALS),
+    }))
+    .filter((t) => Number.isFinite(t.price) && t.price > 0)), [trades, quoteDecimals])
 
   if (loading && !data) {
-    return <div className="wrap wrap-top"><p className="fine">Reading the chain.</p></div>
+    return (
+      <div className="page ld">
+        <div className="ld-loading">
+          <span className="skel" style={{ width: 64, height: 64, borderRadius: 10 }} />
+          <span className="skel" style={{ width: 220, height: 28 }} />
+        </div>
+        <p className="why">Reading from Thru {network.label.toLowerCase()}…</p>
+      </div>
+    )
   }
   if (error || !launch) {
     return (
-      <div className="wrap wrap-top">
-        <section className="card">
-          <h2 className="h2">Not found</h2>
-          <p className="fine" style={{ marginTop: 10 }}>No launch with that id.</p>
-          <p style={{ marginTop: 12 }}><Link to="/">Back to ThruPad</Link></p>
+      <div className="page ld">
+        <section className="empty">
+          <span className="empty-title">{error ? 'The launch registry can’t be read right now' : 'No launch with that id'}</span>
+          <p>{error ? 'This page reads the launch from the chain, so it can’t show it until the registry answers.' : 'It may have been on a network that has since been reset.'}</p>
+          <div className="mk-actions-row">
+            {error && <button className="btn secondary" onClick={() => reload()}>Retry</button>}
+            <Link className="btn tertiary" to="/">Back to ThruPad</Link>
+          </div>
         </section>
       </div>
     )
   }
 
-  const quoteMint = launch.quoteMint
-  const quote = tickers?.[quoteMint] || short(quoteMint)
+  const meta = allMeta[launch.mint]
+  const quote = tickers?.[quoteMint] || (quoteMint === WTHRU_MINT ? 'WTHRU' : quoteMint === TUSD_MINT ? 'tUSD' : short(quoteMint))
   const quoteHeld = balances[launch.quoteVault] ?? 0n
   const raised = quoteHeld > launch.creatorFees ? quoteHeld - launch.creatorFees : 0n
   const threshold = data.gradThreshold
-  const progress = graduationProgress(raised, threshold)
-  const price = Number(launch.vq) / Number(launch.vt || 1n)
+  const progress = launch.graduated ? 1 : graduationProgress(raised, threshold)
+  const nowPrice = Number(launch.vt) > 0 ? (Number(launch.vq) / 10 ** quoteDecimals) / (Number(launch.vt) / 10 ** DECIMALS) : null
   const supply = launch.vt + launch.tokensSold
+  const ageMs = slot !== null && blockMs ? Math.max(0, Number(slot - BigInt(launch.startSlot))) * blockMs : null
+
+  // The change: against the last trade before 24 hours ago when the history
+  // read reaches that far, otherwise against the oldest trade read.
+  const change = (() => {
+    if (!points?.length || !Number.isFinite(nowPrice)) return null
+    const dayAgo = now - 86400000
+    const before = [...points].reverse().find((p) => p.time !== null && p.time <= dayAgo)
+    const base = before ?? points[0]
+    if (!base?.price) return null
+    return { pct: ((nowPrice - base.price) / base.price) * 100, label: before ? '24 h' : 'since the first trade read' }
+  })()
+
+  const tradePanel = (mode, initialSide) => (
+    <TradePanel
+      launch={launch} quote={quote} quoteMint={quoteMint} quoteDecimals={quoteDecimals}
+      slot={slot} onTraded={() => reload(true)} mode={mode} initialSide={initialSide}
+      onClose={() => setSheet(null)}
+    />
+  )
 
   return (
-    <div className="wrap wrap-top">
-      <p style={{ marginBottom: 12 }}><Link className="linkish" to="/">← All launches</Link></p>
-
-      <section className="card">
-        <div className="card-head">
-          <div className="launch-id">
-            <TokenIcon meta={meta} symbol={launch.symbol} mint={launch.mint} size={44} />
-            <div style={{ minWidth: 0 }}>
-              <h1 className="h1" style={{ fontSize: 26, margin: 0 }}>{launch.name}</h1>
-              <p className="sub">${launch.symbol} · paired {quote} · {launch.feeBps / 100}% creator fee · <Link className="plain-link" to={`/token/${launch.mint}`}>token page</Link></p>
-              <TokenLinks meta={meta} />
+    <div className="page ld">
+      <header className="ld-head">
+        <div className="ld-id">
+          <TokenIcon meta={meta} symbol={launch.symbol} mint={launch.mint} size={64} className="ld-avatar" />
+          <div className="ld-id-text">
+            <div className="ld-name">
+              <h1>{launch.name || launch.symbol}</h1>
+              <span className="mono">{launch.symbol}</span>
+              {launch.graduated && <span className="status-pill ok"><Icon name="success" size={12} stroke={2.4} />Graduated</span>}
+            </div>
+            <div className="ld-meta">
+              <span>Creator <CopyId value={launch.creator} label={names.get(launch.creator)} /></span>
+              <span className="ld-meta-more">Mint <CopyId value={launch.mint} to={`/token/${launch.mint}`} /></span>
+              {meta?.website && <a className="ld-meta-more" href={meta.website} target="_blank" rel="noreferrer">{meta.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a>}
+              {meta?.x && <a className="ld-meta-more" href={`https://x.com/${String(meta.x).replace(/^@/, '')}`} target="_blank" rel="noreferrer">X</a>}
+              {meta?.telegram && <a className="ld-meta-more" href={`https://t.me/${String(meta.telegram).replace(/^@/, '')}`} target="_blank" rel="noreferrer">Telegram</a>}
+              {ageMs !== null && <span className="ld-meta-more" title="From the slot the launch started in and the chain's block time">Launched {ageMs < 86400000 ? `${relTime(now - ageMs, now)} ago` : `on ${relTime(now - ageMs, now)}`}</span>}
             </div>
           </div>
-          <span className="hero-tag">{launch.graduated ? 'Graduated' : 'Live'}</span>
         </div>
+        <div className="ld-price">
+          <span className="ld-price-k">Curve price</span>
+          <span className="ld-price-v mono">{nowPrice !== null ? fullPrice(nowPrice) : '–'} <small>{quote}</small></span>
+          {change && (
+            <span className={`ld-chg mono ${change.pct > 0.05 ? 'up' : change.pct < -0.05 ? 'down' : ''}`}>
+              {change.pct > 0.05 ? '▲ +' : change.pct < -0.05 ? '▼ −' : ''}{Math.abs(change.pct).toFixed(1)}% · {change.label}
+            </span>
+          )}
+        </div>
+      </header>
 
-        <div className="rows" style={{ marginTop: 14 }}>
-          <div className="row"><span>Mint</span><AddressChip address={launch.mint} /></div>
-          <div className="row"><span>Creator</span><AddressChip address={launch.creator} /></div>
-          <div className="row"><span>Supply</span><b className="mono">{fmt(supply)} {launch.symbol}</b></div>
-          <div className="row"><span>Unclaimed creator fees</span><span className="mono">{fmt(launch.creatorFees, decimals?.[quoteMint] ?? DECIMALS)} {quote}</span></div>
-        </div>
+      <div className="ld-grid">
+        <div className="ld-trade-wide">{tradePanel('panel')}</div>
 
-      </section>
-
-      <div className="stat-strip" style={{ marginTop: 16 }}>
-        <div className="stat-cell">
-          <span className="k">Price</span>
-          <span className="v mono">{sig4(price)}</span>
-        </div>
-        <div className="stat-cell">
-          <span className="k">Raised</span>
-          <span className="v mono">{fmt(raised, decimals?.[quoteMint] ?? DECIMALS)} {quote}</span>
-        </div>
-        <div className="stat-cell">
-          <span className="k">To graduation</span>
-          <span className="v">{(progress * 100).toFixed(1)}%</span>
-        </div>
-        <div className="stat-cell">
-          <span className="k">Trades</span>
-          <span className="v">{Number(launch.tradeCount)}</span>
-        </div>
-      </div>
-
-      <div className="launch-grid" style={{ marginTop: 16 }}>
-        <TradePanel
-          launch={launch}
-          quote={quote}
-          quoteMint={quoteMint}
-          quoteDecimals={decimals?.[quoteMint] ?? DECIMALS}
-          slot={slot}
-          threshold={threshold}
-          raised={raised}
-          progress={progress}
-          onTraded={reload}
-        />
-
-        <div className="stack">
-          <TradeChart
-            quoteVault={launch.quoteVault}
-            tokenVault={launch.tokenVault}
-            quote={quote}
-            symbol={launch.symbol}
-            quoteDecimals={decimals?.[quoteMint] ?? DECIMALS}
-            tokenDecimals={DECIMALS}
-          />
-          <CurveChart
-            vq={launch.vq}
-            vt={launch.vt}
-            tokensSold={launch.tokensSold}
-            symbol={launch.symbol}
-            quote={quote}
+        <div className="ld-main">
+          <LaunchChart
+            points={points} nowPrice={nowPrice} symbol={launch.symbol} quote={quote}
+            curve={{ vq: launch.vq, vt: launch.vt, tokensSold: launch.tokensSold, raised, threshold, quoteDecimals }}
           />
 
+          <section className="ld-curve">
+            <div className="ld-curve-main">
+              <div className="ld-curve-top">
+                <b><span className="term" title="The program sells the token at a price that rises as more is bought, and lowers as it is sold back. No order book; the curve is the counterparty.">Bonding curve</span> progress</b>
+                <span className="mono">{(progress * 100).toFixed(1)}%</span>
+              </div>
+              <div className="progress thick"><span style={{ width: `${progress * 100}%` }} /></div>
+              <div className="ld-curve-foot mono">
+                <span>{fmt(raised, quoteDecimals, 1)} {quote} raised</span>
+                <span>graduates at {fmt(threshold, quoteDecimals, 1)}</span>
+              </div>
+              <div className="ld-caveat">
+                <Icon name="warning" size={16} />
+                <span>At graduation the program moves liquidity into a Swap pool. This is written into ThruPad but has not yet been seen happen on {network.label.toLowerCase()}.</span>
+              </div>
+            </div>
+            <dl className="ld-stats">
+              <div><dt>Total supply</dt><dd className="mono">{fmt(supply, DECIMALS, 0)}</dd></div>
+              <div><dt>Sold from curve</dt><dd className="mono">{fmt(launch.tokensSold, DECIMALS, 0)}</dd></div>
+              <div><dt>Left on curve</dt><dd className="mono">{fmt(launch.vt, DECIMALS, 0)}</dd></div>
+              <div><dt>Trades</dt><dd className="mono">{Number(launch.tradeCount).toLocaleString('en-US')}</dd></div>
+              <div><dt>Creator fee</dt><dd className="mono">{(launch.feeBps / 100).toFixed(2)}%</dd></div>
+              <div><dt>Unclaimed fees</dt><dd className="mono">{fmt(launch.creatorFees, quoteDecimals)} {quote}</dd></div>
+            </dl>
+          </section>
+
+          <section className="ld-trades">
+            <div className="ld-trades-head">
+              <h2 className="h3">Trades</h2>
+              <Link to={`/token/${launch.mint}`}>All {launch.symbol} activity</Link>
+            </div>
+            {points === null && <p className="why">Reading trades from the chain…</p>}
+            {points?.length === 0 && <p className="why">No trades yet. The first buy starts the curve moving.</p>}
+            {points?.length > 0 && (
+              <div className="ld-table" role="table" aria-label={`${launch.symbol} trades`}>
+                <div className="ld-tr ld-th" role="row">
+                  <span role="columnheader">Side</span>
+                  <span role="columnheader" className="r">{launch.symbol}</span>
+                  <span role="columnheader" className="r">{quote}</span>
+                  <span role="columnheader" className="r">Price</span>
+                  <span role="columnheader" className="ld-trader">Trader</span>
+                  <span role="columnheader" className="r">Time</span>
+                </div>
+                {[...points].reverse().slice(0, 12).map((t) => (
+                  <Link key={t.signature} to={`/tx/${t.signature}`} className="ld-tr" role="row">
+                    <span role="cell" className={`ld-side ${t.side}`}>{t.side === 'buy' ? 'Buy' : 'Sell'}</span>
+                    <span role="cell" className="mono r">{fmt(t.tokens, DECIMALS, 0)}</span>
+                    <span role="cell" className="mono r">{fmt(t.quote, quoteDecimals)}</span>
+                    <span role="cell" className="mono r">{fullPrice(t.price)}</span>
+                    <span role="cell" className="mono ld-trader" title={t.trader}>{names.get(t.trader) ?? short(t.trader)}</span>
+                    <span role="cell" className="mono r dim" title={fullUtc(t.time)}>{t.time ? relTime(t.time, now) : '—'}</span>
+                    <span className="ld-c" aria-hidden="true">
+                      <span><b className={`ld-side ${t.side}`}>{t.side === 'buy' ? 'Buy' : 'Sell'}</b> <span className="mono">{fmt(t.tokens, DECIMALS, 0)} {launch.symbol}</span></span>
+                      <span className="mono dim">{t.time ? relTime(t.time, now) : '—'}</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
+
+        <aside className="ld-side">{tradePanel('panel')}</aside>
       </div>
+
+      {/* Phones: a sticky Buy / Sell bar that opens the same panel in a sheet. */}
+      {!launch.graduated && (
+        <div className="ld-bar">
+          <button className="btn secondary lg" onClick={() => setSheet('sell')}>Sell</button>
+          <button className="btn lg" onClick={() => setSheet('buy')}>Buy</button>
+        </div>
+      )}
+      {sheet && createPortal(
+        <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setSheet(null) }}>
+          <div className="sheet" role="dialog" aria-modal="true" aria-label={`${sheet === 'buy' ? 'Buy' : 'Sell'} ${launch.symbol}`}>
+            <span className="sheet-grab" aria-hidden="true" />
+            {tradePanel('sheet', sheet)}
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
-
 
 /** What App.jsx mounts at /launch/:id. */
 export function LaunchDetailPage() {
@@ -2241,11 +2302,14 @@ export function LaunchDetailPage() {
 }
 
 
-/** Buy and sell, for one launch. */
-function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, threshold, raised, progress, onTraded }) {
-  const [side, setSide] = useState('buy')
+/** Buy and sell, for one launch (the 3j panel, and the 3k sheet). */
+function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, onTraded, mode = 'panel', initialSide = 'buy', onClose }) {
+  const [side, setSide] = useState(initialSide)
   const [amount, setAmount] = useState('')
+  const [error, setError] = useState(null)
   const wallet = useWallet()
+  const gate = useUnlockGate()
+  const flow = useTxFlow()
 
   // What you hold of both sides, read from the chain, so Max has a number.
   useEffect(() => {
@@ -2253,18 +2317,16 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet.address, quoteMint, launch.mint])
 
-  /* Emptied the moment a trade lands. Leaving the number sitting there after a
-     successful buy is how someone buys twice: the button is still live, the
-     figure is still in the box, and nothing on screen distinguishes "about to
-     spend 50" from "just spent 50". */
-  const traded = () => {
-    setAmount(''); onTraded?.()
-    wallet.refresh([quoteMint, launch.mint])
-  }
+  useEffect(() => {
+    if (mode !== 'sheet') return undefined
+    const key = (e) => { if (e.key === 'Escape' && !flow.phase) onClose?.() }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+  }, [mode, onClose, flow.phase])
 
   const tax = slot != null ? snipeBps(launch.startSlot, slot) : 0n
   // Buys spend the quote asset and sells spend the token, and the two need not
-  // share decimals: WTHRU has 8, launch tokens 6.
+  // share decimals.
   const inDecimals = side === 'buy' ? quoteDecimals : DECIMALS
   const outDecimals = side === 'buy' ? DECIMALS : quoteDecimals
   const amountIn = toUnits(amount, inDecimals)
@@ -2284,155 +2346,185 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
 
   const out = side === 'buy' ? q.tokensOut : q.quoteOut
 
-  const built = useMemo(() => {
-    if (amountIn <= 0n || out <= 0n || launch.graduated) return null
-    try {
-      const args = {
-        registry: PAD_REGISTRY, launchId: launch.id,
-        tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
-        userToken: 'YOUR_TOKEN_ACCOUNT', userQuote: 'YOUR_QUOTE_ACCOUNT',
-        amountIn, minOut: 1n,
-      }
-      return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
-    } catch { return null }
-  }, [side, launch, amountIn, out])
+  /* Average price and the price after, from the same arithmetic as the quote. */
+  const per = (quoteUnits, tokenUnits) => (Number(quoteUnits) / 10 ** quoteDecimals) / (Number(tokenUnits) / 10 ** DECIMALS)
+  const avg = amountIn > 0n && out > 0n ? (side === 'buy' ? per(amountIn, out) : per(out, amountIn)) : null
+  const after = (() => {
+    if (!(amountIn > 0n && out > 0n)) return null
+    const vq = BigInt(launch.vq), vt = BigInt(launch.vt)
+    if (side === 'buy') {
+      const net = amountIn - q.creatorFee - q.snipeTax
+      return per(vq + net, vt - out)
+    }
+    const gross = out + q.creatorFee
+    return per(vq - gross, vt + amountIn)
+  })()
 
-  /* Percentages of what you hold, which is how people actually size a trade:
-     "half of my THRU", not "0.0374". Max is the whole balance. */
-  const setPct = (pct) => {
-    if (!holding || holding <= 0n) return
-    const units = pct === 100 ? holding : (holding * BigInt(pct)) / 100n
-    setAmount(fromUnits(units, inDecimals))
+  const traded = () => {
+    setAmount(''); onTraded?.()
+    wallet.refresh([quoteMint, launch.mint])
   }
+
+  const needsOpen = [launch.mint, quoteMint].some((m) => !wallet.balances?.[m]?.exists)
+  const run = async (progress) => {
+    const needs = { userToken: launch.mint, userQuote: quoteMint }
+    const resolved = {}
+    if (needsOpen) progress('accounts')
+    for (const [key, mint] of Object.entries(needs)) {
+      const account = await deriveTokenAccount(mint, wallet.address)
+      const known = wallet.balances[mint]
+      if (!known?.exists) {
+        const made = await openTokenAccount(mint)
+        // Opening lands a slot or two later, and trading into an account that
+        // is not there yet fails for a reason nobody could guess from the UI.
+        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+        resolved[key] = made.account ?? account
+      } else {
+        resolved[key] = known.account ?? account
+      }
+    }
+    progress('sign')
+    const args = {
+      registry: PAD_REGISTRY, launchId: launch.id,
+      tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
+      userToken: resolved.userToken, userQuote: resolved.userQuote,
+      amountIn, minOut: 1n,
+    }
+    const built = side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
+    const result = await sendBuilt(PAD_PROGRAM, built, (sig) => progress('sent', sig))
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+    traded()
+    return { ok: true, signature: result.signature }
+  }
+
+  const review = async () => {
+    setError(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    flow.open()
+  }
+
+  /* Quick amounts: 1, 5 and 10 of the quote asset to buy with, or a share of
+     what you hold to sell. Max is the whole balance either way. */
+  const chips = side === 'buy'
+    ? [['1', '1'], ['5', '5'], ['10', '10']]
+    : [['25%', 25], ['50%', 50], ['75%', 75]]
+  const pick = (v) => {
+    if (side === 'buy') { setAmount(v); return }
+    if (!holding || holding <= 0n) return
+    setAmount(fromUnits((holding * BigInt(v)) / 100n, inDecimals))
+  }
+  const max = () => { if (holding && holding > 0n) setAmount(fromUnits(holding, inDecimals)) }
+  const chipOn = (v) => (side === 'buy' ? amount === v : holding > 0n && amountIn === (holding * BigInt(v)) / 100n)
 
   const payTicker = side === 'buy' ? quote : launch.symbol
   const getTicker = side === 'buy' ? launch.symbol : quote
-  const getMint = side === 'buy' ? launch.mint : quoteMint
-  const getHeld = wallet.balances?.[getMint]
-  const getHolding = getHeld?.exists ? getHeld.amount : (getHeld ? 0n : null)
+  const verb = side === 'buy' ? 'Buy' : 'Sell'
+
+  const cta = (() => {
+    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <Link to="/get-wallet">Get ThruScan Wallet</Link> or create one in this browser.</> }
+    if (!wallet.unlocked) return { kind: 'unlock', label: `Unlock to ${verb.toLowerCase()}`, onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign.' }
+    if (amountIn <= 0n) return { kind: 'off', label: 'Enter an amount' }
+    if (holding !== null && amountIn > holding) {
+      return {
+        kind: 'off', label: `Not enough ${payTicker}`,
+        why: side === 'buy'
+          ? <>You have {fmt(holding, inDecimals)} {payTicker}. <Link to="/swap">Swap for more</Link>.</>
+          : <>You have {fmt(holding, inDecimals)} {payTicker}.</>,
+      }
+    }
+    if (out <= 0n) return { kind: 'off', label: `${verb} ${launch.symbol}`, why: `Can't quote: ${q.reason}.` }
+    return { kind: 'go', label: mode === 'sheet' ? `Review ${side}` : `${verb} ${launch.symbol}`, onClick: review }
+  })()
+
+  const outText = amountIn > 0n && out > 0n ? fmt(out, outDecimals) : null
 
   return (
-    <section className="card trade-card">
-      <div className="curve-head">
-        <span className="fine">Bonding curve</span>
-        <span className="fine">{(progress * 100).toFixed(0)}% to graduation</span>
-      </div>
-      <div className="progress-track">
-        <div className="progress-fill" style={{ width: `${Math.max(2, progress * 100)}%` }} />
-      </div>
-      <p className="fine curve-note">
-        {fmt(raised, quoteDecimals)} of {fmt(threshold, quoteDecimals)} {quote} raised.
-        At the threshold the curve closes and the liquidity moves into a pool.
-      </p>
-
+    <section className={`tp tp-${mode}`}>
+      {gate.modal}
+      {mode === 'sheet' && (
+        <div className="tp-sheet-head">
+          <b>{verb} {launch.symbol}</b>
+          <button className="txd-x" onClick={onClose} aria-label="Close"><Icon name="failed" size={20} /></button>
+        </div>
+      )}
       {launch.graduated ? (
-        <p className="notice">Graduated. Trade it on the swap page.</p>
+        <p className="notice"><Icon name="success" size={18} /><span>Graduated: the curve is closed. <Link to="/swap">Trade it on Swap</Link>.</span></p>
       ) : (
         <>
-          {/* Two boxes and a flip, rather than a Buy tab and a Sell tab.
-              Buying and selling on a curve is one trade read in two
-              directions, and showing both sides at once is what makes the
-              price legible without doing arithmetic. */}
-          <div className="tp-box">
-            <div className="tp-box-head"><span>You pay</span></div>
-            <div className="tp-box-main">
-              <input
-                className="tp-amount mono"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0"
-                inputMode="decimal"
-                aria-label={`Amount of ${payTicker} to pay`}
-              />
-              <span className="tp-asset">{payTicker}</span>
+          <div className="seg tp-seg" role="group" aria-label="Buy or sell">
+            <button aria-pressed={side === 'buy'} onClick={() => { setSide('buy'); setAmount('') }}>Buy</button>
+            <button aria-pressed={side === 'sell'} onClick={() => { setSide('sell'); setAmount('') }}>Sell</button>
+          </div>
+
+          <div className="amt amt-in">
+            <div className="amt-top">
+              <label className="amt-label" htmlFor={`tp-in-${mode}`}>You pay</label>
+              <span className="amt-bal mono">{wallet.address ? `${holding === null ? '—' : fmt(holding, inDecimals)} ${payTicker}` : ''}</span>
             </div>
-            <div className="tp-box-foot">
-              <span className="fine">
-                {wallet.address ? `${holding === null ? '—' : fmt(holding, inDecimals)} available` : 'no wallet'}
-              </span>
-              {holding > 0n && <button className="tp-max" onClick={() => setPct(100)}>Max</button>}
+            <div className="amt-main">
+              <input id={`tp-in-${mode}`} className="amt-num tp-num mono" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" inputMode="decimal" />
+              <span className="tp-unit mono">{payTicker}</span>
+            </div>
+            <div className="tp-chips">
+              {chips.map(([label, v]) => (
+                <button key={label} className="tp-chip mono" aria-pressed={chipOn(v)} onClick={() => pick(v)} disabled={side === 'sell' && !(holding > 0n)}>{label}</button>
+              ))}
+              <button className="tp-chip" aria-pressed={holding > 0n && amountIn === holding} onClick={max} disabled={!(holding > 0n)}>Max</button>
             </div>
           </div>
 
-          <button
-            className="tp-flip"
-            onClick={() => { setSide(side === 'buy' ? 'sell' : 'buy'); setAmount('') }}
-            aria-label={side === 'buy' ? 'Switch to selling' : 'Switch to buying'}
-            title="Flip"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M7 4v13M4 14l3 3 3-3M17 20V7M20 10l-3-3-3 3" />
-            </svg>
-          </button>
-
-          <div className="tp-box">
-            <div className="tp-box-head"><span>You receive</span></div>
-            <div className="tp-box-main">
-              <span className={`tp-amount mono${out > 0n ? '' : ' dim'}`}>
-                {amountIn > 0n && out > 0n ? fmt(out, outDecimals) : '0'}
-              </span>
-              <span className="tp-asset">{getTicker}</span>
-            </div>
-            <div className="tp-box-foot">
-              <span className="fine">
-                {wallet.address ? `${getHolding === null ? '—' : fmt(getHolding, outDecimals)} available` : ''}
-              </span>
+          <div className="amt amt-out">
+            <span className="amt-label">You receive (estimate)</span>
+            <div className="amt-main">
+              <span className={`amt-num tp-num mono${outText ? '' : ' amt-zero'}`}>{outText ? `≈ ${outText}` : '0'}</span>
+              <span className="tp-unit mono">{getTicker}</span>
             </div>
           </div>
 
-          <div className="tp-pcts">
-            {[25, 50, 75].map((n) => (
-              <button key={n} className="tp-pct" onClick={() => setPct(n)} disabled={!holding || holding <= 0n}>{n}%</button>
-            ))}
-            <button className="tp-pct" onClick={() => setPct(100)} disabled={!holding || holding <= 0n}>Max</button>
+          <div className="swap-rows tp-rows">
+            <div><span>Average price</span><span className="mono">{avg !== null ? fullPrice(avg) : '–'}</span></div>
+            <div><span>Price after</span><span className="mono">{after !== null ? fullPrice(after) : '–'}</span></div>
+            <div><span className="term" title="Set by the creator at launch, up to 10%, taken on every trade.">Creator fee</span><span className="mono">{(launch.feeBps / 100).toFixed(2)}%{amountIn > 0n && out > 0n ? ` · ${fmt(q.creatorFee, quoteDecimals)} ${quote}` : ''}</span></div>
+            {side === 'buy' && tax > 0n && (
+              <div><span>Anti-snipe tax</span><span className="mono">{(Number(tax) / 100).toFixed(1)}%{q.snipeTax > 0n ? ` · ${fmt(q.snipeTax, quoteDecimals)} ${quote}` : ''}</span></div>
+            )}
           </div>
+          {side === 'buy' && tax > 0n && <p className="why">The anti-snipe tax falls to zero within seconds of launch.</p>}
 
-          {amountIn > 0n && out <= 0n && (
-            <p className="notice bad tp-note">Cannot quote: {q.reason}.</p>
-          )}
-
-          {amountIn > 0n && out > 0n && (
-            <div className="tp-lines">
-              <div><span>Creator fee</span><span className="mono">{fmt(q.creatorFee, quoteDecimals)} {quote}</span></div>
-              {side === 'buy' && q.snipeTax > 0n && (
-                <div><span>Anti-snipe tax</span><span className="mono">{fmt(q.snipeTax, quoteDecimals)} {quote}</span></div>
-              )}
-            </div>
-          )}
-
-          {tax > 0n && (
-            <p className="notice tp-note">Anti-snipe tax {(Number(tax) / 100).toFixed(1)}%, falling to zero in seconds.</p>
-          )}
-
-          {built ? (
-            <div className="tp-action">
-              <Execute
-                program={PAD_PROGRAM}
-                needs={{ userToken: launch.mint, userQuote: quoteMint }}
-                spend={side === 'buy'
-                  ? { mint: quoteMint, amount: amountIn, ticker: quote }
-                  : { mint: launch.mint, amount: amountIn, ticker: launch.symbol }}
-                buildWith={(a) => {
-                  const args = {
-                    registry: PAD_REGISTRY, launchId: launch.id,
-                    tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
-                    userToken: a.userToken, userQuote: a.userQuote,
-                    amountIn, minOut: 1n,
-                  }
-                  return side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
-                }}
-                label={side === 'buy' ? `Buy ${launch.symbol}` : `Sell ${launch.symbol}`}
-                onDone={traded}
-              />
-            </div>
-          ) : (
-            <button className="btn tp-cta" disabled>
-              {side === 'buy' ? `Buy ${launch.symbol}` : `Sell ${launch.symbol}`}
-            </button>
-          )}
+          <Cta state={cta} />
+          {error && <p className="notice bad">{error}</p>}
+          <p className="why">Need more {quote}? <Link to="/swap">Swap for it</Link>. Name, image and links are set by the creator.</p>
         </>
       )}
+
+      <TxDialog
+        flow={flow}
+        title={`Review ${side}`}
+        pay={{ value: `${amount || '0'} ${payTicker}` }}
+        receive={{ value: `${outText ?? '0'} ${getTicker}` }}
+        rows={[
+          { k: 'Average price', v: avg !== null ? `${fullPrice(avg)} ${quote}` : '–' },
+          { k: 'Price after', v: after !== null ? `${fullPrice(after)} ${quote}` : '–' },
+          { k: `Creator fee (${(launch.feeBps / 100).toFixed(2)}%)`, v: `${fmt(q.creatorFee, quoteDecimals)} ${quote}` },
+          ...(side === 'buy' && q.snipeTax > 0n ? [{ k: 'Anti-snipe tax', v: `${fmt(q.snipeTax, quoteDecimals)} ${quote}` }] : []),
+          { k: 'Minimum received', v: 'No minimum set' },
+          NETWORK_ROW,
+        ]}
+        technical={{ program: PAD_PROGRAM, extra: [{ k: 'Launch', v: `#${launch.id}` }] }}
+        note={`Your wallet will ask you to sign. The amount can differ if someone else trades ${launch.symbol} before yours lands.`}
+        needsAccounts={needsOpen}
+        run={run}
+        words={{
+          pendingTitle: `${verb} submitted`,
+          landed: `${verb} confirmed`,
+          landedSub: outText ? `About ${outText} ${getTicker} is on its way to your wallet.` : undefined,
+          failed: `${verb} failed`,
+        }}
+        onDone={() => { if (mode === 'sheet') onClose?.() }}
+      />
     </section>
   )
 }
