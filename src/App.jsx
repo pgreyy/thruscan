@@ -2874,11 +2874,9 @@ function GuideDetail({ guide, onBack }) {
  * all: assembling this from direct chain reads would mean fetching and
  * decoding every transaction on every visit. */
 function ActivityPage() {
-  /* wrap-wide: this is a table with five columns and it wants the room. */
   return (
-    <div className="wrap-wide wrap-act">
-      <h1 className="h1">Activity</h1>
-      <Feed title="On chain" limit={50} />
+    <div className="page act-page">
+      <Feed limit={50} />
     </div>
   )
 }

@@ -310,7 +310,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 [data-theme="dark"] .teststrip { border-bottom: 1px solid var(--border-default); }
 .teststrip-chip {
-  flex: none; padding: 2px 6px; border-radius: 3px;
+  flex: none; padding: 2px 6px; border-radius: 3px; white-space: nowrap;
   background: var(--action-primary); color: var(--action-primary-text);
   font-family: var(--font-mono); font-size: 12px; line-height: 16px;
 }

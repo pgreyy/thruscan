@@ -1,173 +1,120 @@
-/* The activity table.
+/* Activity (Core Screens 3l/3m).
  *
- * The same language as Collections and the home page's tables: a white panel
- * on the warm canvas, a hairline between rows, 12px muted headers, figures in
- * mono and right-aligned. Wide, one row is eight columns. Narrow, the same
- * cells are regrouped into two lines, so the phone layout is designed rather
- * than squeezed: the markup puts the cells in two wrappers (.act-l1, .act-l2),
- * which dissolve into the grid on a wide screen and become the two lines on a
- * narrow one. */
+ * Wide: one table, columns Event · Detail · Txn · From · To · Amount · Fee ·
+ * Time on the grid 110 / 2fr / 120 / 120 / 120 / 150 / 90 / 60. A failed row
+ * carries a red left edge and the word FAILED under the event. Below 820px the
+ * same rows become two lines: what happened and when, then the amount and a
+ * short hash, and the whole row is the tap target. */
 
-.act-panel {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
-  /* clip, not hidden: it rounds the corners without becoming a scroll
-     container, which would stop the header sticking. */
-  overflow: clip;
+.act { display: flex; flex-direction: column; gap: 20px; }
+.act-page { padding-top: 4px; }
+
+.act-head-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; }
+.act-head-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.act-h1 { margin: 0; font-size: 36px; line-height: 40px; font-weight: 700; letter-spacing: -0.03em; }
+.act-lead { margin: 0; font-size: 15px; line-height: 22px; color: var(--text-secondary); }
+.act-status {
+  flex: none; display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); white-space: nowrap;
 }
-.act-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 18px 12px; background: var(--surface); }
-.act-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.act-filters { margin: 0; }
+.act-status.bad { color: var(--status-negative); gap: 6px; }
+.act-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-primary); }
+
+.act .act-chips { flex-wrap: wrap; }
+
+.act-table { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
 
 .act-tr {
-  --act-cols: 84px minmax(110px, 1.5fr) 132px 112px 124px minmax(100px, 1fr) 72px 42px;
-  display: grid; grid-template-columns: var(--act-cols); column-gap: 12px; align-items: center;
-  min-height: 54px; box-sizing: border-box; padding: 8px 18px;
-  border-top: 1px solid var(--line); color: var(--ink); font-size: 14px; cursor: pointer;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 2fr) 120px 120px 120px 150px 90px 60px;
+  column-gap: 12px; align-items: center;
+  min-height: 48px; padding: 0 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 14px; color: var(--text-primary); cursor: pointer;
 }
+.act-tr:last-child { border-bottom: 0; }
 .act-tr > * { min-width: 0; }
-.act-l1, .act-l2, .act-route { display: contents; }
-.act-arrow { display: none; }
-.act-tr:not(.act-head):not(.skel):hover { background: var(--soft); }
+.act-tr:not(.act-th):not(.act-skel):hover { background: var(--bg-canvas); }
+.act-tr:focus-visible { outline-offset: -2px; }
 
-/* Wide: every cell on one row, in its own column. */
-.act-event  { grid-row: 1; grid-column: 1; }
-.act-detail { grid-row: 1; grid-column: 2; }
-.act-hash   { grid-row: 1; grid-column: 3; }
-.act-from   { grid-row: 1; grid-column: 4; }
-.act-to     { grid-row: 1; grid-column: 5; }
-.act-amount { grid-row: 1; grid-column: 6; }
-.act-fee    { grid-row: 1; grid-column: 7; }
-.act-time   { grid-row: 1; grid-column: 8; }
+.act-th {
+  min-height: 38px; cursor: default;
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  background: var(--bg-canvas); border-bottom: 1px solid var(--border-default);
+}
+[data-theme="dark"] .act-th { background: var(--bg-sunken); }
+.act-r { text-align: right; }
 
-.act-head { position: sticky; top: calc(var(--bar-h, 56px) + env(safe-area-inset-top, 0px)); z-index: 5; min-height: 0; padding-top: 9px; padding-bottom: 9px; background: var(--surface); font-size: 12px; color: var(--muted); cursor: default; }
-@media (min-width: 900px) { .act-head { top: 64px; } }
-
-.act-event { display: flex; align-items: center; gap: 6px; }
-.act-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.act-hash { display: flex; align-items: center; gap: 4px; }
+.act-event { font-weight: 600; display: flex; flex-direction: column; line-height: 1.2; }
+.act-failed { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--status-negative); }
+.act-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-hash a { font-size: 13px; }
 .act-from, .act-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.act-from a, .act-to a { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--ink); text-decoration: none; }
-.act-hash a { color: var(--ink-2); text-decoration: none; }
-.act-from a:hover, .act-to a:hover, .act-hash a:hover { color: var(--signal); }
-.act-name { font-weight: 600; }
-.act-prog { color: var(--ink-2); }
-.act-tr .mono { font-size: 12.5px; }
-
-.act-amount { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
-.act-amounts-all { display: flex; flex-direction: column; align-items: flex-end; max-width: 100%; }
-.act-amounts-all > span, .act-amount-lead { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.act-amount-lead { display: none; }
-.act-in { color: var(--good); }
-.act-out { color: var(--ink); }
-.act-fee, .act-time { text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
-.act-none { color: var(--muted); }
-.act-head .act-amount, .act-head .act-fee, .act-head .act-time { font-family: inherit; font-size: 12px; align-items: flex-end; }
-
-.act-copy {
-  flex: 0 0 auto; display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
-  border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer;
+.act-from a, .act-to a { font-size: 13px; color: var(--text-primary); text-decoration: none; }
+.act-from a:hover, .act-to a:hover { color: var(--text-link); text-decoration: underline; }
+.act-to a.act-prog { color: var(--text-secondary); }
+.act-amount {
+  display: flex; flex-direction: column; align-items: flex-end;
+  font-family: var(--font-mono); font-size: 13px; white-space: nowrap; overflow: hidden;
 }
-.act-copy:hover { color: var(--ink); background: var(--hover); }
-.act-copy.done { color: var(--good); }
+.act-amount > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.act-fee, .act-time { text-align: right; white-space: nowrap; font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
+.act-none { color: var(--text-secondary); }
 
-/* A failed transaction: the badge goes red, the sentence goes quiet, and the
-   amount cell says nothing moved. */
-.act-tr.failed .act-detail { color: var(--muted); }
-.act-tr .feed-failed { margin: 0; font-size: 11px; }
+/* A failed row: the red edge, and in dark mode a tinted row. */
+.act-tr.failed { min-height: 52px; padding-left: 15px; border-left: 3px solid var(--status-negative); background: var(--failed-row-bg); }
 
-.act-pending, .skel i { display: inline-block; height: 10px; width: 56px; border-radius: 5px; background: var(--soft); }
-.skel .act-detail i { width: 70%; }
-.skel { cursor: default; }
+.act-skel { cursor: default; grid-template-columns: 110px minmax(0, 2fr) 120px; }
+.act-c { display: none; }
 
-.act-note { padding: 18px; border-top: 1px solid var(--line); font-size: 13.5px; line-height: 1.5; color: var(--muted); }
-.act-note.bad { color: var(--ink-2); }
-.act-note.bad::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); margin-right: 8px; vertical-align: 2px; }
+.act-empty { padding: 20px 18px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.act-empty b { font-size: 16px; }
+.act-empty p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text-secondary); }
+.act-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.act-more { display: block; width: calc(100% - 36px); margin: 12px 18px 16px; }
+.act-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 13px; color: var(--text-secondary); }
+.act-more { flex: none; }
 
-/* The badge says how it went.
- *
- * Green for a transaction that landed, red for one that did not, on every
- * event. The word "Failed" used to sit under the badge on a wide screen, which
- * made failed rows taller than the rest and the table uneven. Wide, the colour
- * does that job and the word stays for screen readers; on a phone there is room
- * beside the badge, so it stays visible there. */
-.act-tr .feed-tag.feed-plain,
-.act-tr .feed-tag.feed-mark {
-  color: var(--good);
-  border-color: var(--line);
-  background: transparent;
+/* Between 820 and 1100 the fixed columns tighten. */
+@media (max-width: 1099px) {
+  .act-tr { grid-template-columns: 90px minmax(0, 2fr) 100px 100px 100px 120px 70px 50px; column-gap: 10px; padding: 0 14px; }
+  .act-tr.failed { padding-left: 11px; }
 }
-.act-tr .feed-tag.feed-bad { color: var(--bad); border-color: var(--bad-line); background: transparent; }
-@supports (background: color-mix(in srgb, red 10%, transparent)) {
-  .act-tr .feed-tag.feed-plain,
-  .act-tr .feed-tag.feed-mark { border-color: color-mix(in srgb, var(--good) 30%, var(--line)); background: color-mix(in srgb, var(--good) 9%, transparent); }
-  .act-tr .feed-tag.feed-bad { background: color-mix(in srgb, var(--bad) 8%, transparent); }
-}
-.act-event { position: relative; }
-@media (min-width: 760px) {
-  .act-tr .feed-failed {
-    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
-    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-  }
+@media (max-width: 899px) {
+  .act-tr { grid-template-columns: 84px minmax(0, 2fr) 92px 92px 92px 110px 50px; }
+  .act-tr > .act-fee, .act-th > :nth-child(7) { display: none; }
 }
 
-/* A little narrower: the copy button goes, the columns tighten. The hash is
-   still a link, and so is the row. */
-@media (max-width: 999px) {
-  .act-tr { --act-cols: 74px minmax(96px, 1.4fr) 92px 92px 100px minmax(90px, 1fr) 58px 32px; column-gap: 10px; padding-left: 14px; padding-right: 14px; }
-  .act-copy { display: none; }
-  .act-top { padding-left: 14px; padding-right: 14px; }
+/* Below 820: two-line rows. */
+@media (max-width: 819px) {
+  .act { gap: 14px; }
+  .act-head-row { align-items: baseline; gap: 12px; }
+  .act-h1 { font-size: 28px; line-height: 32px; letter-spacing: -0.02em; }
+  .act-lead { display: none; }
+  .act-status { font-size: 11px; }
+  .act-status-more { display: none; }
+  .act .act-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: calc(var(--page-x) * -1); padding-right: var(--page-x); }
+  .act .act-chips::-webkit-scrollbar { display: none; }
+  .act .act-chips .chip { flex: none; }
+
+  .act-tr.act-th { display: none; }
+  .act-tr { display: block; min-height: 64px; padding: 12px; }
+  .act-tr.failed { padding-left: 9px; }
+  .act-tr > [role='cell'] { display: none; }
+  .act-c { display: flex; flex-direction: column; gap: 4px; }
+  .act-c1, .act-c2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; }
+  .act-c-what { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 15px; overflow: hidden; white-space: nowrap; }
+  .act-c-what b { font-weight: 600; flex: none; }
+  .act-c-detail { overflow: hidden; text-overflow: ellipsis; color: var(--text-body); }
+  .act-c1 .mono { font-size: 12px; flex: none; }
+  .act-c2 { font-size: 13px; }
+  .act-c-amt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act-c-hash { flex: none; color: var(--text-link); text-decoration: underline; text-underline-offset: 2px; }
+  .act-skel { display: flex; gap: 10px; align-items: center; }
+
+  .act-foot { flex-direction: column; align-items: stretch; }
+  .act .act-more { width: 100%; height: 44px; }
 }
-
-/* Room enough for a full figure such as -40,000 LUMEN. */
-@media (min-width: 860px) and (max-width: 999px) {
-  .act-tr { --act-cols: 74px minmax(96px, 1.2fr) 92px 92px 100px minmax(118px, 1fr) 58px 32px; }
-}
-
-/* Narrow: two lines.
- *   line 1   badge, what happened ........ hash  time
- *   line 2   from > to ............ amount  fee
- * Every row is the same height, text is cut with an ellipsis rather than
- * wrapped, and a tap anywhere on the row opens the transaction (the links
- * inside are inert here so a thumb aimed at the row cannot land on one). */
-@media (max-width: 759px) {
-  .act-top { position: sticky; top: calc(var(--bar-h, 56px) + env(safe-area-inset-top, 0px)); z-index: 6; border-bottom: 1px solid var(--line); padding: 12px 14px 10px; gap: 8px 12px; }
-  .act-tr.act-head { display: none; }
-
-  .act-tr { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 11px 14px; min-height: 0; height: 68px; justify-content: center; }
-  .act-l1, .act-l2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .act-l1 { height: 22px; }
-  .act-l2 { height: 18px; font-size: 12.5px; }
-  .act-route { display: flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: 0; }
-  .act-arrow { display: inline; flex: 0 0 auto; color: var(--muted); font-size: 12px; }
-  .act-event, .act-detail, .act-hash, .act-from, .act-to, .act-amount, .act-fee, .act-time { grid-row: auto; grid-column: auto; }
-
-  .act-event { flex: 0 0 auto; }
-  .act-detail { flex: 1 1 0; font-size: 14px; }
-  .act-hash { flex: 0 0 auto; }
-  .act-hash a { color: var(--muted); font-size: 11.5px; pointer-events: none; }
-  .act-copy { display: none; }
-  .act-time { flex: 0 0 auto; min-width: 26px; font-size: 12px; }
-  /* The sender is whole, the recipient gives way: a short name beside a long
-     program name should not be the one that is cut. */
-  .act-from { flex: 0 0 auto; max-width: 48%; }
-  .act-to { flex: 1 1 0; min-width: 0; }
-  .act-from a, .act-to a { pointer-events: none; font-size: 12.5px; }
-  .act-amount { flex: 0 0 auto; display: block; text-align: right; max-width: 52%; }
-  .act-amounts-all { display: none; }
-  .act-amount-lead { display: block; }
-  .act-fee { flex: 0 0 auto; font-size: 11.5px; }
-  .act-fee:not(:has(.act-none))::before { content: 'Fee '; }
-  /* No fee recorded: say nothing rather than put a second dash beside the amount. */
-  .act-fee:has(.act-none) { display: none; }
-
-  .act-more { width: calc(100% - 28px); margin: 12px 14px 14px; }
-  .act-note { padding: 16px 14px; }
-}
-
-/* The very narrowest phones keep the two things that are the row: what it was
-   and who it involved. The hash and the fee are on the transaction page. */
 @media (max-width: 359px) {
-  .act-hash, .act-fee { display: none; }
+  .act-h1 { font-size: 26px; line-height: 30px; }
 }
