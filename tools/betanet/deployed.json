@@ -1,0 +1,25 @@
+{
+  "network": "betanet",
+  "addresses": {
+    "THRUSWAP_PROGRAM": "taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL",
+    "THRUPAD_PROGRAM": "taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1",
+    "THRUSWAP_REGISTRY": "ta1YmqM-0LmEiZvIZ-hkH0itYsHshZlAvsPpPlVkyNCCuV",
+    "NAME_ROOT": "taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg",
+    "TEST_MINT": "tadRs4WoP6-sxx6FgiEXMVOIkDhw3g9CU3xCMgNyCtSYo3"
+  },
+  "signatures": {
+    "deploy THRUSWAP_PROGRAM": "created; meta account taRF0az6Ni5MlemTDR0dFcLvCusd7r3KGErvx8aDnTPf5O",
+    "deploy THRUPAD_PROGRAM": "created; meta account ta-tc4vNt6aT8iZAm41z35dSPAfVEwTB4Okmxcet_9cbq_",
+    "init THRUSWAP_REGISTRY": "ts50kRA6Paq2jZkDS1ncWW0de5QdyCebgAq6mIUuiAz-ZP4J-U9-CV1yfULXmQb4I-5W8tS3eG2KccCjA_-PcVASKB",
+    "faucet betanet-authority 2026-10-12T14:42:01.689Z": "tsczqscYUgBj-xf5iigFRJDIngeGfx3Fs__fmvZwmXl9idJyTQRlaEmwbznFxHaWVd26UyTQhDrd6V2GB5I276Bh6T",
+    "faucet betanet-authority 2026-10-12T14:42:06.829Z": "tsjK_7FFC5thz6HPj4rz0VypVLEBSd8_A9xzzAEXZRY4K0-2NWZ0uRol_Q226ymrLPPIZd5xXGV3YbhHoHxIhqBSBS",
+    "faucet betanet-authority 2026-10-12T14:42:11.218Z": "ts4bYSdcBJWwXh6NSO7FbNnTp0ntyGtGrDYx7aU_ClG8wZM0RV-rvXHp0_WWfXUy2SDLYQkvSlYikF4eKCCftWCCBf",
+    "faucet betanet-sponsor 2026-10-12T14:42:17.203Z": "tsEu4DPwnfzg86wkWBpsTioIT7JF40w1CjPRAI9rq4VUsYjVSwPsLWcIOOuuW8GTDWdpgnHSRrR5EJMrMm34ayDx1q",
+    "faucet betanet-sponsor 2026-10-12T14:42:21.549Z": "ts1GwIPTESmzprQ1cigNMQ0H0fCxQIsNODyZ3ICnWkgTEpxkbNPzi55FlbA1jh9AqPd5lFtKa3iqfPNiFBkg1lDxtn",
+    "faucet betanet-sponsor 2026-10-12T14:42:26.248Z": "ts8q5z6FVynDluvmahZNTeJ9aIm3MPNkiwFCMZt78648MX3hfUmsJIW42aQ_p84NTVdEBSRVq1BpJEEhp485_8ByAN",
+    "init-root id": "ts_IGKl9zFhyXcn-d_0wC7XJs9hMcOn_tZkUzTY3xo82v_2FVkYqClO8bQxOpxgGz4QUpAT9JbnjlxK3JC3tQkByKF",
+    "BNTEST mint": "ts8kZGOkxzj30mJtNTvSAxkRAVC3lB3iIEDvMgKsMDLzTtyoJodgh8zUbF5eRZdI-GeQJ3MVgBdipxzkaUTUY1DRke",
+    "BNTEST account (authority)": "tsosAkBV_2t3EmA5Y67l9ZQtWnigEAvA70Y49_rGVJKXwwnUThihh9tnfa3A9Ft1p2oEXjNHGsB6BfF02991aDBB0B",
+    "BNTEST mint_to authority": "tszcdqzXoN6ds-cWh2eIl8Xi0zTVhwc75NLzVcEgNU8RFCRQWGyxyNweFXnenlVv8BNpj01MF9zHuf6iSmJG8oAh4H"
+  }
+}

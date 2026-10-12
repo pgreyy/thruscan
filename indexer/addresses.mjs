@@ -53,7 +53,10 @@ export const OURS = {
     PALS_PROGRAM: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
     WALL_PROGRAM: 'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH',
   },
-  betanet: {},
+  betanet: {
+    THRUPAD_PROGRAM: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1',
+    THRUSWAP_PROGRAM: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL',
+  },
 }
 
 /** The network a URL points at, by name, so the caller need not repeat itself. */

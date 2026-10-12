@@ -92,11 +92,11 @@ const OURS_ALPHANET = {
    Pixel Pals is not deployed here, so its keys stay blank and its pages say
    so. */
 const OURS_BETANET = {
-  THRUSWAP_PROGRAM: '',
-  THRUSWAP_REGISTRY: '',
-  THRUPAD_PROGRAM: '',
+  THRUSWAP_PROGRAM: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL',
+  THRUSWAP_REGISTRY: 'ta1YmqM-0LmEiZvIZ-hkH0itYsHshZlAvsPpPlVkyNCCuV',
+  THRUPAD_PROGRAM: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1',
   THRUPAD_REGISTRY: '',
-  NAME_ROOT: '',
+  NAME_ROOT: 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg',
   WALL_PROGRAM: '',
   WALL_ACCOUNT: '',
   ID_PROGRAM: '',

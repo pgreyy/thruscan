@@ -9,7 +9,7 @@
 # binaries were built.
 #
 #   cd programs
-#   THRU_C_SDK_DIR=/path/to/thru-sdk ./build.sh              # all three
+#   THRU_C_SDK_DIR=/path/to/thru-sdk ./build.sh              # all of them
 #   THRU_C_SDK_DIR=/path/to/thru-sdk ./build.sh thrupad2     # just one
 #
 # Output goes to bin/<program>.bin: a raw image (objcopy -O binary) made of the
@@ -81,7 +81,9 @@ fi
 
 PROGRAMS=( "$@" )
 if [[ ${#PROGRAMS[@]} -eq 0 ]]; then
-  PROGRAMS=( thrupad2 thrupals thruswap )
+  # Every program the site uses (tools/betanet/config.mjs deploys all but
+  # thrupals on betanet).
+  PROGRAMS=( thrupad2 thrupals thruswap thruwall2 thruwordle thru2048 thruid )
 fi
 for p in "${PROGRAMS[@]}"; do
   [[ -f "$HERE/$p.c" ]] || { echo "build.sh: no such program: $HERE/$p.c" >&2; exit 1; }
