@@ -8,7 +8,7 @@ A Chrome extension wallet for Thru. Self-custody: the keys are made in the brows
 - Unlock with a password; locks itself after a set number of idle minutes
 - THRU balance first, then every token the wallet holds
 - Activate a new address on chain, signed and paid for by the address itself
-- Claim test THRU from Thru's alphanet faucet
+- Claim test THRU from Thru's faucet
 - Send THRU or any token to an address or a `.id` name, with Max and the balance shown
 - Receive with a QR code
 - Activity, each item linking to its ThruScan transaction page
