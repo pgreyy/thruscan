@@ -25,7 +25,8 @@ import { Link } from 'react-router-dom'
 import {
   nameProblem, withSuffix, decodeDomain, addressOf, ROOT_SUFFIX,
 } from '../lib/names.js'
-import { checkName, claimName, setNameRecord, waitForResult } from '../lib/wallet.js'
+import { checkName, claimName, setNameRecord, waitForResult, currentAddress } from '../lib/wallet.js'
+import { notifyTx } from '../lib/notify.js'
 import { useWallet } from './Wallet.jsx'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { hasWallet } from '../lib/wallet.js'
@@ -107,7 +108,11 @@ function Claim({ wallet, onClaimed }) {
     setBusy(true)
     try {
       const r = await claimName(name)
-      if (!r.ok) throw new Error(r.error)
+      if (!r.ok) {
+        notifyTx({ address: currentAddress(), type: 'tx', title: 'ThruID claim failed', body: String(r.error ?? ''), ok: false, sig: r.signature })
+        throw new Error(r.error)
+      }
+      notifyTx({ address: currentAddress(), type: 'tx', title: `Claimed ${name}.${ROOT_SUFFIX}`, body: 'Your ThruID is on chain.', sig: r.signature, to: '/profile?tab=items' })
       // Registration lands a slot or two later.
       await new Promise((res) => setTimeout(res, 3000))
       onClaimed?.(name)
@@ -305,7 +310,11 @@ function NameItem({ domain, account, wallet, onChanged }) {
     try {
       const sig = await setNameRecord(account, k, v)
       const r = await waitForResult(sig)
-      if (r.settled && !r.succeeded) throw new Error(`The chain rejected it (error ${r.userError || r.vmError}).`)
+      if (r.settled && !r.succeeded) {
+        notifyTx({ address: currentAddress(), type: 'tx', title: 'ThruID record failed', body: `error ${r.userError || r.vmError}`, sig, ok: false })
+        throw new Error(`The chain rejected it (error ${r.userError || r.vmError}).`)
+      }
+      notifyTx({ address: currentAddress(), type: 'tx', title: 'ThruID record saved', body: k, sig })
       setKey(''); setValue('')
       await new Promise((res) => setTimeout(res, 2500))
       onChanged?.()

@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { useUnlockGate, isDismissal } from '../../components/Unlock.jsx'
 import { hasProvider, connectExternal } from '../external.js'
+import { notifyTx } from '../notify.js'
 import {
   hasWallet, currentAddress, signAndSend, waitForResult, nativeBalance, tokenBalances,
   requestProof, palsAllow, accountExists, openTokenAccount,
@@ -68,7 +69,11 @@ export function useMint({ price = 1000n, onMinted } = {}) {
         const sig = await signAndSend({ ...tx, computeUnits: 300_000_000, stateUnits: 4_096, memoryUnits: 60_000 })
         const r = await waitForResult(sig, 30_000)
         if (r.settled && !r.succeeded && Number(r.userError) === 23) continue
-        if (r.settled && !r.succeeded) throw new Error(palsError(r.userError))
+        if (r.settled && !r.succeeded) {
+          notifyTx({ address: me, type: 'tx', title: 'Mint failed', body: palsError(r.userError), sig, ok: false })
+          throw new Error(palsError(r.userError))
+        }
+        notifyTx({ address: me, type: 'tx', title: 'Pixel Pal minted', sig })
         // Which number it drew: the Pal in this wallet with that NFT id.
         let num = null
         for (let i = 0; i < 5 && num === null; i++) {
