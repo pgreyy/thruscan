@@ -16,7 +16,7 @@ import { TUSD_MINT, WTHRU_MINT, THRUSWAP_REGISTRY, THRUPAD_REGISTRY } from './ad
 import { customMints } from './customTokens.js'
 
 export async function knownMints() {
-  const mints = new Set([TUSD_MINT, WTHRU_MINT, ...customMints()])
+  const mints = new Set([TUSD_MINT, WTHRU_MINT, ...customMints()].filter(Boolean))
   const [swap, pad] = await Promise.all([
     THRUSWAP_REGISTRY ? getAccount(THRUSWAP_REGISTRY).catch(() => null) : null,
     THRUPAD_REGISTRY ? getAccount(THRUPAD_REGISTRY).catch(() => null) : null,

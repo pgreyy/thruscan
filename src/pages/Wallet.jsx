@@ -1300,7 +1300,7 @@ export function WalletPage() {
   const mints = useMemo(() => {
     // tUSD and WTHRU always, since those are the two quote assets, then
     // whatever else this wallet has touched.
-    const known = [{ mint: TUSD_MINT }, { mint: WTHRU_MINT }]
+    const known = [{ mint: TUSD_MINT }, { mint: WTHRU_MINT }].filter((k) => k.mint)
     for (const [mint, b] of Object.entries(wallet.balances)) {
       if (b?.exists && !known.some((k) => k.mint === mint)) known.push({ mint })
     }
