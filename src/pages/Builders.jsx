@@ -25,7 +25,7 @@ const FINDINGS = [
   ['getaccountinfo --json nests under account_info', 'Parsing the wrong key reports a failed deploy that succeeded.'],
   ['EOA create is signed raw', 'It carries its own domain tag. Use signWithDomain(msg.slice(16), key, pub, 5).'],
   ['Name service name field is 64 bytes', 'A 32-byte guess reverts with no error code. Owner is an account index, so a sponsor can register for someone else.'],
-  ['New accounts hold no THRU', 'A fee above balance fails. Alphanet accepts fee 0; Thru’s faucet pays the fee payer.'],
+  ['New accounts hold no THRU', 'A fee above balance fails. Betanet accepts fee 0; Thru’s faucet pays the fee payer.'],
   ['Owner is not indexed', 'accounts.list filters by data_size, not owner. No reverse lookup from an address.'],
   ['Pubkey has no toString()', 'It returns "[object Object]". Use toThruFmt().'],
 ]
@@ -34,7 +34,7 @@ export function BuildersPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Building on Thru</h1>
-      <p className="lede">C programs on RISC-V, deployed to alphanet. Source and build recipe in the repo.</p>
+      <p className="lede">C programs on RISC-V, deployed to betanet. Source and build recipe in the repo.</p>
 
       <section className="card">
         <div className="card-head">

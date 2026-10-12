@@ -79,7 +79,13 @@ export function getAccount(address, opts) {
   if (!address || typeof address !== 'string') {
     return Promise.reject(new RpcError('address is required'))
   }
-  return call('account', { address: address.trim() }, opts).then((b) => b.account)
+  /* `fresh` is for the moment after a write, when the answer that is already
+     cached (the endpoint keeps one for a few seconds, and serves it a while
+     longer while it refreshes) is exactly the one that does not have the write
+     in it. A throwaway parameter makes the request its own, so it is read from
+     the node. */
+  const params = opts?.fresh ? { address: address.trim(), fresh: String(Date.now()) } : { address: address.trim() }
+  return call('account', params, opts).then((b) => b.account)
 }
 
 /**

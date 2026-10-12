@@ -33,7 +33,7 @@ import { createThruClient, Pubkey, Signature, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
 import { decodeConfig, decodeMarket, nftAccountFor, PALS_CONFIG, PALS_MARKET, PALS_NFT_MINT, PALS_PROGRAM, PALS_SITE } from '../src/lib/pals/chain.js'
 import { palsInOrder, toSvg } from '../src/lib/pals/art.js'
-import { rpcCandidates, network } from '../src/lib/networks.js'
+import { rpcCandidates, network, addressOf } from '../src/lib/networks.js'
 
 export const config = { runtime: 'nodejs', maxDuration: 30 }
 
@@ -318,7 +318,7 @@ async function overview(client, blockCount = 60, txCount = 25) {
    so each transaction is fetched once more with them. Token accounts and mints
    are read once per warm server and kept, since neither changes. */
 
-const TOKEN_PROGRAM_HEX = '00'.repeat(31) + 'aa'
+const TOKEN_PROGRAM_HEX = Array.from(Pubkey.from(addressOf('TOKEN_PROGRAM')).toBytes(), (b) => b.toString(16).padStart(2, '0')).join('')
 const accountInfo = new Map()   // address -> { kind: 'token', mint, owner } | { kind: 'mint', ticker, decimals } | { kind: 'other' }
 
 async function describeAccounts(client, addresses) {
@@ -885,6 +885,7 @@ export default async function handler(req, res) {
       }
 
       case 'pals': {
+        if (!PALS_PROGRAM) return json(res, 200, { ok: false, live: false, error: `Pixel Pals is not on ${network.label}.` }, { cacheSeconds: 60 })
         // Both accounts at once: the node can be slow, and one after the
         // other doubles the wait.
         const [cfg, mkt] = await Promise.all([palsState(client), marketState(client).catch(() => null)])
@@ -937,6 +938,7 @@ export default async function handler(req, res) {
 
       case 'pal':
       case 'palimg': {
+        if (!PALS_PROGRAM) return json(res, 404, { ok: false, error: `Pixel Pals is not on ${network.label}.` })
         const id = Number(params.id)
         const cfg = await palsState(client)
         const nftId = cfg && Number.isInteger(id) && id >= 0 && id < cfg.supply ? cfg.nftIdOf(id) : null

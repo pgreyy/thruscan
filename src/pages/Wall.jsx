@@ -29,7 +29,7 @@
 //   inbox is "messages addressed here", never "messages this person accepted",
 //   and this page says that out loud rather than implying otherwise.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { findWallTransaction } from '../lib/activity.js'
 import { getAccount } from '../lib/rpcClient.js'
@@ -96,26 +96,89 @@ async function resolveRecipient(input) {
 
 /* ---------------------------------------------------------------- reading */
 
+/* How a post that has landed is told apart from the same post in a read of the
+   wall: same sender, same words, same recipient, and posted around now. The
+   program stamps the block time, so the time is a window rather than a match. */
+const SAME_POST_WINDOW_NS = 5n * 60n * 1_000_000_000n
+const samePost = (pending, e) =>
+  e.poster === pending.poster && e.message === pending.message && (e.to ?? null) === (pending.to ?? null)
+  && (e.postedAtNs > pending.postedAtNs ? e.postedAtNs - pending.postedAtNs : pending.postedAtNs - e.postedAtNs) < SAME_POST_WINDOW_NS
+
 function useWall() {
   const [wall, setWall] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  /* Posts whose transaction has landed but which no read of the wall has shown
+     yet. The node's account read trails the transaction by a moment, and the
+     endpoint in front of it caches for a few seconds more, so the read that
+     follows a post was returning the wall as it was before it. */
+  const [pending, setPending] = useState([])
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+
+  const read = useCallback(async (fresh) => {
+    const account = await getAccount(WALL_ACCOUNT, { fresh })
+    return decodeWall(account.data?.base64)
+  }, [])
+
+  /* Drop whatever the chain's copy now shows, and anything older than a few
+     minutes that it still does not, rather than keep for ever a message that a
+     reset removed. */
+  const settle = useCallback((fromChain) => {
+    setPending((list) => list.filter((p) => !fromChain.entries.some((e) => samePost(p, e))
+      && Date.now() - p.addedAt < 5 * 60_000))
+  }, [])
 
   const load = useCallback(async () => {
     if (!WALL_ACCOUNT) { setLoading(false); return }
     setLoading(true); setError(null)
     try {
-      const account = await getAccount(WALL_ACCOUNT)
-      setWall(decodeWall(account.data?.base64))
+      const fromChain = await read(false)
+      if (!alive.current) return
+      setWall(fromChain)
+      settle(fromChain)
     } catch (e) {
-      setError(String(e?.message ?? e))
+      if (alive.current) setError(String(e?.message ?? e))
     } finally {
-      setLoading(false)
+      if (alive.current) setLoading(false)
     }
-  }, [])
+  }, [read, settle])
 
   useEffect(() => { load() }, [load])
-  return { wall, loading, error, reload: load }
+
+  /* A post has landed. Show it now, then read the wall fresh until the chain
+     agrees, which is usually the second read. `entry` is what is known without
+     asking the chain: who, what, to whom, and the signature. */
+  const posted = useCallback((entry) => {
+    const own = entry && entry.message
+      ? { ...entry, slot: -1, postedAt: new Date(), postedAtNs: BigInt(Date.now()) * 1_000_000n, verified: true, addedAt: Date.now() }
+      : null
+    if (own) setPending((list) => [own, ...list])
+    ;(async () => {
+      for (let i = 0; i < 40 && alive.current; i++) {
+        await new Promise((r) => setTimeout(r, i === 0 ? 700 : 1500))
+        try {
+          const fromChain = await read(true)
+          if (!alive.current) return
+          setWall(fromChain)
+          if (!own || fromChain.entries.some((e) => samePost(own, e))) { settle(fromChain); return }
+        } catch { /* the next read may work */ }
+      }
+    })()
+  }, [read, settle])
+
+  /* The wall as the page shows it: the chain's copy plus the posts that have
+     landed but are not in it yet, newest first. They count toward the totals
+     too, so the figures above the list agree with the list. */
+  const shown = useMemo(() => {
+    if (!wall) return wall
+    const extra = pending.filter((p) => !wall.entries.some((e) => samePost(p, e)))
+    if (!extra.length) return wall
+    const entries = [...extra, ...wall.entries].sort((a, b) => (a.postedAtNs < b.postedAtNs ? 1 : a.postedAtNs > b.postedAtNs ? -1 : 0))
+    return { ...wall, entries, totalPosted: wall.totalPosted + extra.length }
+  }, [wall, pending])
+
+  return { wall: shown, loading, error, reload: load, posted }
 }
 
 /** Finds the message's transaction only when asked, then opens it. */
@@ -139,6 +202,11 @@ function TxLink({ entry }) {
       {state === 'finding' ? 'finding…' : state === 'missing' ? 'transaction not found' : 'view transaction ↗'}
     </button>
   )
+}
+
+/** A post that has just landed already knows its transaction. */
+function SigLink({ signature }) {
+  return <Link className="linkish wall-tx" to={`/tx/${signature}`}>view transaction ↗</Link>
 }
 
 function Message({ entry, you }) {
@@ -171,7 +239,7 @@ function Message({ entry, you }) {
           </>
         )}
         {!entry.to && <span>public</span>}
-        <TxLink entry={entry} />
+        {entry.signature ? <SigLink signature={entry.signature} /> : <TxLink entry={entry} />}
       </div>
     </article>
   )
@@ -179,7 +247,7 @@ function Message({ entry, you }) {
 
 function MessageList({ entries, you, empty }) {
   if (!entries.length) return <p className="fine" style={{ padding: '14px 2px', lineHeight: 1.65 }}>{empty}</p>
-  return <div className="wall-list">{entries.map((e) => <Message key={`${e.slot}-${e.postedAtNs}`} entry={e} you={you} />)}</div>
+  return <div className="wall-list">{entries.map((e) => <Message key={e.signature ?? `${e.slot}-${e.postedAtNs}`} entry={e} you={you} />)}</div>
 }
 
 /* ---------------------------------------------------------------- writing */
@@ -244,7 +312,13 @@ function Composer({ onPosted, fixedTo = null }) {
 
       setDone(signature)
       setMessage(''); setToInput(''); setResolved(null)
-      setTimeout(onPosted, 1200)
+      /* The post is on chain, so it goes on the page now, before any read of
+         the wall can show it. If the result was never confirmed either way,
+         nothing is shown early and the page just keeps reading until it
+         appears. */
+      onPosted(result?.settled && result.succeeded
+        ? { signature, message: message.trim(), name: label, to, poster: wallet.address }
+        : null)
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
@@ -350,7 +424,7 @@ function NotDeployed() {
 
 /** Messages addressed to one account. Rendered on an address's own page. */
 export function AddressMessages({ address }) {
-  const { wall, loading, reload } = useWall()
+  const { wall, loading, reload, posted } = useWall()
   const wallet = useWallet()
 
   if (!WALL_ACCOUNT) return null
@@ -376,7 +450,7 @@ export function AddressMessages({ address }) {
 
       {!isYou && hasWallet() && (
         <div style={{ marginTop: 14 }}>
-          <Composer fixedTo={address} onPosted={reload} />
+          <Composer fixedTo={address} onPosted={posted} />
         </div>
       )}
     </section>
@@ -384,7 +458,7 @@ export function AddressMessages({ address }) {
 }
 
 export function WallPage() {
-  const { wall, loading, error, reload } = useWall()
+  const { wall, loading, error, reload, posted } = useWall()
   const wallet = useWallet()
   const you = wallet.address
 
@@ -402,7 +476,7 @@ export function WallPage() {
   const header = (
     <>
       {error && <p className="notice bad">Could not read the wall. It may be mid-reset.</p>}
-      <Composer onPosted={reload} />
+      <Composer onPosted={posted} />
     </>
   )
 

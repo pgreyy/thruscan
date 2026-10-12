@@ -526,7 +526,9 @@ export async function palsAllow(address = currentAddress()) {
  */
 export async function tokenBalances(mints, owner = currentAddress()) {
   if (!owner) throw new Error('No wallet.')
-  const { balances } = await api('balances', { owner, mints })
+  // A mint the active network does not have (tUSD on betanet) is blank; the
+  // server rightly rejects an empty address, so it never goes in the list.
+  const { balances } = await api('balances', { owner, mints: mints.filter(Boolean) })
   return balances
 }
 

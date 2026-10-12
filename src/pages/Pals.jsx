@@ -18,6 +18,7 @@ import { palsInOrder, toSvg, GENESIS, palFor } from '../lib/pals/art.js'
 import { buildSend, buildClaim, palsError, nftAccountFor, WTHRU_MINT, PALS_PROGRAM } from '../lib/pals/chain.js'
 import { useMint } from '../lib/pals/useMint.js'
 import { useMarket } from '../lib/pals/useMarket.jsx'
+import { network } from '../lib/networks.js'
 import './nfts.css'
 
 const PAGE = 60
@@ -104,7 +105,26 @@ const SORTS = [
   ['number', 'Number'],
 ]
 
+/* Pixel Pals lives on one network. Where it is not deployed the page says so
+   rather than reading empty addresses. Split from the live page so the check
+   comes before any of its hooks. */
 export function PalsPage() {
+  if (!PALS_PROGRAM) {
+    return (
+      <div className="page">
+        <h1 className="h1">Pixel Pals</h1>
+        <section className="empty">
+          <span className="empty-title">Pixel Pals is not on this network</span>
+          <p>The collection has not been deployed to {network.label} yet.</p>
+          <div className="mk-actions-row"><Link className="btn secondary" to="/collections">All collections</Link></div>
+        </section>
+      </div>
+    )
+  }
+  return <PalsLive />
+}
+
+function PalsLive() {
   const wallet = useWallet()
   const me = wallet.address
   const { info, error, reload, pals, palNums, owners, listings } = usePals(me)

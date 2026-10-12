@@ -162,7 +162,7 @@ const GUIDES = [
           'The CLI sets itself up the first time you run it and saves a config file in your home folder. This command asks the network what version it is running, which proves you can talk to it.',
         command: 'thru --json getversion',
         note: 'If you get a DNS error, point at the endpoint directly:',
-        noteCommand: 'thru --json getversion --url https://rpc.alphanet.thru.org',
+        noteCommand: 'thru --json getversion --url https://rpc.betanet.thru.org',
       },
       {
         title: 'Create your key',
@@ -181,12 +181,12 @@ const GUIDES = [
         verify: 'thru --json getaccountinfo default',
         verifyNote: 'Returns account details instead of "not found".',
         note:
-          'Worth knowing: alphanet resets from genesis whenever the network upgrades. When that happens your account, tokens and names all disappear and you run these steps again. Your keys stay on your computer, so it is only ever the on-chain side that resets.',
+          'Worth knowing: Thru’s test networks can reset from genesis when they upgrade. When that happens your account, tokens and names all disappear and you run these steps again. Your keys stay on your computer, so it is only ever the on-chain side that resets.',
       },
       {
         title: 'Get free test tokens',
         description:
-          'The faucet hands out THRU for testing. The limit is 10,000 per request, and you can ask more than once. These tokens only exist on alphanet and are not worth anything. You can send them back with: thru faucet deposit default 1000',
+          'The faucet hands out THRU for testing. The limit is 10,000 per request, and you can ask more than once. These tokens only exist on the test network and are not worth anything. You can send them back with: thru faucet deposit default 1000',
         command: 'thru faucet withdraw default 10000',
         verify: 'thru getbalance default',
         verifyNote: 'Shows a balance of 10,000.',
@@ -929,7 +929,7 @@ function DevAccountCard({ onLookup }) {
       setAccount(result)
       setLastUpdated(new Date().toLocaleTimeString())
     } catch {
-      setError('No account at that key. Alphanet resets from genesis on network upgrades, so accounts can disappear.')
+      setError(`No account at that key on ${network.label}. Test networks can reset on upgrades, so accounts can disappear.`)
       setAccount(null)
     } finally {
       setLoading(false)
@@ -1346,8 +1346,8 @@ function UniversalLookup({ prefill, onPrefillUsed }) {
       }
     } catch {
       setError(looksLikeTx
-        ? 'No transaction with that signature. Alphanet prunes history on network resets, so older transactions may be gone.'
-        : 'Nothing on alphanet at that address. Check the key, and note that 0 and O look alike in these addresses.')
+        ? `No transaction with that signature on ${network.label}. Test networks can prune history on resets, so older transactions may be gone.`
+        : `Nothing on ${network.label} at that address. Check the key, and note that 0 and O look alike in these addresses.`)
     } finally {
       setLoading(false)
     }
@@ -1841,8 +1841,7 @@ function WallPage() {
         <div className="empty">
           <p style={{ fontWeight: 600 }}>Not live yet</p>
           <p className="fine" style={{ maxWidth: '46ch', margin: '0 auto' }}>
-            The program is written and compiled, but alphanet is currently rejecting program deployments. The wall opens
-            as soon as that clears.
+            The wall program is not deployed on {network.label} yet. It opens here as soon as it is.
           </p>
         </div>
       ) : (
@@ -1890,7 +1889,7 @@ function WallPage() {
 
       <footer className="foot">
         <p className="fine">
-          Older messages are overwritten once the wall is full, and alphanet resets clear it entirely.
+          Older messages are overwritten once the wall is full, and a network reset clears it entirely.
         </p>
       </footer>
     </div>
@@ -2887,7 +2886,7 @@ function GamesPage() {
       </div>
 
       <footer className="foot">
-        <p className="fine">Scores reset with alphanet.</p>
+        <p className="fine">Scores reset with the test network.</p>
       </footer>
     </div>
   )
@@ -2909,7 +2908,7 @@ function GamesPage() {
       </div>
 
       <footer className="foot">
-        <p className="fine">Scores reset with alphanet.</p>
+        <p className="fine">Scores reset with the test network.</p>
       </footer>
     </div>
   )
@@ -3249,7 +3248,7 @@ function ProjectsPage() {
       {PROJECTS.length === 0 && (
         <div className="empty">
           <p style={{ fontWeight: 600 }}>Nothing listed yet</p>
-          <p className="fine" style={{ marginBottom: 18 }}>Thru is still in alphanet. If you know something being built, add it.</p>
+          <p className="fine" style={{ marginBottom: 18 }}>Thru is still on its test networks. If you know something being built, add it.</p>
           <button className="btn" onClick={() => setShowForm(true)}>Suggest a project</button>
         </div>
       )}

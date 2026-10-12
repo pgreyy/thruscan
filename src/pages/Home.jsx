@@ -2,7 +2,7 @@
 //
 // The explorer's front page: search first, the chain's vital signs under it,
 // then the newest blocks and transactions side by side, refreshed every few
-// seconds. Everything is read live from alphanet.
+// seconds. Everything is read live from the active network.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
@@ -13,6 +13,7 @@ import { decodePadRegistry } from '../lib/pad.js'
 import { checkName } from '../lib/wallet.js'
 import { decodeDomain, ROOT_REGISTRAR, ROOT_SUFFIX } from '../lib/names.js'
 import { THRUSWAP_REGISTRY, THRUPAD_REGISTRY } from '../lib/addresses.js'
+import { network } from '../lib/networks.js'
 import { tokenByMint, tokenByText, looksLikeSignature, looksLikeAddress } from '../lib/findToken.js'
 import './home.css'
 
@@ -327,7 +328,7 @@ export function HomePage() {
     <div className="home">
       <section className="home-hero">
         <div className="home-hero-inner">
-          <h1>The Thru Alphanet Explorer</h1>
+          <h1>The Thru {network.label} Explorer</h1>
           <Search />
         </div>
       </section>

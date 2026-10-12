@@ -16,7 +16,7 @@ import {
 } from './activity.js'
 import {
   THRUSWAP_PROGRAM, THRUPAD_PROGRAM, WALL_PROGRAM, TOKEN_PROGRAM,
-  NAME_SERVICE_PROGRAM, NATIVE_FAUCET_PROGRAM, MULTICALL_PROGRAM, NFT_PROGRAM,
+  NAME_SERVICE_PROGRAM, NATIVE_FAUCET_PROGRAM, MULTICALL_PROGRAM, NFT_PROGRAM, WTHRU_PROGRAM,
 } from './addresses.js'
 import { ROOT_SUFFIX } from './names.js'
 
@@ -140,7 +140,7 @@ const BY_KIND = {
   pad: THRUPAD_PROGRAM, launch: THRUPAD_PROGRAM, buy: THRUPAD_PROGRAM, sell: THRUPAD_PROGRAM,
   claim: THRUPAD_PROGRAM, graduate: THRUPAD_PROGRAM, migrate: THRUPAD_PROGRAM,
   swap: THRUSWAP_PROGRAM, pool: THRUSWAP_PROGRAM, liquidity: THRUSWAP_PROGRAM,
-  name: NAME_SERVICE_PROGRAM, wall: WALL_PROGRAM, faucet: NATIVE_FAUCET_PROGRAM,
+  name: NAME_SERVICE_PROGRAM, wall: WALL_PROGRAM, faucet: NATIVE_FAUCET_PROGRAM, wrap: WTHRU_PROGRAM,
   token: TOKEN_PROGRAM, transfer: TOKEN_PROGRAM, mint: TOKEN_PROGRAM, burn: TOKEN_PROGRAM, account: TOKEN_PROGRAM,
   nft: NFT_PROGRAM,
 }
@@ -171,7 +171,7 @@ export function targetOf(row, extra) {
   return { address: program, label: label ?? shortId(program), wallet: false, mono: !label }
 }
 
-const TOKEN_MOVING = new Set(['buy', 'sell', 'swap', 'liquidity', 'pool', 'transfer', 'mint', 'burn', 'claim', 'graduate', 'migrate', 'faucet', 'bundle', 'nft', 'token'])
+const TOKEN_MOVING = new Set(['buy', 'sell', 'swap', 'liquidity', 'pool', 'transfer', 'mint', 'burn', 'claim', 'graduate', 'migrate', 'faucet', 'bundle', 'nft', 'token', 'wrap'])
 
 /** Whether this row's amounts need the chain's token events. A THRU transfer
  *  and a native faucet draw are in the instruction itself. */

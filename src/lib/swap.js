@@ -143,6 +143,20 @@ export function decodeSwapRegistry(input) {
  * the reserves get interesting, and a silently rounded quote is worse than no
  * quote at all.
  */
+/**
+ * What the pool actually withholds from a swap of `amountIn`.
+ *
+ * thruswap swaps `in_less_fee = floor(amountIn * (10000 - feeBps) / 10000)` and
+ * leaves the rest in the pool, so the fee is the remainder, which rounds UP
+ * against a floor of the rate times the amount. At 30 basis points a swap of
+ * 100 base units withholds 1, where 100 * 30 / 10000 floors to 0. Showing the
+ * floor said "0 WTHRU" for a swap that did pay a fee.
+ */
+export function poolFee(amountIn, feeBps) {
+  const aIn = BigInt(amountIn)
+  return aIn - (aIn * (BPS_DENOM - BigInt(feeBps))) / BPS_DENOM
+}
+
 export function quoteSwap({ reserveIn, reserveOut, amountIn, feeBps = 30 }) {
   const rIn = BigInt(reserveIn)
   const rOut = BigInt(reserveOut)

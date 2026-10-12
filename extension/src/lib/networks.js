@@ -13,9 +13,11 @@
 // one object here for the same reason it is on the site. Choosing a network
 // chooses its node and its addresses together, or it does not choose anything.
 //
-// alphanet and betanet are two names for the same chain. Verified 5 October
-// 2026: slot 2,908,038 read from both endpoints returned the same block hash.
-// They carry the same addresses because they are the same state.
+// Alphanet and betanet are two separate chains. They once served the same
+// state under two names; on 12 October 2026 betanet was at height 1.28M with
+// chain id 2 and alphanet at 7.1M with chain id 1. So each has its own
+// accounts below, and nothing of ThruScan's is shared between them. The
+// wallet's default is betanet; alphanet stays as a legacy choice.
 
 /** Thru's own programs. Identical on every network the runtime starts. */
 const SYSTEM = {
@@ -26,30 +28,17 @@ const SYSTEM = {
   NFT: 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5',
 }
 
-const TEST_ACCOUNTS = {
-  FAUCET_ACCOUNT: 'taTigKYAf5mNxUNUVXeXq1HQodKc07DBzF4Pl7tCi1iXxt',
-  NAMES_ROOT: 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg',
-  WTHRU_MINT: 'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb',
-}
+/* Thru's faucet vault and WTHRU mint, also identical everywhere. */
+const FAUCET_ACCOUNT = 'taTigKYAf5mNxUNUVXeXq1HQodKc07DBzF4Pl7tCi1iXxt'
+const WTHRU_MINT = 'taaoXQw03WlYWdo1jhfFi2Nqfqsf4RqYySn_89mchjCiLb'
 
-/* Pixel Pals, which the wallet knows about because it shows and sends them. */
-const TEST_PALS = {
-  program: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
-  config: 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv',
-  mint: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr',
-}
+/* ThruScan's programs, named on the approval screen. Per network, because
+   they are deployed separately on each. */
+const NO_PALS = { program: '', config: '', mint: '' }
 
 export const NETWORKS = {
-  alphanet: {
-    id: 'alphanet',
-    label: 'Alphanet',
-    test: true,
-    rpc: 'https://rpc.alphanet.thru.org',
-    explorer: 'https://thruscan.xyz',
-    programs: SYSTEM,
-    ...TEST_ACCOUNTS,
-    pals: TEST_PALS,
-  },
+  /* Where ThruScan runs. Filled in by the betanet deploy (tools/betanet/);
+     never copied from alphanet. Pixel Pals is not deployed here. */
   betanet: {
     id: 'betanet',
     label: 'Betanet',
@@ -57,8 +46,33 @@ export const NETWORKS = {
     rpc: 'https://rpc.betanet.thru.org',
     explorer: 'https://thruscan.xyz',
     programs: SYSTEM,
-    ...TEST_ACCOUNTS,
-    pals: TEST_PALS,
+    FAUCET_ACCOUNT,
+    NAMES_ROOT: 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg',
+    WTHRU_MINT,
+    ours: { THRUSWAP: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL', THRUPAD: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1', WALL: 'ta0HkkkvXQTe4MkfWBZlqlvyLlxilHr-w6Cxrkm0SqYlaS' },
+    pals: NO_PALS,
+  },
+  /* Legacy: a separate chain now, kept so a wallet made there still works. */
+  alphanet: {
+    id: 'alphanet',
+    label: 'Alphanet (legacy)',
+    test: true,
+    rpc: 'https://rpc.alphanet.thru.org',
+    explorer: 'https://thruscan.xyz',
+    programs: SYSTEM,
+    FAUCET_ACCOUNT,
+    NAMES_ROOT: 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg',
+    WTHRU_MINT,
+    ours: {
+      THRUSWAP: 'taCXE0eEQbUHU90dyZ__Bz1yfQabjyaD4xaSHKUw3Q1M4N',
+      THRUPAD: 'tastnRlQL8RGYeByXK2QAzaqdnfvI6pVn0e89JSl6Hiu8I',
+      WALL: 'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH',
+    },
+    pals: {
+      program: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
+      config: 'taZIF42RAX-0q3mDj2UAZlDTJd-yYmJELr9cl7o-LgKJtv',
+      mint: 'taLckvZN2i5VHomAQvLqvtDUBJHH2iwHAmX1UZrB2GqUjr',
+    },
   },
   /* Not live. Listed so that the day it exists the wallet needs a setting
      changed rather than a release, and so the signing guard has a non-test
@@ -75,11 +89,12 @@ export const NETWORKS = {
     FAUCET_ACCOUNT: '',
     NAMES_ROOT: '',
     WTHRU_MINT: '',
-    pals: { program: '', config: '', mint: '' },
+    ours: { THRUSWAP: '', THRUPAD: '', WALL: '' },
+    pals: NO_PALS,
   },
 }
 
-export const DEFAULT_NETWORK = 'alphanet'
+export const DEFAULT_NETWORK = 'betanet'
 
 /**
  * The network a settings record names.

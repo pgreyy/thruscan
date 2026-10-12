@@ -3,8 +3,9 @@
 // Which programs to recognise, per network.
 //
 // Thru's own programs are bootstrap addresses: the runtime places them at the
-// same address on every network, which I confirmed by reading all of them off
-// betanet before writing this. Ours are not. A program's address is derived
+// same address on every network (all of them read off both betanet and
+// alphanet on 12 October 2026). Ours are not. Betanet and alphanet are two
+// separate chains now, so ours are listed per network and never shared. A program's address is derived
 // from whoever deployed it, so ThruScan's programs have one set of addresses on
 // alphanet and will have a different set on betanet, and the indexer has to be
 // told which it is looking at.
@@ -22,14 +23,16 @@ export const SYSTEM = {
   NATIVE_FAUCET_PROGRAM: 'taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16',
   WTHRU_PROGRAM: 'taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm',
   NFT_PROGRAM: 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5',
-  /* Betanet ships these two; alphanet did not. Harmless to carry on both,
-     because an address that is not there simply never appears in a block. */
+  /* Present on both betanet and alphanet as of 12 October 2026. */
   AMM_PROGRAM: 'taAMMx8gG44RcOyRqNYZ55pDaAJoGS0R8kPYxBN96sO8kD',
   /* The do-nothing program. It is how a wallet with no account gets its
      first transaction accepted, and it is also what the node fills empty
      slots with, so the decoder tells those apart by the transaction's
      create-fee-payer flag rather than by the program. */
   NOOP_PROGRAM: 'taNOOPV4A7S3WTsirr149To2GoGZ9q8zllQaBrbekHfkJT',
+  /* Where `thru program create` and `upgrade` land. Every deployment of ours
+     is a call to it, which is worth naming rather than showing as a mystery. */
+  MANAGER_PROGRAM: 'taMGRmPoSTkUtF6UlmCIq58K8OYsnXshOMPdobxxHytqmu',
   /* The price oracle. It posts updates continuously, bundled through the
      multicall program, and on a quiet chain those are most of the traffic.
      Infrastructure rather than anybody's activity, so the feed hides it. */
@@ -37,9 +40,9 @@ export const SYSTEM = {
   CLOB_PROGRAM: 'taCLOBcFk1PT8JTHQM1LzsyK6HLv1YkSJKZ2ZyIxo8fiTe',
 }
 
-/* Ours, per network. Betanet is empty until the deploy happens, and empty is
-   the honest value: writing alphanet's addresses in here would make the
-   indexer claim to recognise programs that are not on the chain. */
+/* Ours, per network. Betanet holds what tools/betanet/ deployed, and nothing
+   copied from alphanet: an alphanet address here would make the indexer claim
+   to recognise programs that are not on the chain. */
 export const OURS = {
   alphanet: {
     THRUPAD_PROGRAM: 'tastnRlQL8RGYeByXK2QAzaqdnfvI6pVn0e89JSl6Hiu8I',
@@ -53,7 +56,15 @@ export const OURS = {
     PALS_PROGRAM: 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH',
     WALL_PROGRAM: 'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH',
   },
-  betanet: {},
+  betanet: {
+    THRUPAD_PROGRAM: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1',
+    THRUPAD_REGISTRY: 'ta3KpHenF6JwYBZk_MLqEVyvn2binYGuT5UOp6prEzSTah',
+    THRUSWAP_PROGRAM: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL',
+    WALL_PROGRAM: 'ta0HkkkvXQTe4MkfWBZlqlvyLlxilHr-w6Cxrkm0SqYlaS',
+    WORDLE_PROGRAM: 'taEUig8UQA9RpP1DTRz3zyPI90v3JnGlA_z-_DZFzXyZWY',
+    G2048_PROGRAM: 'ta3UKLl5x0j0l-wO1qyYlO1-7UA9scLHVA6kkIh_ckCQ_H',
+    ID_PROGRAM: 'taTusdvqObMobC8XzdHB-WfRiXfNFmoAKgfMmUV3L6KXNA',
+  },
 }
 
 /** The network a URL points at, by name, so the caller need not repeat itself. */
@@ -77,7 +88,7 @@ export async function addressesFor(rpcUrl) {
     console.warn('indexer: set THRU_NETWORK, or the program addresses directly, to see ours.')
   }
   const out = { ...SYSTEM, ...ours }
-  for (const key of ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'PALS_PROGRAM', 'WALL_PROGRAM', 'AMM_PROGRAM', 'CLOB_PROGRAM']) {
+  for (const key of ['THRUPAD_PROGRAM', 'THRUPAD_REGISTRY', 'THRUSWAP_PROGRAM', 'PALS_PROGRAM', 'WALL_PROGRAM', 'WORDLE_PROGRAM', 'G2048_PROGRAM', 'ID_PROGRAM', 'AMM_PROGRAM', 'CLOB_PROGRAM']) {
     if (process.env[key]) out[key] = process.env[key]
   }
   return out

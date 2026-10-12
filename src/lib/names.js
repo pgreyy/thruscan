@@ -53,11 +53,12 @@
 // derive-domain-account on names it had already created.
 
 import { Pubkey, deriveProgramAddress } from '@thru/sdk'
+import { addressOf as networkAddress } from './networks.js'
 
 export const NAME_SERVICE_PROGRAM = 'taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG'
 
 /** Our root. Every name registered through ThruScan is a child of this. */
-export const ROOT_REGISTRAR = 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg'
+export const ROOT_REGISTRAR = networkAddress('NAME_ROOT')
 export const ROOT_SUFFIX = 'id'
 
 export const OP_INIT_ROOT = 0

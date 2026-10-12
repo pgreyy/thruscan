@@ -13,17 +13,26 @@ const PROGRAM_NAMES = {
   taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE: 'Thru token program',
   taNAMEqRNEDeMWp0cDYmMVdZyTZiF5NyGDR9zTwH42rWQG: 'Thru name service',
   taFCTxR0y2eabGGaEdtTwC9pHz7ZY4CYD7FOiBFUJeAW16: 'Thru faucet',
-  taCXE0eEQbUHU90dyZ__Bz1yfQabjyaD4xaSHKUw3Q1M4N: 'ThruSwap',
-  tastnRlQL8RGYeByXK2QAzaqdnfvI6pVn0e89JSl6Hiu8I: 'ThruPad',
-  'tagNpTX6NLyLv1099dM7HQySw9j_dSH8GBoijY4fGCFVwH': 'ThruScan wall',
   taMULTIrOL8WpIFr16C1ECsO60qAsuwmwJephZHDOTvSeP: 'Thru multicall',
   taWTHRUBelpONhTRjYc7n4OovodUsUtZKTIuREWAi9G9lm: 'Wrapped THRU (WTHRU)',
   taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5: 'Thru NFT program',
-  taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH: 'Pixel Pals',
+}
+
+/* Thru's programs above are the same everywhere; ThruScan's are deployed per
+   network, so their names come from the network the wallet is on. A blank
+   address (not deployed there) names nothing. */
+function programNames(net) {
+  const names = { ...PROGRAM_NAMES }
+  const add = (address, name) => { if (address) names[address] = name }
+  add(net.ours?.THRUSWAP, 'ThruSwap')
+  add(net.ours?.THRUPAD, 'ThruPad')
+  add(net.ours?.WALL, 'ThruScan wall')
+  add(net.pals?.program, 'Pixel Pals')
+  return names
 }
 
 /** What we can say for sure about the instruction, from its bytes alone. */
-function explain(program, dataHex) {
+function explain(program, dataHex, net) {
   const b = Uint8Array.from((dataHex.match(/.{2}/g) ?? []).map((h) => parseInt(h, 16)))
   const dv = new DataView(b.buffer)
   if (program === 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr' && b.length >= 12 && dv.getUint32(0, true) === 1) {
@@ -40,7 +49,7 @@ function explain(program, dataHex) {
   if (program === 'taNFTjOaeDBSPHNf0LVRWAkF4raUFQgrz0EQIgJd60ENb5' && b.length >= 4) {
     return ({ 1: 'Mints an NFT', 2: 'Sends an NFT from this wallet', 3: 'Burns an NFT' })[dv.getUint32(0, true)] ?? null
   }
-  if (program === 'taXgi_tvqshzois9iLBY5msTGlQvW_GydSKRODoPgPVInH' && b.length >= 1) {
+  if (net.pals?.program && program === net.pals.program && b.length >= 1) {
     return ({ 2: 'Mints a Pixel Pal (pays its price in WTHRU)', 3: 'Sends a Pixel Pal from this wallet', 6: 'Claims what a Pixel Pal holds' })[b[0]] ?? null
   }
   if (program === 'taTOKENKRgcl3vO0yVhftATDbXuhgWcfaaxv9xpEEdMdUE') {
@@ -52,6 +61,7 @@ function explain(program, dataHex) {
 
 export function Approve({ id, state, onUnlocked }) {
   const net = networkFor(state.settings)
+  const names = programNames(net)
   /* The account was made on one network and this request is on another. The
      key works on both, because a Thru address comes from the key rather than
      from the chain, which is exactly why this is worth saying out loud: there
@@ -102,7 +112,7 @@ export function Approve({ id, state, onUnlocked }) {
     message = /^[\x20-\x7e\s -￿]*$/.test(text) && !text.includes('�') ? text : Array.from(bytes, (x) => x.toString(16).padStart(2, '0')).join('')
   }
 
-  const summary = p.program ? explain(p.program, p.dataHex ?? '') : null
+  const summary = p.program ? explain(p.program, p.dataHex ?? '', net) : null
   const accounts = [...(p.readWrite ?? []).map((a) => [a, 'can change']), ...(p.readOnly ?? []).map((a) => [a, 'read only'])]
 
   return (
@@ -130,7 +140,7 @@ export function Approve({ id, state, onUnlocked }) {
 
         {p.program && (
           <div className="card kv">
-            <div><span>Program</span><b>{PROGRAM_NAMES[p.program] ?? <span className="mono">{short(p.program, 8)}</span>}</b></div>
+            <div><span>Program</span><b>{names[p.program] ?? <span className="mono">{short(p.program, 8)}</span>}</b></div>
             {summary && <div><span>Does</span><b>{summary}</b></div>}
             <div><span>Fee</span><span>1 THRU at most</span></div>
             <div><span>Network</span><span>{net.label}{net.test ? ' (test)' : ''}</span></div>
@@ -143,7 +153,7 @@ export function Approve({ id, state, onUnlocked }) {
           </p>
         )}
         {p.review && <p className="fine">The site describes it as: “{String(p.review).slice(0, 200)}”. Only the details above come from the transaction itself.</p>}
-        {!PROGRAM_NAMES[p.program] && p.program && <p className="notice warn">A program ThruScan Wallet does not recognise. Only approve if you trust {host}.</p>}
+        {!names[p.program] && p.program && <p className="notice warn">A program ThruScan Wallet does not recognise. Only approve if you trust {host}.</p>}
 
         {p.program && (
           <details className="card" open={showData} onToggle={(e) => setShowData(e.target.open)}>

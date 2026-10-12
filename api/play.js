@@ -28,6 +28,7 @@ import dns from 'node:dns'
 // the 0.3.x node rejects, which surfaces as "invalid transaction signature".
 import { createThruClient } from '@thru/sdk'
 import { createGrpcTransport } from '@connectrpc/connect-node'
+import { grpcUrl } from '../src/lib/networks.js'
 import {
   MAX_STATE_UNITS, ID_PROGRAM, ID_REGISTRY,
   WORDLE_PROGRAM, WORDLE_BOARD, G2048_PROGRAM, G2048_BOARD,
@@ -37,7 +38,8 @@ export const config = { runtime: 'nodejs' }
 
 dns.setDefaultResultOrder('ipv4first')
 
-const RPC_URL = process.env.THRU_RPC_URL || 'https://rpc.alphanet.thru.org'
+/* The active network's node; THRU_RPC_URL still overrides it. */
+const RPC_URL = grpcUrl()
 
 /* The live game programs and boards. They are public on chain (each board's
    owner is its program) and they now come from src/lib/addresses.js, the one

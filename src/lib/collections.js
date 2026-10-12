@@ -5,6 +5,7 @@
 // Collections from the artist launchpad get added here.
 
 import { GENESIS, palFor } from './pals/art.js'
+import { PALS_PROGRAM } from './pals/chain.js'
 
 async function palsStats() {
   const r = await fetch('/api/rpc?action=pals&lite=1')
@@ -32,6 +33,9 @@ export const COLLECTIONS = [
     to: '/pals',
     creator: 'fuck.id',
     avatar: () => palFor(GENESIS.id, GENESIS.wallet),
+    /* False on a network where Pixel Pals is not deployed (betanet, for
+       now): the row stays, says so, and asks the chain for nothing. */
+    live: Boolean(PALS_PROGRAM),
     stats: palsStats,
   },
 ]
