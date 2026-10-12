@@ -1,125 +1,97 @@
-/* Launchpad: the create form and the list of launches.
+/* ===========================================================================
+   Create a token (Core Screens 3h/3i): a 720 / 400 grid, 48 apart, three
+   numbered panels on the left and a sticky summary on the right.
+   =========================================================================== */
 
-   The form used to be one column of full-width fields with a label above each,
-   which made six short answers fill a screen and a half. Paired fields and a
-   panel showing what you are about to make put the whole thing in view at once,
-   on a laptop. On a phone the panel drops under the form, where a summary
-   belongs. */
+.cr { display: grid; grid-template-columns: minmax(0, 720px) minmax(0, 400px); gap: 48px; justify-content: center; align-items: start; }
+.cr-main { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.cr-intro { display: flex; flex-direction: column; gap: 8px; }
+.cr-crumb { align-self: flex-start; padding: 0; border: 0; background: none; font-size: 14px; color: var(--text-secondary); cursor: pointer; }
+.cr-crumb:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
+.cr-h1 { margin: 0; font-size: 36px; line-height: 40px; font-weight: 700; letter-spacing: -0.03em; }
+.cr-lead { margin: 0; max-width: 600px; font-size: 15px; line-height: 1.5; color: var(--text-body); }
 
-.launch-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 18px;
-  margin-top: 14px;
-  align-items: start;
+.cr-panel { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); }
+.cr-panel-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
+.cr-panel-head h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 700; }
+.cr-n { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--text-primary); font-family: var(--font-mono); font-size: 12px; }
+.cr-n.done { background: var(--text-primary); color: var(--bg-surface); }
+.cr-optional { font-size: 13px; color: var(--text-secondary); }
+.cr-panel-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+.cr-cols-name { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+.cr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.cr-field { display: flex; flex-direction: column; min-width: 0; }
+.cr-field .label { margin-bottom: 6px; }
+.cr-field .helper { margin-top: 6px; }
+
+/* A field with a unit after the number. */
+.cr-suffixed { display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+.cr-suffixed:focus-within { border-color: var(--text-primary); outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.cr-suffixed input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--text-primary); font-size: 15px; }
+.cr-suffixed input:focus-visible { outline: 0; }
+.cr-suffixed > span { flex: none; font-size: 13px; color: var(--text-secondary); }
+/* A value the program decides: sunken, no edge. */
+.cr-fixed { display: flex; align-items: center; gap: 8px; background: var(--bg-sunken); border-color: transparent; font-weight: 600; color: var(--text-primary); }
+.cr-fixed.mono { font-weight: 400; color: var(--text-body); }
+
+.cr-explain { display: grid; grid-template-columns: 240px 1fr; gap: 18px; align-items: center; padding: 14px; border-radius: var(--r-control); background: var(--bg-canvas); font-size: 13px; line-height: 1.5; color: var(--text-body); }
+[data-theme="dark"] .cr-explain { background: var(--bg-sunken); }
+.cr-explain-art { width: 100%; height: auto; }
+.cr-art-fill { fill: var(--bg-sunken); }
+[data-theme="dark"] .cr-art-fill { fill: var(--border-default); }
+.cr-art-line { stroke: var(--chart-line); }
+.cr-art-grad { stroke: var(--chart-line); }
+
+.cr-cols-media { display: grid; grid-template-columns: 120px 1fr; gap: 20px; }
+.cr-drop-wrap { display: flex; flex-direction: column; gap: 6px; }
+.cr-drop {
+  width: 120px; height: 120px; padding: 0; display: grid; place-items: center; overflow: hidden;
+  border-radius: var(--r-panel); border: 1.5px dashed var(--border-frame);
+  background: repeating-linear-gradient(135deg, var(--bg-canvas) 0 6px, var(--bg-surface) 6px 12px);
+  font-size: 11px; line-height: 1.4; color: var(--text-secondary); text-align: center; cursor: pointer;
 }
+.cr-drop.over { border-color: var(--text-primary); }
+.cr-drop.has { border-style: solid; background: var(--bg-sunken); }
+.cr-links { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
-.launch-form { display: grid; gap: 12px; min-width: 0; }
+/* ---- the summary column ---- */
+.cr-side { position: sticky; top: calc(var(--h-bar) + 16px); display: flex; flex-direction: column; gap: 16px; padding-top: 96px; min-width: 0; }
+.cr-summary { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.cr-k { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.cr-preview { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: var(--r-control); background: var(--bg-canvas); }
+[data-theme="dark"] .cr-preview { background: var(--bg-sunken); }
+.cr-preview-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; font-size: 15px; }
+.cr-preview-body > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-preview-body .mono { font-size: 12px; color: var(--text-secondary); }
+.cr-preview > .mono { font-size: 12px; }
+.cr-next { display: flex; flex-direction: column; border-top: 1px solid var(--border-subtle); padding-top: 10px; font-size: 14px; }
+.cr-next .cr-k { color: var(--text-primary); padding-bottom: 4px; }
+.cr-next > span:not(.cr-k) { display: flex; gap: 10px; padding: 6px 0; color: var(--text-body); }
+.cr-next i { font-style: normal; color: var(--text-secondary); }
+.cr-fees { display: flex; flex-direction: column; border-top: 1px solid var(--border-subtle); font-size: 14px; }
+.cr-fees > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
+.cr-fees > div:last-child { border-bottom: 0; }
+.cr-fees > div > span:first-child { color: var(--text-secondary); }
+.cr-fees .mono { font-size: 13px; }
+.cr-summary .cta { margin-top: 0; }
+.cr-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 
-.lf-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-.lf { display: grid; gap: 5px; min-width: 0; }
-.lf > span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
-.lf .field { width: 100%; }
-
-.lf-picture { display: flex; align-items: center; gap: 12px; }
-.lf-picture .fine { margin: 0; line-height: 1.55; }
-
-.lf-socials summary { cursor: pointer; }
-.lf-social-fields { display: grid; gap: 8px; margin-top: 10px; }
-.lf-problem { margin: 0; }
-
-.launch-preview {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 14px;
-  background: var(--soft);
-  min-width: 0;
+@media (max-width: 1199px) {
+  .cr { grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 32px; }
 }
-.lp-head { display: flex; align-items: center; gap: 11px; }
-.lp-head b { display: block; font-size: 15px; letter-spacing: -0.01em; }
-.lp-head span { font-size: 12px; color: var(--muted); }
-.lp-rows { margin-top: 12px; display: grid; gap: 7px; }
-.lp-rows > div { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; font-size: 12.5px; }
-.lp-rows span { color: var(--muted); }
-.lp-rows b { font-size: 12.5px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
-.launch-preview .fine { margin: 12px 0 0; line-height: 1.55; }
-
-/* ---------- the list ----------
-   Cards, in two sections. A launchpad is scanned rather than read: the
-   picture, the ticker and what the curve values it at, small enough that a
-   screen holds ten. */
-
-.lsec { margin-bottom: 28px; }
-.lsec:first-of-type { margin-top: 6px; }
-.lsec-head { margin-bottom: 12px; }
-.lsec-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; }
-.lsec-count {
-  margin-left: 9px; font-family: var(--mono); font-size: 12.5px;
-  font-weight: 500; color: var(--muted);
+@media (max-width: 1023px) {
+  .cr { grid-template-columns: minmax(0, 720px); }
+  .cr-side { position: static; padding-top: 0; }
 }
-.lsec-head .fine { margin: 3px 0 0; }
-
-/* Five or six across on a laptop, two on a phone. Any wider and the page
-   becomes a gallery of six enormous squares, which is what it was. */
-.lcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 11px; }
-
-.lcard {
-  display: block; min-width: 0; color: inherit; text-decoration: none;
-  border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
-  background: var(--surface);
-  transition: border-color 0.14s ease, transform 0.14s ease;
+@media (max-width: 599px) {
+  .cr-h1 { font-size: 28px; line-height: 32px; }
+  .cr-cols-name, .cr-cols { grid-template-columns: minmax(0, 1fr); }
+  .cr-explain { grid-template-columns: minmax(0, 1fr); }
+  .cr-panel-head, .cr-panel-body { padding-left: 16px; padding-right: 16px; }
 }
-.lcard:hover { border-color: var(--signal-line); transform: translateY(-2px); }
-
-.lcard-art { position: relative; display: block; aspect-ratio: 1; background: var(--soft); }
-/* The icon fills the cover rather than sitting in the middle of it: a token's
-   picture is the thing people recognise first. */
-.lcard-art .lcard-icon {
-  width: 100% !important; height: 100% !important; flex: none !important;
-  border-radius: 0; font-size: 40px !important;
+@media (max-width: 359px) {
+  .cr-cols-media { grid-template-columns: minmax(0, 1fr); }
 }
-.lcard-flag {
-  position: absolute; left: 8px; top: 8px;
-  padding: 3px 8px; border-radius: 999px;
-  background: var(--ink); color: var(--canvas);
-  font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em;
-}
-
-.lcard-body { display: block; padding: 9px 10px 11px; min-width: 0; }
-.lcard-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.lcard-line b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lcard-line i { font-size: 11.5px; color: var(--muted); font-style: normal; white-space: nowrap; }
-.lcard-cap { display: block; margin-top: 4px; font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
-.lcard-cap em { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted); font-style: normal; font-family: var(--sans); }
-.lcard-bar { display: block; margin-top: 9px; }
-.lcard-bar .progress-fill { display: block; }
-.lcard-note { display: block; margin-top: 6px; font-size: 11px; color: var(--muted); }
-
-.launch-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
-
-.pad-head { align-items: flex-start; }
-.pad-head .sub { margin-top: 2px; }
-
-@media (max-width: 860px) {
-  .launch-grid { grid-template-columns: minmax(0, 1fr); }
-  .launch-preview { order: -1; }
-}
-
-@media (max-width: 430px) {
-  .lf-pair { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 460px) {
-  .lcards { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .lcard-art .lcard-icon { font-size: 34px !important; }
-}
-
-/* The quote asset, now that there is only one of it. Reads as a stated fact
-   rather than a control nobody can change. */
-.lf-fixed { display: flex; align-items: baseline; gap: 8px; padding: 9px 0; }
-.lf-fixed b { font-weight: 600; }
-
 /* ===========================================================================
    Token launch detail (Core Screens 3j/3k).
    =========================================================================== */
