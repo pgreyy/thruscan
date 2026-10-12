@@ -11,7 +11,6 @@ import { SwapPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { MarketHome } from './pages/Market.jsx'
 import { Wordmark } from './components/Wordmark.jsx'
 import { WalletPage } from './pages/Wallet.jsx'
-import { EXTENSION_URL, EXTENSION_IS_EXTERNAL } from './lib/external.js'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
 import { BuildersPage } from './pages/Builders.jsx'
@@ -113,7 +112,7 @@ const MORE_NAV = [
   { to: '/collections', label: 'Collections', also: ['/pixelpals'] },
   { to: '/names', label: 'ThruID', also: ['/profile'] },
   { to: '/faucet', label: 'Faucet' },
-  { to: EXTENSION_URL, label: 'Get wallet', external: EXTENSION_IS_EXTERNAL, also: ['/get-wallet'] },
+  { to: '/get-wallet', label: 'ThruScan Wallet' },
   { to: '/explorer', label: 'Explorer', also: ['/tx', '/account'] },
   { to: '/archives', label: 'Archives' },
 ]
@@ -825,9 +824,9 @@ function Shell({ children }) {
   const back = () => (window.history.length > 1 ? navigate(-1) : navigate('/'))
 
   const closeMore = (e) => e.currentTarget.closest('details')?.removeAttribute('open')
-  const moreLink = (l, onClick, className) => (l.external
-    ? <a key={l.label} className={className} href={l.to} target="_blank" rel="noreferrer" onClick={onClick}>{l.label}<Icon name="external" size={16} /></a>
-    : <Link key={l.label} className={className} to={l.to} aria-current={active(l)} onClick={onClick}>{l.label}</Link>)
+  const moreLink = (l, onClick, className) => (
+    <Link key={l.label} className={className} to={l.to} aria-current={active(l)} onClick={onClick}>{l.label}</Link>
+  )
 
   return (
     <div className="shell">

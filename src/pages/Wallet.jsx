@@ -1282,7 +1282,7 @@ export function ConnectCard({ compact = false, title = 'Connect a wallet' }) {
         </div>
         {found
           ? <button className="btn" onClick={connect} disabled={busy}>{busy ? 'Waiting for your wallet' : 'Connect'}</button>
-          : <a className="btn ghost" href={EXTENSION_URL} target="_blank" rel="noreferrer">Get the extension</a>}
+          : <a className="btn ghost" href={EXTENSION_URL} target="_blank" rel="noopener noreferrer">Add to Chrome<Icon name="external" size={16} /></a>}
       </div>
       {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
     </section>

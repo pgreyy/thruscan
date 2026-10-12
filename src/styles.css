@@ -162,6 +162,9 @@ body {
 .mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 a { color: var(--text-link); text-decoration: underline; text-underline-offset: 2px; }
+/* A link that leaves for another site (the Chrome Web Store): icon after the label. */
+.ext-link { white-space: nowrap; }
+.ext-link svg { display: inline-block; vertical-align: -2px; margin-left: 3px; }
 a:hover { color: var(--text-primary); }
 
 button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
@@ -1702,9 +1705,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 }
 .page-head .h1 { margin-bottom: 0; }
 
-/* Numbered steps on the get-wallet page. */
-.steps-list { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.55; }
-
 /* ---------- Pixel Pals ---------- */
 .pal-art { flex-shrink: 0; border-radius: var(--r-sm); overflow: hidden; }
 .pal-art svg { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
@@ -1938,20 +1938,51 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   .modal-card.txd { width: 100%; max-width: none; border-radius: var(--r-modal) var(--r-modal) 0 0; max-height: 92vh; padding-bottom: env(safe-area-inset-bottom, 0px); }
 }
 
-/* ---------- Get a wallet: two paths side by side ---------- */
-.gw { display: flex; flex-direction: column; gap: 24px; max-width: 1040px; }
-.gw-head .lede { margin-bottom: 0; }
-.gw-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
-.gw-path { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.gw-path-head { display: flex; gap: 12px; align-items: center; }
-.gw-mark { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: var(--r-control); background: var(--bg-sunken); }
-.gw-text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--text-body); }
-.gw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.gw-sub { margin: 6px 0 0; font-size: 13px; font-weight: 600; }
+/* ---------- ThruScan Wallet (/get-wallet) ----------
+   A centred product hero, a rule, the manual install folded away, then the
+   browser-wallet note. The popup screenshot will sit beside the hero later. */
+.gw { max-width: 1120px; padding-top: 32px; }   /* plus .main's 32 = 64 above, .main's 48 below */
+.gw-hero { display: flex; justify-content: center; text-align: center; }
+.gw-copy { min-width: 0; max-width: 640px; display: flex; flex-direction: column; align-items: center; }
+.gw-title { margin: 24px 0 0; font-size: 44px; line-height: 1.05; font-weight: 700; letter-spacing: -0.03em; text-wrap: balance; }
+.gw-lead { margin: 16px 0 0; max-width: 520px; font-size: 17px; line-height: 1.5; color: var(--text-body); text-wrap: pretty; }
+.gw-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 24px; }
+.gw-note { margin: 12px 0 0; font-size: 13px; line-height: 18px; color: var(--text-secondary); text-wrap: pretty; }
+.gw-note + .gw-note { margin-top: 4px; }
+.gw-copy .notice { margin-top: 12px; text-align: left; }
+.gw-rule { margin: 48px 0 0; border: 0; border-top: 1px solid var(--border-default); }
+
+.gw-manual > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 16px;
+  font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--text-primary);
+  cursor: pointer; list-style: none; border-radius: var(--r-control);
+}
+.gw-manual > summary::-webkit-details-marker { display: none; }
+.gw-manual > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.gw-manual > summary svg { flex: none; transform: rotate(-90deg); transition: transform var(--dur-base) var(--ease); }
+.gw-manual[open] > summary svg { transform: none; }
+.gw-manual, .gw-warn { max-width: 640px; margin-inline: auto; }
+.gw-manual-body { max-width: 640px; padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.gw-sub { margin: 8px 0 0; font-size: 13px; line-height: 18px; font-weight: 600; }
+.gw-sub:first-child { margin-top: 0; }
 .gw-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-top: 1px solid var(--border-subtle); }
 .gw-steps li { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: 14px; line-height: 1.45; }
 .gw-steps li > .mono:first-child { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid var(--text-primary); font-size: 11px; }
-@media (max-width: 819px) { .gw-paths { grid-template-columns: minmax(0, 1fr); } }
+.gw-ver { font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+
+.gw-warn {
+  display: flex; gap: 10px; align-items: flex-start; margin-top: 24px;
+  padding: 10px 14px; border-radius: var(--r-control); background: var(--bg-sunken);
+  color: var(--text-body); font-size: 14px; line-height: 1.45;
+}
+.gw-warn > svg { flex: none; margin-top: 1px; color: var(--text-primary); }
+
+@media (max-width: 519px) {
+  .gw { padding-top: 8px; }
+  .gw-title { font-size: 32px; }
+  .gw-actions { align-self: stretch; }
+  .gw-actions .btn { width: 100%; white-space: normal; }
+}
 
 /* ---------- Faucet ---------- */
 .faucet-page { max-width: 720px; display: flex; flex-direction: column; gap: 0; }

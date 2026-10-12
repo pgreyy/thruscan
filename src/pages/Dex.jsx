@@ -60,6 +60,7 @@ import {
 import { useDismiss } from '../lib/dismiss.js'
 import { connectWallet } from '../lib/connect.js'
 import { Icon } from '../components/Icon.jsx'
+import { StoreLink } from '../components/StoreLink.jsx'
 import { TxDialog } from '../components/TxDialog.jsx'
 import { useTxFlow, NETWORK_ROW } from '../lib/txflow.js'
 import { useTab } from '../lib/useTab.js'
@@ -520,7 +521,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
   const gradText = threshold != null ? `${fmt(threshold, quoteDecimals, 0)} ${quoteTicker} raised` : 'set by the program'
 
   const cta = (() => {
-    if (!hasWallet()) return { kind: 'connect', why: <>The launch is signed by you, so ThruScan needs a wallet to ask. Your form is kept. <Link to="/get-wallet">I don&rsquo;t have one yet</Link></> }
+    if (!hasWallet()) return { kind: 'connect', why: <>The launch is signed by you, so ThruScan needs a wallet to ask. Your form is kept. <StoreLink /></> }
     if (!wallet.unlocked) return { kind: 'unlock', label: 'Unlock and continue', onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign. Your form is kept.' }
     if (reason) return { kind: 'off', label: 'Review launch', why: null }
     return { kind: 'go', label: 'Review launch', onClick: review }
@@ -1138,7 +1139,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
 
   /* What the button says, and why when it cannot be pressed. */
   const cta = (() => {
-    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <Link to="/get-wallet">Get ThruScan Wallet</Link> or create one in this browser.</> }
+    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <StoreLink /> or create one in this browser.</> }
     if (!wallet.unlocked) return { kind: 'unlock', label: 'Unlock to swap', onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign.' }
     if (registryDown && !wrapOnly) {
       return { kind: 'off', label: 'Quote unavailable', why: <>The pool registry can&rsquo;t be read. The form stays; swapping resumes when it can. <button className="btn plain" onClick={() => reload()}>Retry</button></> }
@@ -1493,7 +1494,7 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload, onPool }
   const cta = (() => {
     const label = adding ? 'Add liquidity' : 'Remove liquidity'
     const variant = adding ? 'secondary' : 'danger'
-    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <Link to="/get-wallet">Get ThruScan Wallet</Link> or create one in this browser.</> }
+    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <StoreLink /> or create one in this browser.</> }
     if (!wallet.unlocked) return { kind: 'unlock', label: 'Unlock to continue', onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign.' }
     if (adding ? inA <= 0n : burnLp <= 0n) return { kind: 'off', label, variant, why: blocker ?? (adding ? 'Enter an amount.' : 'Enter how many LP tokens to burn.') }
     if (blocker) return { kind: 'off', label, variant, why: blocker }
@@ -2486,7 +2487,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
   const verb = side === 'buy' ? 'Buy' : 'Sell'
 
   const cta = (() => {
-    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <Link to="/get-wallet">Get ThruScan Wallet</Link> or create one in this browser.</> }
+    if (!hasWallet()) return { kind: 'connect', why: <>No wallet yet? <StoreLink /> or create one in this browser.</> }
     if (!wallet.unlocked) return { kind: 'unlock', label: `Unlock to ${verb.toLowerCase()}`, onClick: () => gate.ensure().catch(() => {}), why: 'Your browser wallet is locked. Enter its password to sign.' }
     if (amountIn <= 0n) return { kind: 'off', label: 'Enter an amount' }
     if (holding !== null && amountIn > holding) {
@@ -2620,7 +2621,7 @@ export function FaucetPage() {
                 <h2 className="h3">{!hasWallet() ? 'Open a wallet first' : !wallet.unlocked ? 'Unlock your wallet first' : 'Register your wallet first'}</h2>
                 <p className="why" style={{ marginTop: 6 }}>
                   {!hasWallet()
-                    ? <><Link to="/get-wallet">Get a wallet</Link>, then come back to claim THRU.</>
+                    ? <><StoreLink />, then come back to claim THRU.</>
                     : !wallet.unlocked
                       ? 'The faucet sends THRU to your wallet, so it needs to be unlocked first.'
                       : <>The faucet sends THRU to an account on chain, and this wallet has none yet. <Link to="/wallet">Register it on the Wallet page</Link>; ThruScan pays for that.</>}
