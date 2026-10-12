@@ -1,6 +1,7 @@
 // src/pages/Wall.jsx
 //
-// Messages on chain, optionally addressed to someone.
+// Messages on chain, optionally addressed to someone. Since Update 02 this is
+// the Explorer's Wall tab (/explorer?tab=wall).
 //
 // Three changes from the version this replaces, and they are all the same
 // change really:
@@ -29,19 +30,26 @@
 //   inbox is "messages addressed here", never "messages this person accepted",
 //   and this page says that out loud rather than implying otherwise.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { findWallTransaction } from '../lib/activity.js'
 import { getAccount } from '../lib/rpcClient.js'
-import { decodeWall, buildPostInstruction, MESSAGE_CHARS, NAME_CHARS, toHex } from '../lib/wall.js'
+import { decodeWall, buildPostInstruction, MESSAGE_CHARS, NAME_CHARS } from '../lib/wall.js'
 import { WALL_PROGRAM, WALL_ACCOUNT } from '../lib/addresses.js'
+import { network } from '../lib/networks.js'
 import { useWallet } from './Wallet.jsx'
 import { signAndSend, waitForResult, hasWallet } from '../lib/wallet.js'
+import { connectWallet } from '../lib/connect.js'
+import { notifyTx } from '../lib/notify.js'
+import { toast } from '../lib/toasts.js'
+import { loadNames } from '../lib/feed.js'
+import { relTime } from '../lib/when.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
-import { Tabs } from '../components/Tabs.jsx'
+import { Icon } from '../components/Icon.jsx'
 import { domainAccount, decodeDomain, addressOf, withSuffix, ROOT_SUFFIX } from '../lib/names.js'
 
-const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
+const short = (a) => (a ? `${a.slice(0, 5)}…${a.slice(-4)}` : '')
 
 /** The first .id name this browser claimed for an address, if any. */
 function localName(address) {
@@ -50,14 +58,6 @@ function localName(address) {
     const held = JSON.parse(localStorage.getItem(`thruscan.names.${address}`) || '[]')
     return held.length ? withSuffix(held[0]) : null
   } catch { return null }
-}
-
-function ago(date) {
-  const s = Math.max(0, (Date.now() - date.getTime()) / 1000)
-  if (s < 60) return 'just now'
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
 }
 
 /**
@@ -198,70 +198,79 @@ function TxLink({ entry }) {
   }
 
   return (
-    <button className="linkish wall-tx" onClick={open} disabled={state === 'finding'}>
-      {state === 'finding' ? 'finding…' : state === 'missing' ? 'transaction not found' : 'view transaction ↗'}
+    <button type="button" className="linkish wall-tx mono" onClick={open} disabled={state === 'finding'}>
+      {state === 'finding' ? 'finding…' : state === 'missing' ? 'transaction not found' : 'transaction'}
     </button>
   )
 }
 
-/** A post that has just landed already knows its transaction. */
-function SigLink({ signature }) {
-  return <Link className="linkish wall-tx" to={`/tx/${signature}`}>view transaction ↗</Link>
-}
+/* ---------------------------------------------------------------- reading */
 
-function Message({ entry, you }) {
-  const mine = you && entry.poster === you
-  const toMe = you && entry.to === you
+const PAGE = 20
+const DESK = '(min-width: 1024px)'
+
+/** One message. Plain text only: never HTML, never an unfurled link. Long
+ *  messages clamp to four lines with "Show more". */
+function Message({ entry, you, names, onReply }) {
+  const [open, setOpen] = useState(false)
+  const [long, setLong] = useState(false)
+  const body = useRef(null)
+  const toMe = !!you && entry.to === you
+  const who = (a) => (a === you ? 'you' : names.get(a) ?? short(a))
+
+  useLayoutEffect(() => {
+    const el = body.current
+    if (el) setLong(el.scrollHeight > el.clientHeight + 1)
+  }, [entry.message])
 
   return (
-    <article className="wall-msg">
+    <article className={`wall-msg${toMe ? ' to-me' : ''}`}>
       <div className="wall-msg-head">
-        <span className="wall-msg-who">
-          {entry.name || short(entry.poster)}
-          {entry.verified
-            ? <span className="wall-badge ok" title="The sender paid for this transaction, so the address is proven">signed</span>
-            : <span className="wall-badge" title="Posted through ThruScan's key, so the address is ThruScan's">sponsored</span>}
-          {mine && <span className="wall-badge you">you</span>}
+        <span className="wall-msg-who mono">
+          <Link to={`/account/${entry.poster}`}>{entry.name || who(entry.poster)}</Link>
+          {entry.to && (
+            <>
+              <span aria-hidden="true"> → </span>
+              <span className="sr-only"> to </span>
+              <Link to={`/account/${entry.to}`}>{who(entry.to)}</Link>
+            </>
+          )}
+          {toMe && <span className="wall-chip">TO YOU</span>}
         </span>
-        <span className="fine">{ago(entry.postedAt)}</span>
+        <span className="wall-msg-time mono" title={entry.postedAt.toUTCString()}>{relTime(entry.postedAt.getTime())}</span>
       </div>
 
-      <p className="wall-msg-body">{entry.message}</p>
+      <p ref={body} className={`wall-msg-body${open ? ' open' : ''}`}>{entry.message}</p>
+      {(long || open) && (
+        <button type="button" className="linkish wall-more" onClick={() => setOpen((o) => !o)}>{open ? 'Show less' : 'Show more'}</button>
+      )}
 
-      <div className="wall-msg-foot fine">
-        <Link className="mono" to={`/account/${entry.poster}`}>{short(entry.poster)}</Link>
-        {entry.to && (
-          <>
-            <span aria-hidden="true">→</span>
-            <Link className="mono" to={`/account/${entry.to}`}>
-              {toMe ? 'you' : short(entry.to)}
-            </Link>
-          </>
-        )}
-        {!entry.to && <span>public</span>}
-        {entry.signature ? <SigLink signature={entry.signature} /> : <TxLink entry={entry} />}
+      <div className="wall-msg-foot">
+        {entry.poster !== you && <button type="button" className="btn tertiary sm" onClick={() => onReply(entry.poster)}>Reply</button>}
+        {entry.signature
+          ? <Link className="wall-tx mono" to={`/tx/${entry.signature}`}>{short(entry.signature)}</Link>
+          : <TxLink entry={entry} />}
       </div>
     </article>
   )
 }
 
-function MessageList({ entries, you, empty }) {
-  if (!entries.length) return <p className="fine" style={{ padding: '14px 2px', lineHeight: 1.65 }}>{empty}</p>
-  return <div className="wall-list">{entries.map((e) => <Message key={e.signature ?? `${e.slot}-${e.postedAtNs}`} entry={e} you={you} />)}</div>
-}
-
 /* ---------------------------------------------------------------- writing */
 
-function Composer({ onPosted, fixedTo = null }) {
+function Composer({ onPosted, to: presetTo, nonce = 0, onClose }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
 
   const [message, setMessage] = useState('')
-  const [toInput, setToInput] = useState('')
+  const [toInput, setToInput] = useState(presetTo ?? '')
   const [resolved, setResolved] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+
+  // A Reply or a "Write on Wall" link fills the To field.
+  const [preset, setPreset] = useState(`${nonce}:${presetTo}`)
+  if (`${nonce}:${presetTo}` !== preset) { setPreset(`${nonce}:${presetTo}`); setToInput(presetTo ?? ''); setResolved(null) }
 
   const name = localName(wallet.address)
   const used = [...message].length
@@ -270,16 +279,17 @@ function Composer({ onPosted, fixedTo = null }) {
   // Resolve as they type, but only after they stop, so a half-typed name does
   // not fire a lookup per keystroke.
   useEffect(() => {
-    if (fixedTo || !toInput.trim()) { setResolved(null); return }
+    if (!toInput.trim()) return undefined
     let alive = true
     const id = setTimeout(async () => {
       const r = await resolveRecipient(toInput)
       if (alive) setResolved(r)
     }, 450)
     return () => { alive = false; clearTimeout(id) }
-  }, [toInput, fixedTo])
+  }, [toInput])
 
-  const to = fixedTo ?? resolved?.address ?? null
+  const to = toInput.trim() ? resolved?.address ?? null : null
+  const unresolved = !!toInput.trim() && !to
 
   const post = async () => {
     setError(null); setDone(null)
@@ -307,11 +317,14 @@ function Composer({ onPosted, fixedTo = null }) {
 
       const result = await waitForResult(signature)
       if (result?.settled && !result.succeeded) {
+        notifyTx({ address: wallet.address, type: 'wall', title: 'Wall post failed', body: 'Nothing was posted. Only the fee was spent.', sig: signature, ok: false })
         throw new Error('The chain rejected it. If the wall is full this is not the reason: it wraps. Check the transaction for the program error code.')
       }
 
       setDone(signature)
       setMessage(''); setToInput(''); setResolved(null)
+      toast({ kind: 'confirmed', title: 'Message posted', sub: to ? `To ${resolved?.label ?? short(to)}` : 'On the public wall', signature })
+      notifyTx({ address: wallet.address, type: 'wall', title: 'Message posted', body: message.trim().slice(0, 80), sig: signature })
       /* The post is on chain, so it goes on the page now, before any read of
          the wall can show it. If the result was never confirmed either way,
          nothing is shown early and the page just keeps reading until it
@@ -319,6 +332,7 @@ function Composer({ onPosted, fixedTo = null }) {
       onPosted(result?.settled && result.succeeded
         ? { signature, message: message.trim(), name: label, to, poster: wallet.address }
         : null)
+      onClose?.()
     } catch (e) {
       setError(String(e?.message ?? e))
     } finally {
@@ -326,143 +340,109 @@ function Composer({ onPosted, fixedTo = null }) {
     }
   }
 
-  if (!hasWallet()) {
-    return (
-      <section className="card">
-        <h2 className="h2">Open a wallet to post</h2>
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Posts are signed by your wallet. <Link to="/wallet">Open one</Link>.
-        </p>
-      </section>
-    )
-  }
-
   return (
-    <section className="card">
+    <section className="wall-compose">
       {gate.modal}
+      <h2 className="wall-compose-title">Write on a Wall</h2>
 
-      <div className="card-head">
-        <div>
-          <h2 className="h2">{fixedTo ? 'Send a message' : 'Post'}</h2>
-          <p className="sub">
-            {name ? <>as <b>{name}</b></> : <>as <span className="mono">{short(wallet.address)}</span></>}
-          </p>
-        </div>
+      <div className="form-row">
+        <label className="label" htmlFor="wall-to">To</label>
+        <input
+          id="wall-to"
+          className="field mono"
+          value={toInput}
+          onChange={(e) => { setToInput(e.target.value); setResolved(null) }}
+          placeholder={`An address or a name like someone.${ROOT_SUFFIX}`}
+          autoComplete="off" spellCheck={false}
+        />
+        {toInput.trim() && resolved?.error && <p className="field-help bad"><Icon name="failed" size={12} stroke={2.4} />{resolved.error}</p>}
+        {to && <p className="field-help">Goes to <span className="mono">{short(to)}</span>{resolved?.label ? `, which is ${resolved.label}` : ''}.</p>}
+        {!toInput.trim() && <p className="field-help">Leave it empty to post on the public wall.</p>}
       </div>
 
-
-      {!fixedTo && (
-        <div className="form-row" style={{ marginTop: 14 }}>
-          <label className="label">To (optional)</label>
-          <input
-            className="field mono"
-            value={toInput}
-            onChange={(e) => setToInput(e.target.value)}
-            placeholder={`An address, or a name like someone.${ROOT_SUFFIX}`}
-          />
-          {resolved?.error && <p className="fine" style={{ margin: '6px 0 0', color: 'var(--signal)' }}>{resolved.error}</p>}
-          {resolved?.address && (
-            <p className="fine" style={{ margin: '6px 0 0' }}>
-              Goes to <span className="mono">{short(resolved.address)}</span>
-              {resolved.label ? `, which is ${resolved.label}` : ''}.
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="form-row" style={{ marginTop: 14 }}>
-        <label className="label">Message</label>
+      <div className="form-row">
+        <label className="label" htmlFor="wall-msg">Message</label>
         <textarea
-          className="field"
+          id="wall-msg"
+          className="field wall-textarea"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Say something"
-          rows={3}
         />
-        <p className="fine" style={{ margin: '6px 0 0', color: over ? 'var(--signal)' : undefined }}>
-          {used} of {MESSAGE_CHARS} characters
-        </p>
+        <p className={`field-help wall-count mono${over ? ' bad' : ''}`}>{used} / {MESSAGE_CHARS}</p>
       </div>
 
-      <button
-        className="btn"
-        style={{ width: '100%', marginTop: 14 }}
-        onClick={post}
-        disabled={busy || over || message.trim().length === 0}
-      >
-        {busy ? 'Signing' : to ? 'Send it' : 'Post it'}
-      </button>
+      {!hasWallet() ? (
+        <button type="button" className="btn lg full" onClick={connectWallet}><Icon name="wallet" size={18} />Connect wallet to post</button>
+      ) : (
+        <button
+          type="button"
+          className="btn lg full"
+          onClick={post}
+          disabled={busy || over || message.trim().length === 0 || unresolved}
+        >
+          {busy ? 'Waiting for wallet' : 'Post message'}
+        </button>
+      )}
+      {!busy && hasWallet() && (message.trim().length === 0 || over || unresolved) && (
+        <p className="why">{over ? `Keep it to ${MESSAGE_CHARS} characters.` : unresolved ? 'Check the To field.' : 'Write a message to post.'}</p>
+      )}
 
-      {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
+      {error && <p className="notice bad">{error}</p>}
       {done && (
-        <p className="notice" style={{ marginTop: 12 }}>
-          Posted. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link>
-        </p>
+        <p className="notice">Posted. <Link className="mono" to={`/tx/${done}`}>{short(done)}</Link></p>
       )}
 
-      <p className="fine" style={{ marginTop: 14, lineHeight: 1.65 }}>
-        Public. Anyone can message any address. Oldest posts are overwritten when the wall fills.
-      </p>
+      <p className="fine wall-note">Messages are public and stay on chain. Your wallet signs and pays the network fee.</p>
     </section>
   )
 }
 
-/* ---------------------------------------------------------------- the page */
+/* ---------------------------------------------------------------- the tab */
 
-function NotDeployed() {
-  return (
-    <div className="wrap wrap-top">
-      <section className="card">
-        <h2 className="h2">Not deployed yet</h2>
-        <p className="fine" style={{ marginTop: 10, lineHeight: 1.65 }}>
-          Wall program addresses are missing from <code className="mono">src/lib/addresses.js</code>.
-        </p>
-      </section>
-    </div>
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'to-you', label: 'To you' },
+  { key: 'from-you', label: 'From you' },
+]
+
+/**
+ * The Explorer's Wall tab (Update 02, 5f/5g): the composer on the left, the
+ * messages on the right. On a phone the composer is a bottom sheet behind a
+ * floating Write button. ?filter=to-you and ?to=<address> come from
+ * notifications and from "Write on Wall" on an account page.
+ */
+export function WallTab() {
+  const { wall, loading, error, posted } = useWall()
+  const desktop = useSyncExternalStore(
+    (fn) => { const m = window.matchMedia(DESK); m.addEventListener('change', fn); return () => m.removeEventListener('change', fn) },
+    () => window.matchMedia(DESK).matches,
+    () => true,
   )
-}
-
-/** Messages addressed to one account. Rendered on an address's own page. */
-export function AddressMessages({ address }) {
-  const { wall, loading, reload, posted } = useWall()
-  const wallet = useWallet()
-
-  if (!WALL_ACCOUNT) return null
-
-  const inbox = wall?.entries?.filter((e) => e.to === address) ?? []
-  const isYou = wallet.address === address
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Messages</h2>
-          <p className="sub">{inbox.length} addressed to this account</p>
-        </div>
-        <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
-      </div>
-
-      <MessageList
-        entries={inbox}
-        you={wallet.address}
-        empty="Nothing has been sent here."
-      />
-
-      {!isYou && hasWallet() && (
-        <div style={{ marginTop: 14 }}>
-          <Composer fixedTo={address} onPosted={posted} />
-        </div>
-      )}
-    </section>
-  )
-}
-
-export function WallPage() {
-  const { wall, loading, error, reload, posted } = useWall()
   const wallet = useWallet()
   const you = wallet.address
+  const [params, setParams] = useSearchParams()
+  const filter = FILTERS.some((f) => f.key === params.get('filter')) ? params.get('filter') : 'all'
+  const [replyTo, setReplyTo] = useState(() => ({ to: params.get('to') ?? '', n: 0 }))
+  const [sheet, setSheet] = useState(() => !!params.get('to') && !window.matchMedia(DESK).matches)
+  const [shown, setShown] = useState(PAGE)
+  const [names, setNames] = useState(() => new Map())
 
-  const { inbox, sent, all } = useMemo(() => {
+  useEffect(() => {
+    let alive = true
+    loadNames().then((m) => { if (alive) setNames(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  const pick = (key) => {
+    const next = new URLSearchParams(params)
+    if (key === 'all') next.delete('filter')
+    else next.set('filter', key)
+    setParams(next, { replace: true })
+    setShown(PAGE)
+  }
+
+  const { all, inbox, sent } = useMemo(() => {
     const entries = wall?.entries ?? []
     return {
       all: entries,
@@ -471,60 +451,73 @@ export function WallPage() {
     }
   }, [wall, you])
 
-  if (!WALL_ACCOUNT || !WALL_PROGRAM) return <NotDeployed />
-
-  const header = (
-    <>
-      {error && <p className="notice bad">Could not read the wall. It may be mid-reset.</p>}
-      <Composer onPosted={posted} />
-    </>
-  )
-
-  const stats = wall && (
-    <div className="stat-strip" style={{ marginBottom: 16 }}>
-      <div className="stat-cell"><span className="k">Messages ever</span><span className="v">{wall.totalPosted.toLocaleString()}</span></div>
-      <div className="stat-cell"><span className="k">Signed by sender</span><span className="v">{wall.entries.filter((e) => e.verified).length}</span></div>
-      <div className="stat-cell"><span className="k">Addressed</span><span className="v">{wall.entries.filter((e) => e.to).length}</span></div>
-      <div className="stat-cell"><span className="k">Slots filled</span><span className="v">{wall.entries.length}/{wall.capacity}</span></div>
-    </div>
-  )
-
-  const panel = (entries, empty) => (
-    <div className="wrap wrap-top">
-      {stats}
-      {header}
-      <section className="card">
-        <div className="card-head">
-          <div><h2 className="h2">Messages</h2></div>
-          <button className="btn ghost" onClick={reload} disabled={loading}>{loading ? 'Reading' : 'Refresh'}</button>
-        </div>
-        <MessageList entries={entries} you={you} empty={empty} />
+  if (!WALL_ACCOUNT || !WALL_PROGRAM) {
+    return (
+      <section className="empty">
+        <span className="empty-title">The wall isn&rsquo;t running on this network yet</span>
+        <p>Messages will appear here once the wall program is deployed on {network.label}.</p>
       </section>
-    </div>
-  )
+    )
+  }
+
+  const list = filter === 'to-you' ? inbox : filter === 'from-you' ? sent : all
+  const reply = (address) => {
+    setReplyTo((r) => ({ to: address, n: r.n + 1 }))
+    if (!desktop) setSheet(true)
+    else document.getElementById('wall-msg')?.focus()
+  }
+  const empty = filter === 'to-you'
+    ? (you ? 'Nothing addressed to you yet.' : 'Connect a wallet to see messages to you.')
+    : filter === 'from-you'
+      ? (you ? 'You have not posted anything yet.' : 'Connect a wallet to see what you posted.')
+      : 'Nothing has been posted yet.'
+
+  const composer = <Composer key="compose" to={replyTo.to} nonce={replyTo.n} onPosted={posted} onClose={() => setSheet(false)} />
 
   return (
-    <Tabs
-      /* The Explorer renders this page inside a tab strip of its own, and both
-         strips would otherwise read and write ?tab=. Clicking "To you" set
-         tab=inbox, the outer strip did not recognise that as one of its keys,
-         fell back to its first tab, and threw you out to the Explorer. Nested
-         strips need separate parameters. */
-      param="view"
-      tabs={[
-        { key: 'all', label: 'Everything', el: panel(all, 'Nothing has been posted yet.'), badge: all.length || null },
-        {
-          key: 'inbox',
-          label: 'To you',
-          badge: inbox.length || null,
-          el: panel(inbox, you
-            ? 'Nothing addressed to you yet.'
-            : 'Open a wallet to see messages to you.'),
-        },
-        { key: 'sent', label: 'Sent', el: panel(sent, 'You have not posted anything yet.'), badge: sent.length || null },
-      ]}
-    />
+    <div className="wall-grid">
+      {desktop && <aside className="wall-side">{composer}</aside>}
+
+      <section className="wall-main">
+        <div className="chips wall-chips" role="group" aria-label="Filter messages">
+          {FILTERS.map((f) => (
+            <button key={f.key} type="button" className="chip" aria-pressed={filter === f.key} onClick={() => pick(f.key)}>
+              {f.label}{f.key === 'to-you' && you ? <span className="mono"> ({inbox.length})</span> : null}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className="notice bad">Could not read the wall. It may be mid-reset.</p>}
+        {loading && !wall && <p className="why">Reading the wall from {network.label}…</p>}
+
+        {wall && (list.length === 0
+          ? <p className="wall-empty">{empty}</p>
+          : (
+            <div className="wall-list">
+              {list.slice(0, shown).map((e) => (
+                <Message key={e.signature ?? `${e.slot}-${e.postedAtNs}`} entry={e} you={you} names={names} onReply={reply} />
+              ))}
+            </div>
+          ))}
+        {list.length > shown && (
+          <button type="button" className="btn secondary wall-older" onClick={() => setShown((n) => n + PAGE)}>Show older</button>
+        )}
+        {wall && <p className="fine">The wall keeps the latest {wall.capacity} messages; older ones are overwritten, and a network reset clears it.</p>}
+      </section>
+
+      {!desktop && <button type="button" className="wall-fab" onClick={() => setSheet(true)}><Icon name="create" size={18} stroke={2} />Write</button>}
+      {!desktop && sheet && createPortal(
+        <div className="sheet-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) setSheet(false) }}>
+          <div className="sheet wall-sheet" role="dialog" aria-modal="true" aria-label="Write on a Wall">
+            <span className="sheet-grab" aria-hidden="true" />
+            <button type="button" className="txd-x wall-sheet-x" onClick={() => setSheet(false)} aria-label="Close"><Icon name="failed" size={20} /></button>
+            {composer}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   )
 }
 
-export default WallPage
+export default WallTab

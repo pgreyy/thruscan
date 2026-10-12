@@ -26,6 +26,7 @@ const KIND_GROUPS = [
   { id: 'trade', label: 'Trades', kinds: ['buy', 'sell', 'swap'] },
   { id: 'nft', label: 'NFTs', kinds: ['nft'] },
   { id: 'token', label: 'Tokens', kinds: ['token', 'mint', 'transfer', 'burn'] },
+  { id: 'wall', label: 'Wall', kinds: ['wall'] },
   { id: 'name', label: 'ThruID', kinds: ['name'] },
 ]
 

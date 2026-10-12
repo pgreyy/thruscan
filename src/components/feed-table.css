@@ -45,7 +45,7 @@
 [data-theme="dark"] .act-th { background: var(--bg-sunken); }
 .act-r { text-align: right; }
 
-.act-event { font-weight: 600; display: flex; flex-direction: column; line-height: 1.2; }
+.act-event { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.2; }
 .act-failed { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--status-negative); }
 .act-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .act-hash a { font-size: 13px; }

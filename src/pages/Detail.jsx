@@ -17,6 +17,9 @@ import { Search } from './Home.jsx'
 import { decodePostInstruction } from '../lib/wall.js'
 import { WALL_PROGRAM } from '../lib/addresses.js'
 import { network } from '../lib/networks.js'
+import { kindOfLabel } from '../lib/pills.js'
+import { currentAddress } from '../lib/wallet.js'
+import { StatusPill, EventPill } from '../components/Pill.jsx'
 import './home.css'
 
 const num = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString())
@@ -100,7 +103,8 @@ export function TxPage() {
 
   const exec = tx?.execution
   const failed = exec && (exec.userErrorCode !== '0' || (exec.vmError ?? 0) !== 0)
-  const action = tx ? withDetail(describe({ program: tx.program, feePayer: tx.feePayer, rw: tx.readWriteAccounts ?? [], ro: tx.readOnlyAccounts ?? [], data: tx.instructionData }, null)) : null
+  const described = tx ? describe({ program: tx.program, feePayer: tx.feePayer, rw: tx.readWriteAccounts ?? [], ro: tx.readOnlyAccounts ?? [], data: tx.instructionData }, null) : null
+  const action = described ? withDetail(described) : null
   // A wall post carries its text in the transaction itself, so anyone holding
   // the signature can read the message without going near the wall.
   const post = tx?.program === WALL_PROGRAM && tx.instructionData
@@ -118,10 +122,12 @@ export function TxPage() {
             <div className="home-list-head"><h2>Overview</h2></div>
             <Field k="Signature"><span className="detail-addr"><span className="mono detail-break">{tx.signature ?? id}</span><Copy text={tx.signature ?? id} /></span></Field>
             <Field k="Status">
-              <span className={`home-badge${failed ? ' bad' : ''}`}>{failed ? 'Failed' : 'Success'}</span>
-              {tx.status?.label && <span className="fine detail-after">{pretty(tx.status.label)}</span>}
+              <StatusPill ok={!failed} size="lg" />
+              {failed
+                ? <span className="fine detail-after">Program error {exec.userErrorCode}</span>
+                : tx.status?.label && <span className="fine detail-after">{pretty(tx.status.label)}</span>}
             </Field>
-            <Field k="Action"><b>{action}</b></Field>
+            <Field k="Action"><EventPill kind={kindOfLabel(described.label)} size="lg" /><span className="detail-after">{action}</span></Field>
             {post && <Field k="Message"><span className="detail-message">{post.message}</span></Field>}
             {post?.to && <Field k="To"><Addr value={post.to} /></Field>}
             <Field k="Block">
@@ -212,7 +218,13 @@ export function AccountPage() {
       {account && (
         <>
           <section className="home-list detail-card">
-            <div className="home-list-head"><h2>Overview</h2><span className="home-badge">{kind}</span></div>
+            <div className="home-list-head">
+              <h2>Overview</h2>
+              {kind === 'Wallet' && (account.address ?? id) !== currentAddress() && (
+                <Link className="btn secondary sm" to={`/explorer?tab=wall&to=${encodeURIComponent(account.address ?? id)}`}>Write on Wall</Link>
+              )}
+              <span className="home-badge">{kind}</span>
+            </div>
             <Field k="Address"><span className="detail-addr"><span className="mono detail-break">{account.address ?? id}</span><Copy text={account.address ?? id} /></span></Field>
             {names && names.length > 0 && (
               <Field k="ThruID"><b>{names.map((n) => `${n}.${ROOT_SUFFIX}`).join(', ')}</b></Field>
