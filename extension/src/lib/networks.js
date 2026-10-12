@@ -49,7 +49,7 @@ export const NETWORKS = {
     FAUCET_ACCOUNT,
     NAMES_ROOT: 'taLu3d1rxGdQWWHJxUOK6eT9ti4lWeTijNp0Kk_5YKHARg',
     WTHRU_MINT,
-    ours: { THRUSWAP: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL', THRUPAD: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1', WALL: '' },
+    ours: { THRUSWAP: 'taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL', THRUPAD: 'taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1', WALL: 'ta0HkkkvXQTe4MkfWBZlqlvyLlxilHr-w6Cxrkm0SqYlaS' },
     pals: NO_PALS,
   },
   /* Legacy: a separate chain now, kept so a wallet made there still works. */
