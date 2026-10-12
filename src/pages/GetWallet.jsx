@@ -1,8 +1,15 @@
 // src/pages/GetWallet.jsx
 //
-// Where to get ThruScan Wallet: one download for desktop and phone.
+// Two ways to hold a key on Thru, side by side: ThruScan Wallet, the browser
+// extension, installed from a zip; or a wallet made right here, encrypted in
+// this browser. Nothing here claims a store listing: a Web Store button only
+// appears when VITE_EXTENSION_URL points at one.
 
 import { Link } from 'react-router-dom'
+import { Icon } from '../components/Icon.jsx'
+import { Symbol } from '../components/Wordmark.jsx'
+import { EXTENSION_URL, EXTENSION_IS_EXTERNAL } from '../lib/external.js'
+import { hasWallet } from '../lib/wallet.js'
 
 const ZIP = '/downloads/thruscan-wallet.zip'
 
@@ -14,40 +21,63 @@ const VERSION = manifest.version
 
 export function GetWalletPage() {
   return (
-    <div className="wrap">
-      <h1 className="h1">ThruScan Wallet</h1>
-      <p className="lede">Self-custody wallet for Thru. Your keys stay on your device.</p>
+    <div className="page gw">
+      <div className="gw-head">
+        <h1 className="h1">Get a wallet</h1>
+        <p className="lede">Every launch, trade and swap on ThruScan is signed by your wallet. Pick one of two: the extension, or a wallet made in this browser. Either way the key stays with you.</p>
+      </div>
 
-      <section className="card">
-        <div className="card-head">
-          <div>
-            <h2 className="h2">Download</h2>
-            <p className="sub">Version {VERSION} · zip</p>
+      <div className="gw-paths">
+        <section className="gw-path">
+          <div className="gw-path-head">
+            <span className="gw-mark"><Symbol size={28} /></span>
+            <div>
+              <h2 className="h3">ThruScan Wallet</h2>
+              <p className="sub">Browser extension · version <span className="mono">{VERSION}</span></p>
+            </div>
           </div>
-          <a className="btn" href={ZIP} download="thruscan-wallet.zip">Download</a>
-        </div>
-      </section>
+          <p className="gw-text">Keys stay in the extension, and any Thru site can ask it to sign. Installed from a zip with developer mode.</p>
+          <div className="gw-actions">
+            <a className="btn lg" href={ZIP} download="thruscan-wallet.zip">Download the zip</a>
+            {EXTENSION_IS_EXTERNAL && (
+              <a className="btn secondary lg" href={EXTENSION_URL} target="_blank" rel="noreferrer">Chrome Web Store<Icon name="external" size={16} /></a>
+            )}
+          </div>
 
-      <section className="card">
-        <h2 className="h2">On a phone (Mises browser)</h2>
-        <ol className="steps-list">
-          <li>Open this page in <b>Mises</b> and tap <b>Download</b>.</li>
-          <li>Menu → <b>Extensions</b> → turn on <b>Developer mode</b>.</li>
-          <li>Tap <b>+ (from .zip/.crx/.user.js)</b> and pick <span className="mono">thruscan-wallet.zip</span>.</li>
-        </ol>
-      </section>
+          <h3 className="gw-sub">On a computer (Chrome, Brave, Edge)</h3>
+          <ol className="gw-steps">
+            <li><span className="mono">1</span><span>Download the zip and unzip it.</span></li>
+            <li><span className="mono">2</span><span>Open <span className="mono">chrome://extensions</span> and turn on <b>Developer mode</b>.</span></li>
+            <li><span className="mono">3</span><span>Press <b>Load unpacked</b> and pick the unzipped folder.</span></li>
+          </ol>
 
-      <section className="card">
-        <h2 className="h2">On a computer (Chrome, Brave, Edge)</h2>
-        <ol className="steps-list">
-          <li>Download and unzip it.</li>
-          <li>Open <span className="mono">chrome://extensions</span> and turn on <b>Developer mode</b>.</li>
-          <li><b>Load unpacked</b> → pick the unzipped folder.</li>
-        </ol>
-        <p className="fine" style={{ marginTop: 10 }}>The Chrome Web Store listing is in review; once it is live, installing is one click.</p>
-      </section>
+          <h3 className="gw-sub">On a phone (Mises browser)</h3>
+          <ol className="gw-steps">
+            <li><span className="mono">1</span><span>Open this page in <b>Mises</b> and tap <b>Download the zip</b>.</span></li>
+            <li><span className="mono">2</span><span>Menu → <b>Extensions</b> → turn on <b>Developer mode</b>.</span></li>
+            <li><span className="mono">3</span><span>Tap <b>+ (from .zip/.crx/.user.js)</b> and pick <span className="mono">thruscan-wallet.zip</span>.</span></li>
+          </ol>
+          <p className="why">Already installed? <Link to="/wallet">Connect it on the Wallet page</Link>.</p>
+        </section>
 
-      <p className="fine">Already installed? <Link to="/wallet">Connect it on the Wallet page</Link>.</p>
+        <section className="gw-path">
+          <div className="gw-path-head">
+            <span className="gw-mark"><Icon name="wallet" size={22} /></span>
+            <div>
+              <h2 className="h3">Browser wallet</h2>
+              <p className="sub">Made here, no install</p>
+            </div>
+          </div>
+          <p className="gw-text">Create a wallet on this page. The key is encrypted with your password and kept in this browser only, with a twelve-word phrase you can write down to restore it anywhere.</p>
+          <div className="gw-actions">
+            <Link className="btn secondary lg" to="/wallet">{hasWallet() ? 'Open your wallet' : 'Create one here'}</Link>
+          </div>
+          <div className="notice">
+            <Icon name="warning" size={18} />
+            <span>A key in browser storage can be reached by anything running on the page, so the extension is the safer choice for anything you would mind losing. This is a test network either way.</span>
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

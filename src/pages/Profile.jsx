@@ -44,7 +44,7 @@ import { ownedNames, readName } from '../lib/holdings.js'
 import { withSuffix, ROOT_SUFFIX } from '../lib/names.js'
 import { decodePadRegistry } from '../lib/pad.js'
 import { getAccount } from '../lib/rpcClient.js'
-import { THRUPAD_REGISTRY as PAD_REGISTRY } from '../lib/addresses.js'
+import { THRUPAD_REGISTRY as PAD_REGISTRY, WTHRU_MINT } from '../lib/addresses.js'
 import { AVATAR_KEY, PFP_KEY, formatNftPfp, pfpForDomain, EMPTY_PFP, palsSnapshot } from '../lib/pfp.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 import { allTokenMeta } from '../lib/tokenmeta.js'
@@ -531,7 +531,7 @@ export function ProfilePage() {
             el: (
               <>
                 <Row title="Tokens" count={held.length || null}>
-                  {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some tUSD</Link> to start.</p>}
+                  {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some THRU</Link> to start.</p>}
                 </Row>
                 <Row title="Items" count={pals.length || null}>
                   {itemsView || <p className="fine">No NFTs yet. <Link to="/pals">Mint a Pixel Pal</Link>.</p>}
@@ -548,14 +548,14 @@ export function ProfilePage() {
                               key={l.id}
                               launch={l}
                               address={wallet.address}
-                              quoteTicker={wallet.tickers?.[l.quoteMint] || 'tUSD'}
+                              quoteTicker={wallet.tickers?.[l.quoteMint] || (l.quoteMint === WTHRU_MINT ? 'WTHRU' : 'tUSD')}
                               onClaimed={async () => { await loadLaunches(); wallet.refresh() }}
                             />
                           ))}
                         </div>
                       )}
                 </Row>
-                <Row title="ThruNames" count={names.length || null}>
+                <Row title="ThruID" count={names.length || null}>
                   {names.length === 0
                     ? <p className="fine">None yet. <Link to="/names">Claim one</Link>, free.</p>
                     : (
@@ -578,7 +578,7 @@ export function ProfilePage() {
             badge: held.length || null,
             el: (
               <Row title="Tokens" count={held.length || null}>
-                {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some tUSD</Link> to start.</p>}
+                {tokens || <p className="fine">Nothing yet. <Link to="/faucet">Get some THRU</Link> to start.</p>}
               </Row>
             ),
           },

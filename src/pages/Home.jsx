@@ -97,9 +97,16 @@ const HINTS = [
   'Search',
 ]
 
+/* The bar's wording (2f). */
+const BAR_HINTS = [
+  `Search tokens, addresses, tx, .${ROOT_SUFFIX}`,
+  'Search tokens, addresses, tx',
+  'Search',
+]
+
 let measureCtx = null
-function useFittedHint(inputRef, enabled) {
-  const [hint, setHint] = useState(HINTS[0])
+function useFittedHint(inputRef, enabled, hints = HINTS) {
+  const [hint, setHint] = useState(hints[0])
   useLayoutEffect(() => {
     const el = inputRef.current
     if (!enabled || !el) return undefined
@@ -109,23 +116,23 @@ function useFittedHint(inputRef, enabled) {
       if (!(room > 0)) return
       measureCtx ??= document.createElement('canvas').getContext('2d')
       measureCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
-      setHint(HINTS.find((h) => measureCtx.measureText(h).width <= room) ?? HINTS[HINTS.length - 1])
+      setHint(hints.find((h) => measureCtx.measureText(h).width <= room) ?? hints[hints.length - 1])
     }
     const ro = new ResizeObserver(fit)
     ro.observe(el)
     fit()
     document.fonts?.ready?.then(fit)
     return () => ro.disconnect()
-  }, [inputRef, enabled])
+  }, [inputRef, enabled, hints])
   return hint
 }
 
-export function Search({ compact = false }) {
+export function Search({ compact = false, bar = false, autoFocus = false }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [q, setQ] = useState('')
   const inputRef = useRef(null)
-  const hint = useFittedHint(inputRef, compact)
+  const hint = useFittedHint(inputRef, compact || bar, bar ? BAR_HINTS : HINTS)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -174,6 +181,29 @@ export function Search({ compact = false }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  /* The bar's field (2f): the icon on the left, the hint, and the "/" key
+     that jumps here from anywhere. Enter searches. */
+  if (bar) {
+    return (
+      <form className="bar-find-form" onSubmit={go} role="search">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="M13 13L17 17" /></svg>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setError(null) }}
+          placeholder={busy ? 'Searching…' : hint}
+          aria-label={BAR_HINTS[0]}
+          spellCheck={false}
+          autoComplete="off"
+          autoFocus={autoFocus}
+          enterKeyHint="search"
+        />
+        <kbd aria-hidden="true">/</kbd>
+        {error && <p className="home-search-error" role="alert">{error}</p>}
+      </form>
+    )
   }
 
   return (

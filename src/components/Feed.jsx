@@ -17,29 +17,16 @@
 // feed-table.css), which is why the cells are named by what they hold rather
 // than by where they sit.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  fetchFeed, toneOf, shortId, KIND_GROUPS,
+  fetchFeed, shortId, KIND_GROUPS,
   detailOf, targetOf, amountsOf, primaryAmount, feeOf, wantsEvents, loadEvents, eventsReady, loadNames,
 } from '../lib/feed.js'
+import { network } from '../lib/networks.js'
+import { relTime, fullUtc, clock, since } from '../lib/when.js'
+import { Icon } from './Icon.jsx'
 import './feed-table.css'
-
-/* Relative time from the block's own nanoseconds. Kept short on purpose: this
-   column sits next to seven others and a full date in each would be noise. */
-function when(ns) {
-  if (!ns) return ''
-  const ms = Number(BigInt(ns) / 1000000n)
-  const secs = Math.max(0, Math.round((Date.now() - ms) / 1000))
-  if (secs < 60) return `${secs}s`
-  const mins = Math.round(secs / 60)
-  if (mins < 60) return `${mins}m`
-  const hours = Math.round(mins / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.round(hours / 24)
-  if (days < 30) return `${days}d`
-  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
 
 /* What to say when there is nothing.
  *
@@ -75,144 +62,145 @@ const EVENT_WORD = {
 /* A click on a link or a button inside a row is that link's, not the row's. */
 const stop = (e) => e.stopPropagation()
 
-function CopyHash({ value }) {
-  const [done, setDone] = useState(false)
-  const timer = useRef(null)
-  useEffect(() => () => clearTimeout(timer.current), [])
-  const copy = async (e) => {
-    e.stopPropagation()
-    try {
-      await navigator.clipboard.writeText(value)
-      setDone(true)
-      clearTimeout(timer.current)
-      timer.current = setTimeout(() => setDone(false), 1400)
-    } catch { /* the clipboard is not always there; the hash is still a link */ }
-  }
-  return (
-    <button type="button" className={`act-copy${done ? ' done' : ''}`} onClick={copy} aria-label={done ? 'Copied' : 'Copy transaction hash'} title={done ? 'Copied' : 'Copy hash'}>
-      {done
-        ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
-        : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15" /></svg>}
-    </button>
-  )
-}
-
-/* A wallet: its registered name when it has one, otherwise the short address.
-   Beside the address the full one is in the tooltip. */
+/* A wallet: its .id name when it has one, otherwise the short address, with
+   the full address in the tooltip. Names are labels, not verification. */
 function Party({ address, names }) {
-  if (!address) return <span className="act-none">–</span>
+  if (!address) return <span className="act-none">—</span>
   const name = names.get(address)
   return (
-    <Link to={`/account/${address}`} className={name ? 'act-name' : 'mono'} title={name ? `${name} · ${address}` : address} onClick={stop}>
+    <Link to={`/account/${address}`} className="mono" title={name ? `${name} · ${address}` : address} onClick={stop}>
       {name ?? shortId(address)}
     </Link>
   )
 }
 
 function Target({ target, names }) {
+  if (!target.address) return <span className="act-none">—</span>
   if (target.wallet) return <Party address={target.address} names={names} />
   return (
-    <Link to={`/account/${target.address}`} className={target.mono ? 'mono' : 'act-prog'} title={target.address} onClick={stop}>
+    <Link to={`/account/${target.address}`} className="mono act-prog" title={target.address} onClick={stop}>
       {target.label}
     </Link>
   )
 }
 
-function Row({ item, names, extra }) {
+function Row({ item, names, extra, now }) {
   const navigate = useNavigate()
   const target = targetOf(item, extra)
   const amounts = amountsOf(item, extra)
   const lead = primaryAmount(amounts)
   const fee = feeOf(item)
-  const detail = detailOf(item)
+  const word = EVENT_WORD[item.kind] ?? item.kind
+  const failure = !item.ok && item.error !== null && item.error !== undefined ? ` · error ${item.error}` : ''
+  const detail = detailOf(item) + failure
   /* Amounts that still need the chain's token events are a short grey bar,
      not a dash: a dash would say "nothing moved" before anybody knows. */
   const pending = item.ok && wantsEvents(item) && !eventsReady(item.signature)
-  const tone = toneOf(item)
+  /* A failed transaction moved nothing, so its amount is the same dash as any
+     empty cell; the label keeps the meaning for screen readers. */
+  const notSent = !item.ok
 
   const open = () => {
     if (window.getSelection?.().toString()) return   // somebody was selecting text
     navigate(`/tx/${item.signature}`)
   }
+  const onKey = (e) => { if (e.key === 'Enter') open() }
 
   return (
-    <div role="row" className={`act-tr${item.ok ? '' : ' failed'}`} onClick={open}>
-      <div className="act-l1">
-        <span role="cell" className="act-event">
-          <span className={`feed-tag feed-${tone}`} title={item.ok ? 'Succeeded' : 'Failed'}>{EVENT_WORD[item.kind] ?? item.kind}</span>
-          {!item.ok && <span className="feed-failed">Failed</span>}
-        </span>
-        <span role="cell" className="act-detail" title={detail}>{detail}</span>
-        <span role="cell" className="act-hash">
-          <Link to={`/tx/${item.signature}`} className="mono" title={item.signature} onClick={stop}>{item.signature.slice(0, 6)}…{item.signature.slice(-4)}</Link>
-          <CopyHash value={item.signature} />
-        </span>
-        <span role="cell" className="act-time">{when(item.time) || '—'}</span>
-      </div>
-      <div className="act-l2">
-        <span role="presentation" className="act-route">
-          <span role="cell" className="act-from"><Party address={item.who} names={names} /></span>
-          <span className="act-arrow" aria-hidden="true">→</span>
-          <span role="cell" className="act-to"><Target target={target} names={names} /></span>
-        </span>
-        <span role="cell" className="act-amount">
-          {pending
-            ? <i className="act-pending" aria-label="Reading amounts" />
+    <div role="row" tabIndex={0} className={`act-tr${item.ok ? '' : ' failed'}`} onClick={open} onKeyDown={onKey}>
+      {/* Wide: one cell per column. */}
+      <span role="cell" className="act-event">
+        {word}
+        {!item.ok && <span className="act-failed">FAILED</span>}
+      </span>
+      <span role="cell" className="act-detail" title={detail}>{detail}</span>
+      <span role="cell" className="act-hash">
+        <Link to={`/tx/${item.signature}`} className="mono" title={item.signature} onClick={stop}>{item.signature.slice(0, 4)}…{item.signature.slice(-4)}</Link>
+      </span>
+      <span role="cell" className="act-from"><Party address={item.who} names={names} /></span>
+      <span role="cell" className="act-to"><Target target={target} names={names} /></span>
+      <span role="cell" className="act-amount">
+        {notSent
+          ? <span className="act-none" aria-label="Not sent">—</span>
+          : pending
+            ? <i className="skel-line" aria-label="Still reading the amount" />
             : amounts.length === 0
-              ? <span className="act-none">–</span>
-              : (
-                <>
-                  {/* Wide: every figure. Narrow: the one that matters. */}
-                  <span className="act-amounts-all">
-                    {amounts.slice(0, 2).map((a) => <span key={a.label} className={a.delta > 0 ? 'act-in' : 'act-out'}>{a.text}</span>)}
-                  </span>
-                  <span className={`act-amount-lead ${lead.delta > 0 ? 'act-in' : 'act-out'}`}>{lead.text}</span>
-                </>
-              )}
+              ? <span className="act-none">—</span>
+              : amounts.slice(0, 2).map((a) => <span key={a.label}>{a.text}</span>)}
+      </span>
+      <span role="cell" className="act-fee" title={fee ? 'Fee paid by the sender' : 'Not recorded for this transaction'}>
+        {fee ?? <span className="act-none">—</span>}
+      </span>
+      <span role="cell" className="act-time" title={fullUtc(item.time)}>{item.time ? relTime(item.time, now) : '—'}</span>
+
+      {/* Narrow: two lines, and the whole row is the target. */}
+      <span className="act-c" aria-hidden="true">
+        <span className="act-c1">
+          <span className="act-c-what">
+            <b>{word}</b>
+            {!item.ok && <span className="status-pill bad">Failed</span>}
+            <span className="act-c-detail">{detail ? ` · ${detail}` : ''}</span>
+          </span>
+          <span className="mono dim">{item.time ? relTime(item.time, now) : '—'}</span>
         </span>
-        <span role="cell" className="act-fee" title={fee ? 'Fee paid by the sender' : 'Not recorded for this transaction'}>
-          {fee ?? <span className="act-none">–</span>}
+        <span className="act-c2">
+          <span className="mono act-c-amt">
+            {notSent
+              ? <span className="act-none">—</span>
+              : pending ? <i className="skel-line" /> : lead ? lead.text : <span className="act-none">—</span>}
+          </span>
+          <span className="mono act-c-hash">{item.signature.slice(0, 4)}…</span>
         </span>
-      </div>
+      </span>
     </div>
   )
 }
 
 function SkeletonRows({ n = 6 }) {
   return Array.from({ length: n }, (_, i) => (
-    <div key={i} className="act-tr skel" aria-hidden="true">
-      <div className="act-l1">
-        <span className="act-event"><i /></span><span className="act-detail"><i /></span>
-        <span className="act-hash"><i /></span><span className="act-time"><i /></span>
-      </div>
-      <div className="act-l2">
-        <span className="act-route"><span className="act-from"><i /></span><span className="act-to"><i /></span></span>
-        <span className="act-amount"><i /></span><span className="act-fee"><i /></span>
-      </div>
+    <div key={i} className="act-tr act-skel" aria-hidden="true">
+      <span className="skel-line" style={{ width: 50 }} />
+      <span className="skel-line" style={{ width: '60%' }} />
+      <span className="skel-line" style={{ width: 70 }} />
     </div>
   ))
 }
 
-export function Feed({ address = null, title = 'Activity', limit = 30, showFilters = true }) {
+const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', name: 'ThruID' }
+
+export function Feed({ address = null, limit = 30, showFilters = true }) {
   const [group, setGroup] = useState('all')
   const [items, setItems] = useState([])
   const [next, setNext] = useState(null)
   const [loading, setLoading] = useState(true)
   const [problem, setProblem] = useState(null)
   const [detail, setDetail] = useState(null)
+  const [source, setSource] = useState(null)
   const [names, setNames] = useState(() => new Map())
   const [extra, setExtra] = useState(null)
+  const [updatedAt, setUpdatedAt] = useState(null)
+  const [pollError, setPollError] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true)
     const r = await fetchFeed({ group, address, limit })
     /* A failed poll leaves the rows that are already there. An empty list
-       where a list was is worse than a list a few seconds old. */
-    if (quiet && r.problem) { setLoading(false); return }
+       where a list was is worse than a list a few seconds old; the header
+       line says the refresh failed instead. */
+    if (quiet && r.problem) { setLoading(false); setPollError(true); return }
     setItems(r.items)
     setNext(r.next)
     setProblem(r.problem)
     setDetail(r.detail ?? null)
+    setSource(r.source ?? null)
+    setPollError(!!r.problem)
+    if (!r.problem) setUpdatedAt(Date.now())
     setLoading(false)
   }, [group, address, limit])
 
@@ -258,61 +246,93 @@ export function Feed({ address = null, title = 'Activity', limit = 30, showFilte
     setLoading(false)
   }
 
-  return (
-    <section className="act-panel">
-      <div className="act-top">
-        <h2 className="act-title">{title}</h2>
-        {showFilters && (
-          <div className="feed-filters act-filters" role="tablist" aria-label="Filter activity">
-            {KIND_GROUPS.map((g) => (
-              <button
-                key={g.id}
-                role="tab"
-                aria-selected={group === g.id}
-                className={group === g.id ? 'feed-chip on' : 'feed-chip'}
-                onClick={() => setGroup(g.id)}
-              >
-                {g.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+  const net = network.label.toLowerCase()
+  const status = pollError && updatedAt
+    ? <span className="act-status bad" role="status"><Icon name="failed" size={12} stroke={2.4} />Couldn&rsquo;t refresh · last update {clock(updatedAt)} · retrying</span>
+    : updatedAt
+      ? <span className="act-status" role="status"><span className="act-dot" aria-hidden="true" />Updated {since(updatedAt, now)}<span className="act-status-more"> · refreshes every 10 s</span></span>
+      : null
 
-      <div role="table" aria-label={title} className="act-table">
-        <div role="row" className="act-tr act-head">
-          <div className="act-l1">
-            <span role="columnheader" className="act-event">Event</span>
-            <span role="columnheader" className="act-detail">Detail</span>
-            <span role="columnheader" className="act-hash">Txn hash</span>
-            <span role="columnheader" className="act-time">Time</span>
-          </div>
-          <div className="act-l2">
-            <span role="presentation" className="act-route">
-              <span role="columnheader" className="act-from">From</span>
-              <span role="columnheader" className="act-to">To</span>
-            </span>
-            <span role="columnheader" className="act-amount">Amount</span>
-            <span role="columnheader" className="act-fee">Txn fee</span>
+  let empty = null
+  if (items.length === 0 && !loading) {
+    if (problem) {
+      empty = (
+        <div className="act-empty" title={problem !== 'offline' ? detail ?? undefined : undefined}>
+          <b>{problem === 'offline' ? 'Can’t reach ThruScan' : 'Can’t reach the Thru network'}</b>
+          <p>{emptyMessage(problem, group)} We will keep trying every 10 s.</p>
+          <button className="btn secondary sm" onClick={() => load()}>Retry now</button>
+        </div>
+      )
+    } else if (group === 'all') {
+      empty = (
+        <div className="act-empty">
+          <b>Nothing has happened on {net} yet</b>
+          <p>This list is live. New events appear here within 10 seconds of landing.</p>
+        </div>
+      )
+    } else {
+      empty = (
+        <div className="act-empty">
+          <b>No {GROUP_NOUN[group] ?? ''} activity in the last {limit} events</b>
+          <p>{group === 'name' ? 'Names are registered less often than trades. ' : ''}Load older events or switch to All.</p>
+          <div className="act-empty-actions">
+            {next && <button className="btn secondary sm" onClick={more}>Show older</button>}
+            <button className="btn tertiary sm" onClick={() => setGroup('all')}>Show all</button>
           </div>
         </div>
+      )
+    }
+  }
 
-        {items.length === 0 && loading && <SkeletonRows />}
-
-        {items.length === 0 && !loading && (
-          <div className={`act-note${problem ? ' bad' : ''}`} title={problem && problem !== 'offline' ? detail ?? undefined : undefined}>
-            {emptyMessage(problem, group)}
-          </div>
-        )}
-
-        {items.map((i) => <Row key={i.signature} item={i} names={names} extra={extra} />)}
+  return (
+    <section className="act">
+      <div className="act-head-row">
+        <div className="act-head-text">
+          <h1 className="act-h1">Activity</h1>
+          <p className="act-lead">Everyone&rsquo;s launches, trades, swaps, mints and names on Thru {net}, read from the chain.</p>
+        </div>
+        {status}
       </div>
 
-      {next && (
-        <button className="btn ghost feed-more act-more" onClick={more} disabled={loading}>
-          {loading ? 'Loading' : 'Show older'}
-        </button>
+      {showFilters && (
+        <div className="chips act-chips" role="group" aria-label="Filter activity">
+          {KIND_GROUPS.map((g) => (
+            <button key={g.id} className="chip" aria-pressed={group === g.id} onClick={() => setGroup(g.id)}>{g.label}</button>
+          ))}
+        </div>
       )}
+
+      {source === 'chain' && (
+        <div className="notice" role="status">
+          <Icon name="warning" size={18} />
+          <span>Reading straight from the chain, which is slower. Older events and some filters may be incomplete.</span>
+        </div>
+      )}
+
+      <div role="table" aria-label="Activity" className="act-table">
+        <div role="row" className="act-tr act-th">
+          <span role="columnheader">Event</span>
+          <span role="columnheader">Detail</span>
+          <span role="columnheader">Txn</span>
+          <span role="columnheader">From</span>
+          <span role="columnheader">To</span>
+          <span role="columnheader" className="act-r">Amount</span>
+          <span role="columnheader" className="act-r">Fee</span>
+          <span role="columnheader" className="act-r">Time</span>
+        </div>
+        {items.length === 0 && loading && <SkeletonRows />}
+        {empty}
+        {items.map((i) => <Row key={i.signature} item={i} names={names} extra={extra} now={now} />)}
+      </div>
+
+      <div className="act-foot">
+        <span>Amounts for token moves load after the row appears; grey bars mean &ldquo;still reading&rdquo;, not zero.</span>
+        {next && (
+          <button className="btn secondary act-more" onClick={more} disabled={loading}>
+            {loading ? 'Loading' : 'Show older'}
+          </button>
+        )}
+      </div>
     </section>
   )
 }

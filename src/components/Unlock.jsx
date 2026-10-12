@@ -26,7 +26,7 @@ import { createPortal } from 'react-dom'
 import { unlock, isUnlocked, hasWallet, storedWallet } from '../lib/wallet.js'
 import { notifyWalletChanged } from '../pages/Wallet.jsx'
 
-const short = (a) => (a ? `${a.slice(0, 8)}…${a.slice(-6)}` : '')
+const short = (a) => (a ? `${a.slice(0, 5)}…${a.slice(-4)}` : '')
 
 function Modal({ onDone, onCancel }) {
   const [password, setPassword] = useState('')
@@ -56,34 +56,32 @@ function Modal({ onDone, onCancel }) {
 
   return createPortal(
     <div className="modal-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}>
-      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Unlock your wallet">
-        <h2 className="h2">Unlock</h2>
+      <div className="modal-card unlock-card" role="dialog" aria-modal="true" aria-labelledby="unlock-title">
+        <h2 id="unlock-title" className="h3" style={{ fontWeight: 700 }}>Unlock your wallet</h2>
         <p className="sub mono" style={{ marginTop: 4 }}>{short(storedWallet()?.address)}</p>
 
+        <label className="label" htmlFor="unlock-password" style={{ marginTop: 16 }}>Password</label>
         <input
+          id="unlock-password"
           ref={inputRef}
           className="field"
           type="password"
           value={password}
           onChange={(e) => { setPassword(e.target.value); setError(null) }}
           onKeyDown={(e) => { if (e.key === 'Enter' && password) go() }}
-          placeholder="Password"
           autoComplete="current-password"
-          style={{ marginTop: 16 }}
+          aria-invalid={error ? 'true' : undefined}
+          style={{ height: 44 }}
         />
+        {error && <p className="helper bad" role="alert">{error}</p>}
 
-        <div className="inline" style={{ marginTop: 12 }}>
-          <button className="btn" onClick={go} disabled={busy || !password} style={{ flex: 1 }}>
-            {busy ? 'Unlocking' : 'Unlock'}
-          </button>
-          <button className="btn ghost" onClick={onCancel}>Cancel</button>
-        </div>
+        <button className="btn full" onClick={go} disabled={busy || !password} style={{ marginTop: 14, height: 44 }}>
+          {busy ? 'Unlocking' : 'Unlock and continue'}
+        </button>
+        <button className="btn tertiary full" onClick={onCancel} style={{ marginTop: 6 }}>Cancel</button>
 
-        {error && <p className="notice bad" style={{ marginTop: 12 }}>{error}</p>}
-
-        <p className="fine" style={{ marginTop: 14, lineHeight: 1.6 }}>
-          The key stays in this tab only. Closing it locks the wallet again, which is what a wallet
-          should do.
+        <p className="fine" style={{ marginTop: 12, lineHeight: 1.5 }}>
+          The key stays in this tab only. Closing it locks the wallet again.
         </p>
       </div>
     </div>,

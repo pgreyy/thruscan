@@ -19,12 +19,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './wallet-pill.css'
-import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useWallet } from '../pages/Wallet.jsx'
-import { locked, unlock } from '../lib/wallet.js'
+import { locked, unlock, currentAddress } from '../lib/wallet.js'
 import { hasWallet, storedWallet } from '../lib/wallet.js'
-import { TUSD_MINT } from '../lib/addresses.js'
+import { WTHRU_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
 import { ownedNames, readName, knownMints } from '../lib/holdings.js'
 import { pfpForDomain, EMPTY_PFP } from '../lib/pfp.js'
@@ -37,6 +36,8 @@ import {
 import { ThemeRow } from './ThemeSwitch.jsx'
 import { NotificationRows } from './Notifications.jsx'
 import { FaucetRows } from './FaucetDrop.jsx'
+import { Icon } from './Icon.jsx'
+import { Symbol } from './Wordmark.jsx'
 
 const DECIMALS = 6
 
@@ -46,7 +47,8 @@ function fmt(units, decimals = DECIMALS, maxFrac = 2) {
   return n.toLocaleString(undefined, { maximumFractionDigits: maxFrac })
 }
 
-const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
+// First five and last four, the design system's short form for any id.
+const short = (a) => (a ? `${a.slice(0, 5)}…${a.slice(-4)}` : '')
 
 /** The first `.id` name this browser claimed for an address, if any. */
 function primaryName(address) {
@@ -71,18 +73,6 @@ function Avatar({ address, pfp, size = 20 }) {
   return <Pfp pfp={pfp} address={address} size={size} />
 }
 
-/** A wallet, drawn small. Inherits colour, so it works on either theme. */
-function WalletGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-         stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <path d="M3 7.5V17" />
-      <path d="M16 12.5h1.5" />
-    </svg>
-  )
-}
-
 /** Copy the address without leaving the row it sits on. */
 function CopyDot({ value }) {
   const [done, setDone] = useState(false)
@@ -99,18 +89,12 @@ function CopyDot({ value }) {
         setTimeout(() => setDone(false), 1400)
       }}
     >
-      {done ? '✓' : (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="9" y="9" width="11" height="11" rx="2" />
-          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-        </svg>
-      )}
+      <Icon name={done ? 'success' : 'copy'} size={16} />
     </button>
   )
 }
 
-function Panel({ wallet, onClose }) {
+function Panel({ wallet, pfp, onClose }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -120,6 +104,10 @@ function Panel({ wallet, onClose }) {
     try {
       await unlock(password)
       setPassword('')
+      /* Unlocked as soon as the key opens, the same as the Wallet page does.
+         The balance read after it can fail on its own, and that used to leave
+         the button saying "Unlock" with the key already open. */
+      wallet.setState({ address: currentAddress(), unlocked: true })
       await wallet.refresh()
     } catch (e) {
       setError(String(e?.message ?? e))
@@ -131,8 +119,10 @@ function Panel({ wallet, onClose }) {
   if (!wallet.unlocked) {
     return (
       <div className="pill-panel">
-        <p className="fine" style={{ marginBottom: 10 }}>Locked</p>
+        <div className="pill-panel-pad">
+        <label className="label" htmlFor="pill-password">Your browser wallet is locked. Enter its password to sign.</label>
         <input
+          id="pill-password"
           className="field"
           type="password"
           value={password}
@@ -141,27 +131,22 @@ function Panel({ wallet, onClose }) {
           placeholder="Password"
           autoComplete="current-password"
         />
-        <button className="btn" style={{ marginTop: 8, width: '100%' }} onClick={doUnlock} disabled={busy || !password}>
+        <button className="btn full" style={{ marginTop: 8 }} onClick={doUnlock} disabled={busy || !password}>
           {busy ? 'Unlocking' : 'Unlock'}
         </button>
         {error && <p className="notice bad" style={{ marginTop: 10 }}>{error}</p>}
-        {/* Here as well as in the unlocked panel. The bar's theme button is
-            hidden once there is a wallet, so without this a locked wallet
-            leaves somebody with no way to change the theme at all. The same
-            goes for the faucet and the notifications on a phone: this menu is
-            the only place they exist there, and a locked wallet is exactly
-            when somebody is looking for the faucet. */}
-        <div className="pill-divider" style={{ marginTop: 12 }} />
-        <div className="pill-phone-only">
-          <FaucetRows />
-          <NotificationRows onNavigate={onClose} />
-          <div className="pill-divider" />
         </div>
+        {/* The faucet, the notifications and the theme live in this menu, so a
+            locked wallet still reaches all three. */}
+        <div className="pill-divider" />
+        <FaucetRows />
+        <NotificationRows onNavigate={onClose} />
+        <div className="pill-divider" />
         <ThemeRow />
         {hasProvider() && (
-          <button className="btn ghost" style={{ marginTop: 8, width: '100%' }}
+          <button className="pill-row"
             onClick={() => connectExternal().then(onClose).catch((e) => setError(String(e?.message ?? e)))}>
-            Use ThruScan Wallet instead
+            <span>Use ThruScan Wallet instead</span><span className="fine">extension</span>
           </button>
         )}
       </div>
@@ -186,7 +171,7 @@ function Panel({ wallet, onClose }) {
   return (
     <div className="pill-panel">
       <Link className="pill-row" to="/profile" onClick={onClose}>
-        <span>Profile</span><span className="pill-go">→</span>
+        <span>Profile</span><Avatar address={wallet.address} pfp={pfp} />
       </Link>
 
       {/* One identity, not two. A name IS the wallet as far as anyone else is
@@ -195,6 +180,7 @@ function Panel({ wallet, onClose }) {
           into a send field. */}
       <Link className="pill-row pill-wallet" to="/wallet" onClick={onClose}>
         <span>Wallet</span>
+        <span className="pill-tag">{isExternal() ? 'Ext' : 'Browser'}</span>
         <span className="pill-who">
           {name ? <b>{name}</b> : <span className="mono">{short(wallet.address)}</span>}
         </span>
@@ -209,7 +195,7 @@ function Panel({ wallet, onClose }) {
        * nothing else fits beside them without the bar becoming a row of icons
        * with a search field squeezed between. On a desktop bar there is room,
        * so they stay up there and these are hidden. */}
-      <div className="pill-phone-only">
+      <div>
         <FaucetRows />
         <NotificationRows onNavigate={onClose} />
         <div className="pill-divider" />
@@ -303,17 +289,17 @@ function ConnectMenu({ onClose }) {
       <p className="fine" style={{ margin: '2px 4px 8px' }}>Connect with</p>
       {found ? (
         <button className="connect-option" onClick={connect} disabled={busy}>
-          <span className="connect-mark">T</span>
+          <span className="connect-mark"><Symbol size={24} /></span>
           <span className="connect-text"><b>ThruScan Wallet</b><span className="fine">{busy ? 'Approve in the extension' : 'Extension, detected'}</span></span>
         </button>
       ) : (
         <a className="connect-option" href={EXTENSION_URL} target="_blank" rel="noreferrer">
-          <span className="connect-mark">T</span>
+          <span className="connect-mark"><Symbol size={24} /></span>
           <span className="connect-text"><b>ThruScan Wallet</b><span className="fine">Get the Chrome extension</span></span>
         </a>
       )}
       <Link className="connect-option" to="/wallet" onClick={onClose}>
-        <span className="connect-mark ghost"><WalletGlyph /></span>
+        <span className="connect-mark"><Icon name="wallet" /></span>
         <span className="connect-text"><b>Browser wallet</b><span className="fine">Made here, no install</span></span>
       </Link>
       {error && <p className="notice bad" style={{ marginTop: 8 }}>{error}</p>}
@@ -379,6 +365,14 @@ export function WalletPill() {
   // phone where that thing may now be under your thumb.
   useDismiss(boxRef, open, useCallback(() => setOpen(false), []))
 
+  /* "Connect wallet" buttons elsewhere on the page open this menu, so there is
+     one place a wallet is chosen. See lib/connect.js. */
+  useEffect(() => {
+    const on = () => { setOpen(true); boxRef.current?.querySelector('button')?.focus() }
+    window.addEventListener('thruscan-connect', on)
+    return () => window.removeEventListener('thruscan-connect', on)
+  }, [])
+
   // Every token ThruScan knows (pools, launches, ones added by address), so a
   // launchpad token shows here before it has a pool.
   useEffect(() => {
@@ -389,47 +383,47 @@ export function WalletPill() {
 
   if (!mounted) return null
 
-  const tusd = wallet.balances?.[TUSD_MINT]
   const address = wallet.address ?? storedWallet()?.address ?? null
-
-  /* Once a name points at this wallet it IS the wallet, as far as anyone else
-     is concerned, so the pill wears it and the address moves into the panel.
-     The list is what this browser claimed; a name claimed elsewhere still
-     resolves on chain, it just is not known here. */
   const label = primaryName(address) ?? short(address)
 
-  const body = (
-    <div className="wallet-pill-mount" ref={boxRef}>
+  /* WTHRU, because every curve on ThruPad is priced in it. Shown only once its
+     decimals have been read, so the number is never a guess. */
+  const wthru = wallet.balances?.[WTHRU_MINT]
+  const wthruDecimals = wallet.decimals?.[WTHRU_MINT]
+  const balance = wallet.unlocked && wthru?.exists && wthruDecimals !== undefined
+    ? `${fmt(wthru.amount, wthruDecimals, 2)} ${wallet.tickers?.[WTHRU_MINT] || 'WTHRU'}`
+    : null
+
+  const toggle = () => setOpen((o) => !o)
+
+  return (
+    <div className="wallet-wrap" ref={boxRef}>
       {!hasWallet() ? (
         <>
-          <button className="wallet-pill" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-            {/* The short form is for narrow phones, where the bar has room
-                for one word beside the search field. */}
-            <span className="pill-strong pill-connect">
-              <span className="pill-connect-long">Connect wallet</span>
-              <span className="pill-connect-short">Connect</span>
-            </span>
+          <button className="wallet-pill disconnected" onClick={toggle} aria-expanded={open} aria-label="Connect wallet">
+            <Icon name="wallet" size={16} />
+            <span className="pill-long">Connect wallet</span>
+            <span className="pill-short">Connect</span>
           </button>
           {open && <ConnectMenu onClose={() => setOpen(false)} />}
         </>
+      ) : !wallet.unlocked ? (
+        <>
+          <button className="wallet-pill" onClick={toggle} aria-expanded={open} title={address ?? undefined}>
+            <Icon name="locked" size={16} />
+            <span>Unlock</span>
+          </button>
+          {open && <Panel wallet={wallet} pfp={pfp} onClose={() => setOpen(false)} />}
+        </>
       ) : (
         <>
-          <button className="wallet-pill" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-            {wallet.unlocked && tusd?.exists && (
-              <span className="pill-balance mono">{fmt(tusd.amount)} tUSD</span>
-            )}
-            {/* Straight to the wallet page. Opening a menu to find a link to
-                the thing the menu is about is one click too many for the page
-                people go to most. */}
-            <Avatar address={address} pfp={pfp} />
-            <span className={label.endsWith('.id') ? 'pill-strong' : 'pill-strong mono'}>{label}</span>
-            <span className="pill-caret" aria-hidden="true">▾</span>
+          <button className="wallet-pill connected" onClick={toggle} aria-expanded={open} title={address ?? undefined}>
+            {balance && <span className="pill-balance">{balance}</span>}
+            <span className="pill-chip">{label}</span>
           </button>
-          {open && <Panel wallet={wallet} onClose={() => setOpen(false)} />}
+          {open && <Panel wallet={wallet} pfp={pfp} onClose={() => setOpen(false)} />}
         </>
       )}
     </div>
   )
-
-  return createPortal(body, document.body)
 }

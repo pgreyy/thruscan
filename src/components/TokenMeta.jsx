@@ -9,12 +9,12 @@
 // one who can change it, on any device, with no account anywhere. See
 // src/lib/tokenmeta.js for the message and api/token-meta.js for the check.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   signUserMessage, signAndSend, waitForResult, deriveTokenAccount, openTokenAccount,
 } from '../lib/wallet.js'
 import { buildClaimInstruction } from '../lib/pad.js'
-import { THRUPAD_PROGRAM as PAD_PROGRAM, THRUPAD_REGISTRY as PAD_REGISTRY } from '../lib/addresses.js'
+import { THRUPAD_PROGRAM as PAD_PROGRAM, THRUPAD_REGISTRY as PAD_REGISTRY, WTHRU_MINT, TUSD_MINT } from '../lib/addresses.js'
 import { displayDecimals } from '../lib/wthru.js'
 import { useUnlockGate, isDismissal } from './Unlock.jsx'
 import { useConfirm } from './Confirm.jsx'
@@ -23,39 +23,53 @@ import {
 } from '../lib/tokenmeta.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 
-/** A picture if there is one, otherwise the ticker's first letter. */
+/**
+ * A token's avatar (design system 2g).
+ *
+ * Square, because these are creator uploads, not verified logos: the creator's
+ * picture if there is one, otherwise the first two letters of the symbol in
+ * mono on sunken stone. The two system tokens are round and drawn by ThruScan:
+ * WTHRU an amber circle with "WT", tUSD an ink circle with an amber "tU".
+ * Radius 6 up to 40px, 8 at 48, 10 at 64.
+ */
 export function TokenIcon({ meta, symbol, mint, size = 32, className = '' }) {
   const [broken, setBroken] = useState(false)
   useEffect(() => { setBroken(false) }, [meta?.image])
 
-  const hue = useMemo(() => {
-    let h = 0
-    const s = mint || symbol || ''
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
-    return h % 360
-  }, [mint, symbol])
+  const radius = size >= 64 ? 10 : size >= 48 ? 8 : 6
+  const font = size >= 64 ? 18 : size >= 48 ? 14 : size >= 40 ? 13 : size >= 28 ? 11 : 10
+  const box = { width: size, height: size, flex: `0 0 ${size}px`, borderRadius: radius, fontSize: font }
+
+  // THRU itself, the chain's coin: round like the other system tokens.
+  if (mint === 'THRU') {
+    return (
+      <span className={`tok-icon tok-system tok-thru ${className}`}
+        style={{ ...box, borderRadius: '50%', fontSize: Math.max(9, Math.round(size * 0.38)) }} aria-hidden="true">TH</span>
+    )
+  }
+  if (mint && (mint === WTHRU_MINT || mint === TUSD_MINT)) {
+    const wthru = mint === WTHRU_MINT
+    return (
+      <span className={`tok-icon tok-system ${wthru ? 'tok-wthru' : 'tok-tusd'} ${className}`}
+        style={{ ...box, borderRadius: '50%', fontSize: Math.max(9, Math.round(size * 0.38)) }} aria-hidden="true">
+        {wthru ? 'WT' : 'tU'}
+      </span>
+    )
+  }
 
   if (meta?.image && !broken) {
     return (
-      <span className={`pfp pfp-round tok-icon ${className}`} style={{ width: size, height: size, flex: `0 0 ${size}px` }}>
+      <span className={`tok-icon tok-img ${className}`} style={box}>
         <img src={meta.image} alt="" onError={() => setBroken(true)} />
       </span>
     )
   }
-  // With no ticker yet there is nothing to letter, so it stays a quiet
-  // placeholder rather than a coloured circle with a question mark in it.
-  const letter = (symbol || '').slice(0, 1).toUpperCase()
+  // With no symbol yet there is nothing to letter, so it stays a quiet
+  // placeholder rather than a box with a question mark in it.
+  const letters = (symbol || '').replace(/^\$/, '').slice(0, 2).toUpperCase()
   return (
-    <span
-      className={`pfp pfp-round tok-icon${letter ? ' tok-letter' : ' tok-blank'} ${className}`}
-      style={{
-        width: size, height: size, flex: `0 0 ${size}px`,
-        background: letter ? `hsl(${hue} 58% 52%)` : undefined,
-        fontSize: Math.round(size * 0.42),
-      }}
-      aria-hidden="true"
-    >
-      {letter}
+    <span className={`tok-icon${letters ? ' tok-letter' : ' tok-blank'} ${className}`} style={box} aria-hidden="true">
+      {letters || <span className="tok-blank-in" />}
     </span>
   )
 }

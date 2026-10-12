@@ -1,12 +1,16 @@
-import ThemeSwitch from './components/ThemeSwitch.jsx'
+import { ThemeRow } from './components/ThemeSwitch.jsx'
+import { Icon, Spinner } from './components/Icon.jsx'
+import { CopyId } from './components/CopyId.jsx'
+import { currentAddress } from './lib/wallet.js'
+import { onToast } from './lib/toasts.js'
 import { Analytics } from '@vercel/analytics/react'
 import { CloudflareBeacon, usePageViews } from './components/Counters.jsx'
-import { useState, useEffect, useLayoutEffect, useRef, createContext, useContext, useCallback } from 'react'
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate, Navigate } from 'react-router-dom'
 import { SwapPage, LaunchDetailPage, FaucetPage } from './pages/Dex.jsx'
 import { MarketHome } from './pages/Market.jsx'
 import { Wordmark } from './components/Wordmark.jsx'
-import { WalletPage, useWallet } from './pages/Wallet.jsx'
+import { WalletPage } from './pages/Wallet.jsx'
 import { EXTENSION_URL, EXTENSION_IS_EXTERNAL } from './lib/external.js'
 import { NamesPage } from './pages/Names.jsx'
 import { WalletPill } from './components/WalletPill.jsx'
@@ -15,8 +19,7 @@ import { Tabs } from './components/Tabs.jsx'
 import { GameIdentity } from './components/GameIdentity.jsx'
 import { NamePfp } from './components/Pfp.jsx'
 import { useDismissDetails } from './lib/dismiss.js'
-import { NotificationBell } from './components/Notifications.jsx'
-import { FaucetDrop } from './components/FaucetDrop.jsx'
+import { useMarketWatch } from './components/Notifications.jsx'
 import { WallPage as WallV2 } from './pages/Wall.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Activity } from './components/Activity.jsx'
@@ -93,75 +96,31 @@ const ID_REGISTRY = ID_REGISTRY_ADDR
  * match so that /token/abc lights the launchpad, but a prefix match on '/'
  * matches every page on the site.
  */
-const NAV = [
-  { to: '/', label: 'ThruPad', icon: 'rocket', exact: true },
-  { to: '/swap', label: 'Swap', icon: 'swap' },
-  { to: '/collections', label: 'Collections', icon: 'pal' },
-  { to: '/activity', label: 'Activity', icon: 'pulse' },
-  { to: '/names', label: 'ThruNames', icon: 'tag' },
-  { to: '/faucet', label: 'Faucet', icon: 'drop' },
-  { to: '/archives', label: 'Archives', icon: 'book' },
-]
-
 const TOP_NAV = [
   { to: '/', label: 'ThruPad', exact: true, also: ['/token', '/launch'] },
-  /* Back in the bar, and second.
-   *
-   * Taking it out was right for the shape of the site and wrong for using it.
-   * Every curve here is priced in WTHRU, and turning THRU into WTHRU is a
-   * swap, so without this tab there is no way to get hold of the one asset the
-   * launchpad spends. */
+  /* Second, because every curve here is priced in WTHRU and turning THRU into
+     WTHRU is a swap: without this tab there is no way to get hold of the one
+     asset the launchpad spends. */
   { to: '/swap', label: 'Swap' },
-  { to: '/collections', label: 'Collections' },
   { to: '/activity', label: 'Activity' },
 ]
-/* The faucet stays reachable while we are on a testnet, because it is how
-   anybody gets anything to trade with. It goes when there is no faucet to
-   show.
- *
- * The archives are linked through one Archives entry, which lists the Wall,
- * Games, Builders, Updates and Guides; none of those pages is in a menu itself.
- * The explorer and the Pixel Pals mint are still running and still work if you
- * have the link, but neither is in a menu: each is a reason to be on this site
- * doing something other than launching or buying a token. The explorer in
- * particular is temporary by design, since Thru will ship its own for mainnet. */
+/* Everything else lives under More. Collections moved here from the bar: it
+ * holds one collection today, so it does not earn a top slot. The explorer is
+ * here too now, though it is temporary by design, since Thru will ship its own
+ * for mainnet. The faucet stays while we are on a testnet, because it is how
+ * anybody gets anything to trade with. Every route stays reachable. */
 const MORE_NAV = [
-  { to: '/names', label: 'ThruNames' },
+  { to: '/collections', label: 'Collections', also: ['/pixelpals'] },
+  { to: '/names', label: 'ThruID', also: ['/profile'] },
   { to: '/faucet', label: 'Faucet' },
+  { to: EXTENSION_URL, label: 'Get wallet', external: EXTENSION_IS_EXTERNAL, also: ['/get-wallet'] },
+  { to: '/explorer', label: 'Explorer', also: ['/tx', '/account'] },
   { to: '/archives', label: 'Archives' },
-  { to: EXTENSION_URL, label: 'ThruScan Wallet', external: EXTENSION_IS_EXTERNAL },
 ]
 
-/* Inline rather than an icon package: seven glyphs is not worth a dependency,
-   and these inherit currentColor so they follow the link states for free. */
-const ICON_PATHS = {
-  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2',
-  message: 'M4 5h16v11H8l-4 3V5z',
-  game: 'M7 12h4M9 10v4M15.5 11.5h.01M18 13.5h.01M3.5 15.5 5 9a3 3 0 0 1 3-2.4h8A3 3 0 0 1 19 9l1.5 6.5a2.4 2.4 0 0 1-4.2 2L15 16H9l-1.3 1.5a2.4 2.4 0 0 1-4.2-2z',
-  book: 'M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 3V4zM17 7h2v16H8',
-  box: 'M12 3 4 7v10l8 4 8-4V7l-8-4zM4 7l8 4 8-4M12 11v10',
-  users: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M17 11.2a3.2 3.2 0 0 0 0-6.4M18.5 20h3a6.2 6.2 0 0 0-3-5.3',
-  bell: 'M12 3a6 6 0 0 0-6 6c0 5-2 6-2 6h16s-2-1-2-6a6 6 0 0 0-6-6zM10.5 21a1.9 1.9 0 0 0 3 0',
-  menu: 'M4 6h16M4 12h16M4 18h16',
-  panel: 'M4 5h16v14H4zM10 5v14',
-  swap: 'M7 4v13M4 14l3 3 3-3M17 20V7M20 10l-3-3-3 3',
-  drop: 'M12 3.2c3.1 3.4 5.4 6.4 5.4 9.1a5.4 5.4 0 0 1-10.8 0c0-2.7 2.3-5.7 5.4-9.1zM9.4 13.3a2.6 2.6 0 0 0 2.6 2.6',
-  wallet: 'M3 7.5A1.5 1.5 0 0 1 4.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7.5V17M16 12.5h1.5',
-  tag: 'M20.5 12.3 12.3 20.5a1.6 1.6 0 0 1-2.3 0l-6.5-6.5a1.6 1.6 0 0 1-.5-1.2V4.6c0-.9.7-1.6 1.6-1.6h8.2c.4 0 .9.2 1.2.5l6.5 6.5a1.6 1.6 0 0 1 0 2.3zM7.8 7.8h.01',
-  home: 'M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z',
-  pal: 'M8 4h8v2h2v2h2v9h-2v2h-2v2h-2v-2h-4v2H8v-2H6v-2H4V8h2V6h2zM9 11h2M13 11h2M10 15h4',
-  rocket: 'M12 3c3.6 2.1 5.6 5.6 5.6 9.6L12 18l-5.6-5.4C6.4 8.6 8.4 5.1 12 3zM12 11.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2M9 18l-2 3M15 18l2 3',
-  pulse: 'M3 12h3.5l2-6 3.5 13 3-9 1.8 4H21',
-}
-
-function Icon({ name, size = 17 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={ICON_PATHS[name]} />
-    </svg>
-  )
-}
+/* Pages you arrive at from a list. On a phone they get a back arrow in the
+   bar, since there is no nav item lit to take you back up. */
+const DETAIL_PATHS = ['/launch/', '/token/', '/tx/', '/account/']
 
 /* ---------- guide content ----------
    Written for someone who has never used a terminal for this before. Every
@@ -582,11 +541,14 @@ function ToastHost({ children }) {
     setTimeout(() => dismiss(id), 6500)
   }, [dismiss])
 
+  // Toasts raised from anywhere (see lib/toasts.js).
+  useEffect(() => onToast(show), [show])
+
   return (
     <ToastContext.Provider value={show}>
       {children}
 
-      <div className="toasts">
+      <div className="toasts" role="status" aria-live="polite">
         {items.map((t) => <Toast key={t.id} toast={t} onClose={() => dismiss(t.id)} />)}
       </div>
     </ToastContext.Provider>
@@ -594,45 +556,80 @@ function ToastHost({ children }) {
 }
 
 function Toast({ toast, onClose }) {
-  const [copied, setCopied] = useState(false)
-
-  const copy = () => {
-    navigator.clipboard?.writeText(toast.signature)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1600)
-  }
+  /* Four kinds (2h): submitted, confirmed, failed, rejected. Older callers
+     pass none; anything with a signature has landed, so it reads as done. */
+  const kind = toast.kind ?? (toast.signature ? 'confirmed' : 'info')
+  const icon = kind === 'submitted' ? <Spinner size={18} />
+    : kind === 'confirmed' ? <Icon name="success" size={18} stroke={2} />
+      : kind === 'failed' || kind === 'rejected' ? <Icon name="failed" size={18} stroke={2} />
+        : null
 
   return (
-    <div className="toast">
-      <div className="toast-top">
-        <div>
-          <div className="toast-title">{toast.title}</div>
-          {toast.sub && <div className="toast-sub">{toast.sub}</div>}
-        </div>
-        <button className="toast-close" onClick={onClose} aria-label="Dismiss">×</button>
+    <div className={`toast ${kind}`}>
+      {icon && <span className="toast-icon">{icon}</span>}
+      <div className="toast-body">
+        <div className="toast-title">{toast.title}</div>
+        {toast.sub && <div className="toast-sub">{toast.sub}</div>}
+        {toast.signature && (
+          <span className="toast-sig"><CopyId value={toast.signature} to={`/tx/${toast.signature}`} onNavigate={onClose} /></span>
+        )}
       </div>
-
-      {toast.signature && (
-        <>
-          <span className="toast-sig">{toast.signature.slice(0, 22)}…{toast.signature.slice(-10)}</span>
-          <div className="toast-actions">
-            {/* Deep link straight into the Explorer's transaction lookup, so
-                the payload is one tap away rather than a copy-and-paste. */}
-            <Link to={`/?tx=${toast.signature}`} onClick={onClose}>See the transaction</Link>
-            <button onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-          </div>
-        </>
-      )}
+      <button className="toast-close" onClick={onClose} aria-label="Dismiss"><Icon name="failed" size={16} /></button>
     </div>
   )
 }
 
 /* ---------- shell ---------- */
 
-// Live block height, read through the proxy. It is the one number that proves
-// the site is talking to a real chain, so it lives in the chrome.
-function NetworkStatus() {
+/* The test-network strip can be closed; the badge in the bar cannot, so the
+   site never stops saying it is a test network. The choice is read before the
+   first paint so a closed strip never flashes. */
+const STRIP_KEY = 'thruscan_testnet_banner_dismissed'
+function readStripClosed() {
+  try { return localStorage.getItem(STRIP_KEY) === '1' } catch { return false }
+}
+function saveStripClosed(closed) {
+  try {
+    if (closed) localStorage.setItem(STRIP_KEY, '1')
+    else localStorage.removeItem(STRIP_KEY)
+  } catch { /* private mode: it stays closed for this visit only */ }
+}
+
+/* "How ThruScan works" re-opens the New here? steps on the home page, which
+   is where they live; the home page listens for this. */
+export const INTRO_KEY = 'thruscan_intro'
+function reopenIntro() {
+  try { localStorage.removeItem(`${INTRO_KEY}_dismissed`) } catch { /* private mode */ }
+  window.dispatchEvent(new Event('thruscan-intro'))
+}
+
+/* The networks the menu lists. ThruScan runs on one; when it supports more,
+   they go here and the note under the list goes away. */
+const NETWORKS = [network]
+
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+const titleCase = (w) => w.charAt(0).toUpperCase() + w.slice(1)
+
+/* The network badge (2f): which network, and that it is a test one. It is a
+   button that opens the network menu on click, tap, Enter or Space, never on
+   hover: hover does not exist on touch and closes by accident.
+ *
+ * The block height is read through the proxy on a timer; it is the one number
+ * that proves the site is talking to a real chain, so it stays, in the
+ * tooltip. Dashed until the first read answers, red with a cross once a read
+ * fails. Never green: "healthy" is not something the site can promise. */
+function NetworkMenu({ stripClosed, onShowStrip }) {
   const [height, setHeight] = useState(null)
+  const [down, setDown] = useState(false)
+  const [readAt, setReadAt] = useState(null)
+  /* Open on the page it was opened on, so following a link puts it away. */
+  const { pathname } = useLocation()
+  const [openOn, setOpenOn] = useState(null)
+  const open = openOn === pathname
+  const setOpen = (v) => setOpenOn((was) => ((typeof v === 'function' ? v(was === pathname) : v) ? pathname : null))
+  const wrap = useRef(null)
+  const btn = useRef(null)
+  const pop = useRef(null)
 
   useEffect(() => {
     let alive = true
@@ -642,9 +639,12 @@ function NetworkStatus() {
         const n = (h && typeof h === 'object')
           ? Object.values(h).find((v) => typeof v === 'string' || typeof v === 'number')
           : h
-        if (alive) setHeight(n == null ? null : String(n))
+        if (!alive) return
+        setHeight(n == null ? null : String(n))
+        setDown(n == null)
+        if (n != null) setReadAt(Date.now())
       } catch {
-        if (alive) setHeight(null)
+        if (alive) setDown(true)
       }
     }
     tick()
@@ -652,237 +652,258 @@ function NetworkStatus() {
     return () => { alive = false; clearInterval(id) }
   }, [])
 
-  const pretty = height && !Number.isNaN(Number(height)) ? Number(height).toLocaleString() : height
+  useEffect(() => {
+    if (!open) return undefined
+    pop.current?.focus()
+    const away = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpenOn(null) }
+    const key = (e) => {
+      if (e.key !== 'Escape') return
+      setOpenOn(null)
+      btn.current?.focus()
+    }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key) }
+  }, [open])
 
   /* The network's name comes from the build rather than from a string typed
-     here. It said "alphanet" for as long as this component existed, which was
-     true and would have gone on being displayed on the day it stopped being
-     true. A test network says so in a colour, because the one thing a trading
-     site must never do is look like money when it is not. */
+     here, so it cannot go on saying "alphanet" on the day that stops being
+     true. */
+  const name = network.label.toUpperCase()
+  const pretty = height && !Number.isNaN(Number(height)) ? Number(height).toLocaleString() : height
+  const title = `${network.label}${network.test ? ' (test network)' : ''}${pretty ? ` · block ${pretty}` : ''}`
+  const state = down ? 'down' : !height ? 'checking' : 'ok'
+
   return (
-    <span className={network.test ? 'status status-test' : 'status'} title={`${network.label}: ${network.rpc[0]?.url ?? ''}`}>
-      <span className={height ? 'dot live' : 'dot'} />
-      {height ? `${network.label.toLowerCase()} ${pretty}` : `${network.label.toLowerCase()} connecting`}
-    </span>
+    <div className="netmenu" ref={wrap}>
+      <button
+        ref={btn} type="button" title={title}
+        className={`netbadge${state === 'ok' ? '' : ` ${state}`}`}
+        aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+      >
+        {state === 'down' && <><Icon name="failed" size={12} stroke={2.4} /><span className="long">{name} · UNREACHABLE</span><span className="short">UNREACHABLE</span></>}
+        {state === 'checking' && <><span className="netbadge-dot" /><span className="long">CHECKING NETWORK</span><span className="short">CHECKING</span></>}
+        {state === 'ok' && <><span className="netbadge-dot" /><span className="long">{name}{network.test ? ' · TEST' : ''}</span><span className="short">{network.test ? 'TEST' : name}</span></>}
+        <Icon name="expand" size={12} stroke={1.8} className="netbadge-chev" />
+      </button>
+      <span className="sr-only" role="status">{state === 'down' ? 'Network unreachable' : state === 'checking' ? 'Checking network' : ''}</span>
+
+      {open && (
+        <>
+          <div className="netmenu-scrim" aria-hidden="true" onPointerDown={() => setOpenOn(null)} />
+          <div className="netmenu-pop" ref={pop} role="dialog" aria-label="Network" tabIndex={-1}>
+            <span className="netmenu-grab" aria-hidden="true" />
+            <div className="netmenu-label">Network</div>
+            {NETWORKS.map((n) => (
+              <div key={n.label} className="netmenu-net">
+                <div className="netmenu-net-top">
+                  <span className="netbadge-dot" />
+                  <b>{titleCase(n.label)}</b>
+                  {n.test && <span className="netmenu-chip">TEST</span>}
+                  {n === network && <Icon name="success" size={16} className="netmenu-check" title="Current network" />}
+                </div>
+                {n.test && <div className="netmenu-sub">Thru test network. Tokens have no value.</div>}
+              </div>
+            ))}
+            <div className={`netmenu-status ${state}`}>
+              <span className="netmenu-status-k">
+                {state === 'down' ? <Icon name="failed" size={12} stroke={2.4} /> : <span className="netbadge-dot" />}
+                {state === 'down' ? 'Unreachable' : state === 'checking' ? 'Checking…' : 'Reachable'}
+              </span>
+              {readAt && <span className="netmenu-time">Last update {hhmm(readAt)}</span>}
+            </div>
+            {NETWORKS.length === 1 && <p className="netmenu-note">Betanet and mainnet aren&rsquo;t available on ThruScan.</p>}
+            <div className="menu-sep" />
+            <Link className="netmenu-item" to="/" onClick={() => { reopenIntro(); setOpen(false) }}>How ThruScan works</Link>
+            {network.test && stripClosed && (
+              <button type="button" className="netmenu-item" onClick={() => { onShowStrip(); setOpen(false); btn.current?.focus() }}>Show test network notice</button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
-function Brand() {
+/* The test-network strip, under the bar on every page while the network is a
+   test one. It is the product's first promise: nothing here has value. It can
+   be closed because the badge in the bar goes on saying so. */
+function TestStrip({ closed, onClose }) {
+  if (!network.test || closed) return null
+  const name = network.label.toLowerCase()
   return (
-    <>
-      <span className="brand-mark">T</span>
-      <span className="brand-name">ThruScan</span>
-    </>
+    <div className="teststrip" role="note">
+      <span className="teststrip-long">
+        <span className="teststrip-chip">TEST NETWORK</span>
+      </span>
+      <span className="teststrip-long">Thru {name}. Tokens here have no value, and balances can disappear when the network resets.</span>
+      <span className="teststrip-long ts-push" />
+      <Link className="teststrip-long" to="/" onClick={reopenIntro}>How ThruScan works</Link>
+      <span className="teststrip-short">
+        <b>Test network.</b> Tokens on Thru {name} have no value. <Link to="/" onClick={reopenIntro}>Learn more</Link>
+      </span>
+      <button type="button" className="teststrip-x" onClick={onClose} aria-label="Dismiss test network notice">
+        <Icon name="failed" size={20} />
+      </button>
+    </div>
   )
 }
 
-/* The theme control, in the bar only when there is no wallet.
- *
- * It lives in the wallet panel now, which is the right home for it: it is a
- * setting, and settings belong behind the button that is already about you.
- * But the panel only exists once you have a wallet, and a visitor reading the
- * site in the wrong theme still has to be able to fix that, so the bar keeps
- * it until there is somewhere better to put it. */
-function BarTheme() {
-  const wallet = useWallet()
-  if (wallet.address) return null
-  return <ThemeSwitch />
+/* On every page, under the content. A second way to pages the More menu also
+   lists, not a replacement for it. */
+function SiteFooter() {
+  return (
+    <footer className="site-foot">
+      <div className="site-foot-in">
+        <p className="site-foot-text">ThruScan is community-built not affiliated with Thru or Unto Labs.</p>
+        <nav className="site-foot-links" aria-label="Footer">
+          <Link to="/get-wallet">ThruScan Wallet</Link>
+          <Link to="/explorer">Explorer</Link>
+          <Link to="/archives">Archives</Link>
+        </nav>
+      </div>
+    </footer>
+  )
+}
+
+/* Watches the market for anything that names this wallet, on every page. It
+   used to run inside the bell; the bell is now a row in the wallet menu, which
+   only exists while the menu is open. */
+function MarketWatch() {
+  const [address, setAddress] = useState(() => currentAddress())
+  useEffect(() => {
+    const t = setInterval(() => setAddress((a) => (currentAddress() === a ? a : currentAddress())), 2000)
+    return () => clearInterval(t)
+  }, [])
+  useMarketWatch(address)
+  return null
 }
 
 function Shell({ children }) {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
 
   /* Whether a nav link is the page you are on. A prefix match is what makes
-     /token/abc light up Launchpad, but '/' is a prefix of everything, so the
+     /token/abc light up ThruPad, but '/' is a prefix of everything, so the
      link that points at the root has to ask for an exact match instead. */
-  const active = (l) =>
+  const isOn = (l) =>
     (l.exact ? pathname === l.to : pathname === l.to || pathname.startsWith(l.to + '/')) ||
     (l.also ?? []).some((t) => pathname === t || pathname.startsWith(t + '/'))
-      ? 'page'
-      : undefined
+  const active = (l) => (isOn(l) ? 'page' : undefined)
+  const moreOn = MORE_NAV.some(isOn)
 
-  // Desktop bar: as many top links as fit, the rest move into More. The bar
-  // measures itself (and the wallet button, see below) on every resize, so
-  // nothing can ever slide under anything else, at any width or zoom level.
-  const barRef = useRef(null)
+  const [drawer, setDrawer] = useState(false)
+  const [finding, setFinding] = useState(false)
+  const [stripClosed, setStripClosed] = useState(readStripClosed)
+  const closeStrip = () => { saveStripClosed(true); setStripClosed(true) }
+  const showStrip = () => { saveStripClosed(false); setStripClosed(false) }
   const moreRef = useRef(null)
   const moreTimer = useRef(null)
   useEffect(() => () => clearTimeout(moreTimer.current), [])
   useDismissDetails(moreRef)
-  const [navFit, setNavFit] = useState(TOP_NAV.length)
-  const fitNav = useCallback(() => {
-    const bar = barRef.current
-    if (!bar || window.innerWidth < 900) return
-    const cs = getComputedStyle(bar)
-    const inner = bar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
-    const gap = parseFloat(cs.columnGap) || 0
-    const brand = bar.querySelector(':scope > .brand')?.offsetWidth ?? 0
-    const right = bar.querySelector(':scope > .deskbar-right')?.offsetWidth ?? 0
-    const widths = [...bar.querySelectorAll('.deskbar-measure > *')].map((e) => e.getBoundingClientRect().width)
-    const more = widths.pop() ?? 60
-    const SEARCH_MIN = 200, LINK_GAP = 4
-    const avail = inner - brand - right - SEARCH_MIN - gap * 3 - 2
-    let used = more, n = 0
-    for (const w of widths) { if (used + LINK_GAP + w > avail) break; used += LINK_GAP + w; n++ }
-    setNavFit(n)
-  }, [])
-  useLayoutEffect(() => {
-    const bar = barRef.current
-    if (!bar) return
-    const ro = new ResizeObserver(fitNav)
-    ro.observe(bar)
-    // The right-hand group is watched too: the bar's own box never changes, so
-    // a control appearing there (the bell's count, the network status settling)
-    // would otherwise leave the nav sized for a narrower right side.
-    const right = bar.querySelector(':scope > .deskbar-right')
-    if (right) ro.observe(right)
-    fitNav()
-    document.fonts?.ready?.then(fitNav)
-    return () => ro.disconnect()
-  }, [fitNav])
-  const shownNav = TOP_NAV.slice(0, navFit)
-  const moreNav = [...TOP_NAV.slice(navFit), ...MORE_NAV]
 
-  const isSmall = () => typeof window !== 'undefined' && window.innerWidth < 900
-
-  // Desktop remembers your choice; small screens always start closed, because
-  // a drawer covering the page on arrival helps nobody.
-  const [open, setOpen] = useState(() => {
-    if (isSmall()) return false
-    return localStorage.getItem('thruscan_nav') !== 'closed'
-  })
-
-  const toggle = () => {
-    setOpen((was) => {
-      const next = !was
-      if (!isSmall()) localStorage.setItem('thruscan_nav', next ? 'open' : 'closed')
-      return next
-    })
-  }
-
-  // Following a link on a small screen should put the drawer away again.
-  const follow = () => { if (isSmall()) setOpen(false) }
-
-  // The wallet button floats at the top right. Measure it, so the desktop bar
-  // reserves exactly its width and shrinks its own contents to fit.
-  useEffect(() => {
-    let ro = null, mo = null, raf = 0
-    const measure = () => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => {
-        const pill = document.querySelector('.wallet-pill-mount .wallet-pill')
-        if (pill) document.documentElement.style.setProperty('--pill-w', `${Math.ceil(pill.getBoundingClientRect().width)}px`)
-        requestAnimationFrame(fitNav)
-      })
-    }
-    const hook = () => {
-      const mount = document.querySelector('.wallet-pill-mount')
-      if (!mount) return false
-      ro = new ResizeObserver(measure); ro.observe(mount)
-      mo = new MutationObserver(() => { measure(); const pill = mount.querySelector('.wallet-pill'); if (pill) ro.observe(pill) })
-      mo.observe(mount, { childList: true, subtree: true, characterData: true })
-      measure()
-      return true
-    }
-    const t = hook() ? null : setInterval(() => { if (hook()) clearInterval(t) }, 300)
-    return () => { clearInterval(t); ro?.disconnect(); mo?.disconnect(); cancelAnimationFrame(raf) }
-  }, [])
+  // Following a link puts the drawer and the search row away again.
+  useEffect(() => { setDrawer(false); setFinding(false) }, [pathname])
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && isSmall()) setOpen(false) }
+    const onKey = (e) => {
+      if (e.key === 'Escape') { setDrawer(false); setFinding(false); return }
+      // "/" jumps to search from anywhere that is not already a text field.
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      e.preventDefault()
+      const desk = document.querySelector('.bar-search input')
+      if (desk && desk.offsetParent) desk.focus()
+      else setFinding(true)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const isDetail = DETAIL_PATHS.some((p) => pathname.startsWith(p))
+  const back = () => (window.history.length > 1 ? navigate(-1) : navigate('/'))
+
+  const closeMore = (e) => e.currentTarget.closest('details')?.removeAttribute('open')
+  const moreLink = (l, onClick, className) => (l.external
+    ? <a key={l.label} className={className} href={l.to} target="_blank" rel="noreferrer" onClick={onClick}>{l.label}<Icon name="external" size={16} /></a>
+    : <Link key={l.label} className={className} to={l.to} aria-current={active(l)} onClick={onClick}>{l.label}</Link>)
+
   return (
     <div className="shell">
-      {open && <button className="scrim" aria-label="Close menu" onClick={() => setOpen(false)} />}
+      <MarketWatch />
+      <header className="bar">
+        <div className="bar-in">
+          {isDetail && (
+            <button className="bar-icon bar-back" onClick={back} aria-label="Back"><Icon name="arrow-left" /></button>
+          )}
+          <Link to="/" className="brand" aria-label="ThruScan home"><Wordmark /></Link>
 
-      <nav className="rail" data-open={open}>
-        <div className="rail-top">
-          <Link to="/" className="brand" onClick={follow} aria-label="ThruScan home">
-            <Wordmark />
-          </Link>
-          <button className="nav-toggle" onClick={toggle} aria-label="Collapse menu">
-            <Icon name="panel" size={18} />
+          <nav className="bar-nav" aria-label="Main">
+            {TOP_NAV.map((l) => (
+              <Link key={l.to} to={l.to} aria-current={active(l)}>{l.label}</Link>
+            ))}
+            {/* Opens on hover as well as on click. Leaving closes it after a
+                beat rather than instantly, because the pointer has to cross a
+                gap between the summary and the menu. Touch never fires these. */}
+            <details
+              className={`bar-more${moreOn ? ' on' : ''}`}
+              ref={moreRef}
+              onPointerEnter={(e) => { if (e.pointerType === 'mouse') { clearTimeout(moreTimer.current); e.currentTarget.open = true } }}
+              onPointerLeave={(e) => {
+                if (e.pointerType !== 'mouse') return
+                const el = e.currentTarget
+                moreTimer.current = setTimeout(() => { el.open = false }, 180)
+              }}
+            >
+              <summary>More<Icon name="expand" size={14} stroke={1.8} /></summary>
+              <div className="menu" style={{ left: 0 }}>
+                {MORE_NAV.map((l) => moreLink(l, closeMore))}
+                <div className="menu-sep" />
+                <ThemeRow />
+              </div>
+            </details>
+          </nav>
+
+          <div className="bar-search"><Search bar /></div>
+          <span className="bar-spacer" />
+          <NetworkMenu stripClosed={stripClosed} onShowStrip={showStrip} />
+          <button className="bar-icon bar-find" onClick={() => setFinding((f) => !f)} aria-label="Search" aria-expanded={finding}>
+            <Icon name="search" />
+          </button>
+          <WalletPill />
+          <button className="bar-icon" onClick={() => setDrawer(true)} aria-label="Menu" aria-expanded={drawer}>
+            <Icon name="menu" />
           </button>
         </div>
+        {finding && <div className="bar-searchrow"><Search bar autoFocus /></div>}
+      </header>
 
-        {NAV.map((l) => (
-          <Link key={l.to} to={l.to} className="rail-link" aria-current={active(l)} onClick={follow} title={l.label}>
-            <Icon name={l.icon} />
-            <span>{l.label}</span>
-          </Link>
-        ))}
+      <TestStrip closed={stripClosed} onClose={closeStrip} />
 
-        <div className="rail-foot"><NetworkStatus /></div>
-      </nav>
-
-      {/* Desktop: one bar across the top, like a marketplace. The rail above
-          is the phone menu only. */}
-      <header className="deskbar" ref={barRef}>
-        <Link to="/" className="brand">
-          <span className="brand-mark">T</span>
-          <span className="brand-name">ThruScan</span>
-        </Link>
-        <div className="deskbar-search"><Search compact /></div>
-        <nav className="deskbar-nav">
-          {shownNav.map((l) => (
-            <Link key={l.to} to={l.to} aria-current={active(l)}>{l.label}</Link>
-          ))}
-          {/* Opens on hover as well as on click.
-           *
-           * A details element only opens on click, so the pointer handlers do the
-           * hovering. Leaving closes it after a beat rather than instantly,
-           * because the pointer has to cross a gap between the summary and the
-           * menu and a menu that vanishes in that gap cannot be used. Touch
-           * devices never fire these, so tapping still works exactly as it
-           * did. */}
-          <details
-            className="deskbar-more"
-            ref={moreRef}
-            onPointerEnter={(e) => { if (e.pointerType === 'mouse') { clearTimeout(moreTimer.current); e.currentTarget.open = true } }}
-            onPointerLeave={(e) => {
-              if (e.pointerType !== 'mouse') return
-              const el = e.currentTarget
-              moreTimer.current = setTimeout(() => { el.open = false }, 180)
-            }}
-          >
-            <summary>More</summary>
-            <div className="deskbar-menu">
-              {moreNav.map((l) => (l.external
-                ? <a key={l.to} href={l.to} target="_blank" rel="noreferrer" onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label} ↗</a>
-                : <Link key={l.to} to={l.to} aria-current={active(l)} onClick={(e) => e.currentTarget.closest('details')?.removeAttribute('open')}>{l.label}</Link>))}
+      {drawer && (
+        <>
+          <button className="scrim drawer-scrim" aria-label="Close menu" onClick={() => setDrawer(false)} />
+          <nav className="drawer" aria-label="Menu">
+            <div className="drawer-top">
+              <Wordmark />
+              <button className="bar-icon" onClick={() => setDrawer(false)} aria-label="Close menu"><Icon name="failed" /></button>
             </div>
-          </details>
-        </nav>
-        <div className="deskbar-right"><FaucetDrop /><NotificationBell /><BarTheme /><NetworkStatus /></div>
-        {/* Invisible copy of every top link, for measuring. */}
-        <div className="deskbar-measure" aria-hidden="true">
-          {TOP_NAV.map((l) => <span key={l.to}>{l.label}</span>)}
-          <span>More</span>
-        </div>
-      </header>
+            <Search bar />
+            {TOP_NAV.map((l) => (
+              <Link key={l.to} className="drawer-link" to={l.to} aria-current={active(l)}>{l.label}</Link>
+            ))}
+            <div className="menu-sep" />
+            <div className="drawer-label">More</div>
+            {MORE_NAV.map((l) => moreLink(l, undefined, 'drawer-link'))}
+            <div className="menu-sep" />
+            <ThemeRow />
+          </nav>
+        </>
+      )}
 
-      {/* The phone bar: one row.
-       *
-       * The mark is the menu. There was a hamburger next to it doing that job
-       * and a wordmark next to that doing nothing, which spent a third of a
-       * 320px bar on decoration while the search field sat on a second row
-       * underneath. One tap target, in the place people already tap, and the
-       * row that search was exiled to is gone. */}
-      <header className="topbar">
-        <button className="topbar-mark" onClick={toggle} aria-label="Menu" aria-expanded={open}>
-          <span className="brand-mark">T</span>
-        </button>
-        <div className="topbar-search"><Search compact /></div>
-        {/* Nothing else. The wallet button sits to the right of this, floating
-            over the bar, and the faucet, the notifications and the theme moved
-            inside its menu. Four icons and a search field never fitted on a
-            360px phone without one of them being squeezed. */}
-      </header>
-
-      <main className="main" data-nav={open}>{children}</main>
+      <main className="main">{children}</main>
+      <SiteFooter />
     </div>
   )
 }
@@ -2956,11 +2977,9 @@ function GuideDetail({ guide, onBack }) {
  * all: assembling this from direct chain reads would mean fetching and
  * decoding every transaction on every visit. */
 function ActivityPage() {
-  /* wrap-wide: this is a table with five columns and it wants the room. */
   return (
-    <div className="wrap-wide wrap-act">
-      <h1 className="h1">Activity</h1>
-      <Feed title="On chain" limit={50} />
+    <div className="page act-page">
+      <Feed limit={50} />
     </div>
   )
 }
@@ -2995,28 +3014,49 @@ function HomeRoute() {
 const ARCHIVED = [
   ['Wall', 'Messages posted on chain, kept forever.', '/wall'],
   ['Games', 'Wordle and 2048, both scored on chain.', '/games'],
-  ['Builders', 'Projects and people building on Thru.', '/builders'],
-  ['Updates', 'What shipped, and when.', '/updates'],
-  ['Guides', 'How the chain and the wallet work.', '/guides'],
-  ['tUSD', 'The test dollar, and where to get some.', '/faucet'],
+  ['Builders', 'Programs, findings and people building on Thru.', '/builders'],
+  ['Projects', 'Projects submitted by the community.', '/projects'],
+  ['Community', 'Articles and posts about Thru, ranked by readers.', '/community'],
+  ['Updates', 'Thru releases, and what shipped when.', '/updates'],
+  ['Guides', 'How the chain and the wallet work, step by step.', '/guides'],
 ]
 
 function ArchivesPage() {
   return (
     <div className="wrap">
       <h1 className="h1">Archives</h1>
-      <p className="lede">
-        Parts of ThruScan that are still running but no longer in the menus, while the
-        ThruPad is being built.
-      </p>
+      <p className="lede">Older ThruScan experiments, kept working but no longer maintained.</p>
       <div className="archive-list">
         {ARCHIVED.map(([name, sub, to]) => (
           <Link key={to} to={to} className="archive-row">
             <span className="archive-text"><b>{name}</b><span className="dim">{sub}</span></span>
-            <span className="dim archive-go" aria-hidden="true">›</span>
+            <Icon name="arrow-right" size={16} />
           </Link>
         ))}
       </div>
+    </div>
+  )
+}
+
+/* Any address the site does not know. */
+function NotFoundPage() {
+  return (
+    <div className="wrap nf">
+      <h1 className="h1">Nothing at this address</h1>
+      <p className="lede">There is no page here. If you followed a link to a token or a transaction, it may have been on a network that has since been reset.</p>
+      <div className="nf-actions">
+        <Link className="btn" to="/">Go to ThruPad</Link>
+        <Link className="btn secondary" to="/activity">View Activity</Link>
+      </div>
+    </div>
+  )
+}
+
+/* The explorer says what it is before anything else. */
+function ExplorerNote() {
+  return (
+    <div className="page explorer-note">
+      <p className="notice"><Icon name="warning" size={18} /><span>ThruScan explorer is temporary; not the official Thru explorer.</span></p>
     </div>
   )
 }
@@ -3426,14 +3466,13 @@ export default function App() {
     <BrowserRouter>
       <ToastHost>
         <Shell>
-        <WalletPill />
         <Counted />
         <Routes>
           <Route path="/" element={<HomeRoute />} />
-          <Route path="/explorer" element={<Tabs tabs={[
+          <Route path="/explorer" element={<><ExplorerNote /><Tabs tabs={[
             { key: 'overview', label: 'Overview', el: <LandingPage /> },
             { key: 'explorer', label: 'Blocks and transactions', el: <HomePage /> },
-          ]} />} />
+          ]} /></>} />
           {/* The launchpad is the front door now. Every link anybody has
               shared still lands in the right place. */}
           <Route path="/launch" element={<Navigate to="/" replace />} />
@@ -3469,6 +3508,7 @@ export default function App() {
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/community" element={<CommunityPage />} />
+          <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Shell>
       </ToastHost>
