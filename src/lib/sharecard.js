@@ -184,83 +184,6 @@ export async function renderWordleCard({ name, guesses, marks, solved, points, s
   return canvas.toDataURL('image/png')
 }
 
-/* ---------- 2048 ---------- */
-
-const TILE_COLOURS = {
-  0: 'rgba(241, 240, 237, 0.05)',
-  2: 'rgba(241, 240, 237, 0.12)',
-  4: 'rgba(241, 240, 237, 0.18)',
-  8: 'rgba(241, 240, 237, 0.26)',
-  16: '#4a4f5c',
-  32: '#565c6d',
-  64: '#636a80',
-  128: '#2a3568',
-  256: '#26357e',
-  512: '#2a44a6',
-  1024: SIGNAL,
-  2048: SIGNAL,
-}
-
-export async function render2048Card({ name, board, score, moves, best, signature }) {
-  await document.fonts?.ready
-
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = H
-  const ctx = canvas.getContext('2d')
-
-  drawBackdrop(ctx)
-  drawHeader(ctx, '2048 on chain')
-
-  const cell = 86
-  const gap = 10
-  const gridX = 56
-  const gridY = 150
-
-  for (let i = 0; i < 16; i++) {
-    const r = Math.floor(i / 4)
-    const c = i % 4
-    const x = gridX + c * (cell + gap)
-    const y = gridY + r * (cell + gap)
-    const value = board[i] ? 2 ** board[i] : 0
-
-    ctx.fillStyle = TILE_COLOURS[value] ?? SIGNAL
-    roundRect(ctx, x, y, cell, cell, 12)
-    ctx.fill()
-
-    if (value) {
-      ctx.fillStyle = value >= 16 ? '#ffffff' : CANVAS_BG
-      ctx.font = `700 ${value >= 1024 ? 24 : value >= 128 ? 28 : 34}px ${SANS}`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(String(value), x + cell / 2, y + cell / 2 + 1)
-    }
-  }
-
-  const textX = gridX + 4 * (cell + gap) + 56
-  ctx.textBaseline = 'alphabetic'
-  ctx.textAlign = 'left'
-
-  ctx.fillStyle = SIGNAL
-  ctx.font = `700 17px ${MONO}`
-  ctx.fillText(`${moves} MOVES, ${moves} TRANSACTIONS`, textX, 176)
-
-  ctx.fillStyle = CANVAS_BG
-  ctx.font = `600 58px ${SANS}`
-  ctx.fillText(name || 'anonymous', textX, 232)
-
-  drawStat(ctx, textX, 330, score.toLocaleString(), 'score')
-  drawStat(ctx, textX + 230, 330, best.toLocaleString(), 'best')
-
-  ctx.fillStyle = MUTED
-  ctx.font = `400 17px ${SANS}`
-  ctx.fillText('Every swipe was its own transaction.', textX, 430)
-  ctx.fillText('The chain moved the tiles.', textX, 456)
-
-  drawFooter(ctx, signature)
-  return canvas.toDataURL('image/png')
-}
-
 /* ---------- text ---------- */
 
 // Blue for the right place, white for the right letter in the wrong place,
@@ -284,16 +207,6 @@ export function wordleShareText({ name, marks, solved, points, signature }) {
     grid,
     '',
     'Scored by a C program running on Thru.',
-    signature ? `thruscan.vercel.app/?tx=${signature}` : 'thruscan.vercel.app',
-  ].join('\n')
-}
-
-export function share2048Text({ name, score, moves, signature }) {
-  return [
-    `Thru 2048 — ${score.toLocaleString()} points`,
-    name ? `${name} · ${moves} moves, ${moves} transactions` : `${moves} moves, ${moves} transactions`,
-    '',
-    'Every swipe was its own transaction on Thru.',
     signature ? `thruscan.vercel.app/?tx=${signature}` : 'thruscan.vercel.app',
   ].join('\n')
 }

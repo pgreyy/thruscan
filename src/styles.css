@@ -47,6 +47,14 @@
   --fill-hover: #EBE9E6;
   --fill-press: #DAD9D5;
   --seg-on: #FFFFFF;
+  /* Update 02: status and trade tints. White on --trade-buy / --trade-sell
+     passes 4.5:1 in both themes. */
+  --tint-positive-bg: #E4F3EA; --tint-positive-fg: #0B7643;
+  --tint-negative-bg: #FCE8E6; --tint-negative-fg: #C1291F;
+  --tint-brand-bg: #FFF1DC;    --tint-brand-fg: #9C5906;
+  --trade-buy: #0B7643; --trade-buy-hover: #096238;
+  --trade-sell: #C1291F; --trade-sell-hover: #9E2017;
+  --tabbar-h: 72px;
   color-scheme: light;
 }
 [data-theme="dark"] {
@@ -86,6 +94,11 @@
   --fill-hover: #21201E;
   --fill-press: #2F2E2B;
   --seg-on: #2F2E2B;
+  --tint-positive-bg: #143222; --tint-positive-fg: #59D38C;
+  --tint-negative-bg: #3A1C19; --tint-negative-fg: #F87868;
+  --tint-brand-bg: #33240E;    --tint-brand-fg: #FEAE39;
+  --trade-buy: #1E8A55; --trade-buy-hover: #25A063;
+  --trade-sell: #C8382D; --trade-sell-hover: #D9473B;
   color-scheme: dark;
 }
 :root {
@@ -135,12 +148,6 @@
   --mono: var(--font-mono);
 }
 
-:root[data-theme='dark'] .grid2048 { background: #22252b; }
-:root[data-theme='dark'] .cell2048 { background: #2b2f36; }
-:root[data-theme='dark'] .cell2048[data-v='2'] { background: #3a3e46; }
-:root[data-theme='dark'] .cell2048[data-v='4'] { background: #474c55; }
-:root[data-theme='dark'] .cell2048[data-v='8'] { background: #5a5f69; }
-:root[data-theme='dark'] .cell2048[data-v='128'] { background: #f1f0ed; color: #16181d; }
 :root[data-theme='dark'] .tile.absent, :root[data-theme='dark'] .key.absent { background: #2e3138; border-color: #2e3138; color: #8a8d95; }
 :root[data-theme='dark'] .tile.filled { border-color: #4a4e57; }
 :root[data-theme='dark'] .key:hover { background: #22252b; }
@@ -183,10 +190,13 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 /* ---------- shell ----------
  *
- * One bar on every width. From 1024px it carries the lockup, the four nav
- * items, search, the network badge and the wallet. Below that it is the phone
- * bar: the mark, the badge, a search button, the wallet and the menu, with the
- * nav in a drawer. Under it, on every page, the test-network strip. */
+ * One bar on every width (Update 02, 5a). From 1024px it is a three-column
+ * grid so the search sits in the true centre: the lockup and the nav on the
+ * left, search in the middle, the network badge, the bell and the wallet on
+ * the right. Below that it is the phone bar: the mark, the badge, a spacer,
+ * search, the bell, the wallet and the menu, each a 44px target. Under it, on
+ * every page, the test-network strip; under everything on a phone, the tab
+ * bar (5d). */
 
 /* At least the window tall, so the footer sits at the bottom of a short page. */
 .shell { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
@@ -199,12 +209,34 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 .bar-in {
   height: var(--h-bar);
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 var(--page-x);
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 8px 0 12px;
 }
-@media (max-width: 1023px) { .bar-in { padding: 0 8px 0 12px; } }
-@media (min-width: 1024px) { .bar-in { gap: 16px; } }
-@media (min-width: 1280px) { .bar-in { gap: 24px; } }
+.bar-spacer { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 1023px) {
+  .bar-left, .bar-right { display: contents; }
+  .bar-back { order: 0; margin-right: -4px; }
+  .brand { order: 1; margin-right: 4px; }
+  .netmenu { order: 2; }
+  .bar-spacer { order: 3; }
+  .bar-find { order: 4; }
+  .nt { order: 5; }
+  .wallet-wrap { order: 6; }
+  .bar-menu { order: 7; }
+}
+@media (min-width: 1024px) {
+  .bar-in {
+    display: grid; align-items: center; gap: 24px; padding: 0 32px;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 440px) minmax(0, 1fr);
+  }
+  .bar-left { display: flex; align-items: center; gap: 24px; min-width: 0; }
+  .bar-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+  .bar-spacer { display: none; }
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .bar-in { grid-template-columns: minmax(0, 1fr) minmax(320px, 360px) minmax(0, 1fr); padding: 0 24px; gap: 16px; }
+  .bar-left { gap: 16px; }
+}
 
 .brand {
   display: inline-flex; align-items: center; flex: none;
@@ -222,7 +254,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 
 .bar-back { margin-right: -4px; }
 
-/* The nav: ThruPad, Swap, Activity, More. Desktop only. */
+/* The nav: ThruPad, Swap, Explorer, More. Desktop only. */
 .bar-nav { display: none; }
 @media (min-width: 1024px) {
   .bar-nav { display: flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 500; }
@@ -261,12 +293,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .menu > a[aria-current='page'] { background: var(--bg-sunken); font-weight: 600; }
 .menu-sep { height: 1px; margin: 6px 4px; background: var(--border-subtle); }
 
-/* Search: a 340px field from 1280px, narrower down to 1024, and a button that
+/* Search: the full width of the centre track from 1024px, and a button that
    opens a full-width row under the bar below that. */
 .bar-search { display: none; }
-@media (min-width: 1024px) { .bar-search { display: block; flex: 0 1 340px; min-width: 150px; } }
-
-.bar-spacer { flex: 1 1 auto; min-width: 0; }
+@media (min-width: 1024px) { .bar-search { display: block; min-width: 0; } }
 
 .bar-icon {
   flex: none; width: 44px; height: 44px; display: grid; place-items: center;
@@ -274,7 +304,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 .bar-icon:hover { background: var(--fill-hover); }
 @media (min-width: 1024px) { .bar-icon { display: none; } }
-@media (max-width: 389px) { .bar-icon.bar-find { display: none; } }
 
 .bar-searchrow {
   padding: 8px var(--page-x) 10px;
@@ -431,22 +460,26 @@ button.netbadge { background: none; font-family: var(--font-mono); cursor: point
 .main { flex: 1; padding: 32px var(--page-x) 48px; }
 .page { max-width: var(--w-content); margin: 0 auto; }
 
-/* ---------- footer ----------
-   On every page, under the content; not sticky. */
+/* ---------- footer (Update 02, 5k) ----------
+   The symbol and name, the tagline, and one link. On a phone the two stack
+   and the page's bottom padding clears the tab bar. */
 .site-foot { background: var(--bg-surface); border-top: 1px solid var(--border-default); }
 .site-foot-in {
   max-width: var(--w-content); margin: 0 auto; padding: 20px var(--page-x); box-sizing: content-box;
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
   font-family: var(--font-sans); font-size: 13px;
 }
-.site-foot-text { margin: 0; color: var(--text-secondary); }
-.site-foot-links { display: flex; flex-wrap: wrap; gap: 24px; }
-.site-foot-links a { font-weight: 500; color: var(--text-primary); text-decoration: none; text-underline-offset: 2px; }
-.site-foot-links a:hover { text-decoration: underline; color: var(--text-primary); }
+.site-foot-id { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.site-foot-brand .wordmark { gap: 8px; }
+.site-foot-brand svg { width: 22px; height: 22px; }
+.site-foot-brand .wordmark-name { display: inline; font-size: 16px; font-weight: 700; letter-spacing: -0.03em; }
+.site-foot-text { margin: 0; font-size: 13px; color: var(--text-secondary); }
+.site-foot-link { font-size: 13px; font-weight: 500; color: var(--text-primary); text-decoration: none; text-underline-offset: 2px; }
+.site-foot-link:hover { text-decoration: underline; color: var(--text-primary); }
 @media (max-width: 819px) {
-  .site-foot-in { flex-direction: column-reverse; align-items: flex-start; gap: 8px; padding: 20px 16px; }
-  .site-foot-links { gap: 0 16px; }
-  .site-foot-links a { display: inline-flex; align-items: center; min-height: 44px; }
+  .site-foot-in { flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 16px; }
+  .site-foot-id { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .site-foot-link { display: inline-flex; align-items: center; min-height: 44px; }
 }
 
 .wrap { max-width: 720px; margin: 0 auto; }
@@ -868,226 +901,14 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   overflow: hidden;
 }
 
-.step-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-  color: var(--ink);
-}
-
-.step-n {
-  width: 21px;
-  height: 21px;
-  border-radius: 6px;
-  background: var(--canvas);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-
-.step[data-open='true'] .step-n { background: var(--ink); color: var(--canvas); }
-.step-t { font-size: 13.5px; font-weight: 500; flex: 1; }
-.step-body { padding: 0 14px 14px; }
-
 /* Guide prose is instructions people follow while typing, not incidental
    small print, so it gets more size and contrast than .fine does elsewhere. */
 .step-body .fine,
 .step-body p { font-size: 13.5px; line-height: 1.75; color: var(--ink-2); }
-.step-body .caption { font-size: 12.5px; color: var(--muted); margin: 12px 0 2px; }
-
-/* ---------- code ---------- */
-
-/* The copy button lives in a bar above the code, not inline with it. Long
-   commands scroll sideways, and a button parked at the far right of a scroll
-   region is a button most people never find. */
-.codeblock {
-  border-radius: var(--r-sm);
-  background: var(--dark);
-  margin: 8px 0;
-  overflow: hidden;
-}
-
-.codebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 8px 7px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-}
-
-.codelabel {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: rgba(232, 230, 225, 0.5);
-}
-
-.codebody { margin: 0; padding: 11px 12px; overflow-x: auto; }
-
-.codebody code {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: #e8e6e1;
-  white-space: pre;
-}
-
-.copy {
-  border: 0;
-  background: rgba(255, 255, 255, 0.14);
-  color: #e8e6e1;
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 5px 11px;
-  border-radius: 5px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.copy:hover { background: rgba(255, 255, 255, 0.24); }
-
-/* Commands mentioned mid-sentence are copyable too. Telling someone to run a
-   command and making them retype it is a small cruelty. */
-.inline-code {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 1px 7px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--canvas);
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 0.92em;
-  cursor: pointer;
-  vertical-align: baseline;
-}
-
-.inline-code:hover { border-color: var(--signal); }
-.inline-code .mark { font-size: 9.5px; color: var(--muted); }
-
-.caption { font-size: 11.5px; color: var(--muted); margin: 10px 0 2px; }
-
-
-.grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
-
-/* auto-fill rather than a fixed count, so the row count follows the width
-   instead of needing a breakpoint per size. At the 940px content width this
-   lands on three across. */
-@media (min-width: 560px) { .grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; } }
-
-.post {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  margin-bottom: 0;
-}
-
-.post-img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  background: var(--canvas);
-  border-bottom: 1px solid var(--line);
-}
-
-/* No image on the page? Fall back to a typographic block rather than a broken
-   picture or an empty gap. */
-.post-alt {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: var(--ink);
-  color: var(--canvas);
-  font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--line);
-}
-
-.post-body { padding: 13px 15px 15px; display: flex; flex-direction: column; flex: 1; }
-.post-body h3 { margin: 0 0 5px; font-size: 14.5px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
-
-/* Titles and blurbs are clamped so every card in a row is the same height,
-   however long the source title happens to be. */
-.post-body h3 a {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.post-body .fine {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.post-body h3 a { color: var(--ink); text-decoration: none; }
-.post-body h3 a:hover { color: var(--signal); }
-.post-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; padding-top: 10px; font-size: 12px; }
-
-/* ---------- list view ---------- */
-
-.feed-list { display: flex; flex-direction: column; gap: 10px; }
-
-.feed-list .post { flex-direction: row; align-items: stretch; }
 
 /* The thumbnail sits in a padded box and is centred rather than filling the
    whole edge. Cropping a wide preview image into a tall narrow slot is what
    made these unreadable. */
-.feed-list .post > a {
-  flex-shrink: 0;
-  width: 138px;
-  display: flex;
-  align-items: center;
-  padding: 12px 0 12px 12px;
-}
-
-.feed-list .post-img,
-.feed-list .post-alt {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  /* contain, not cover: show the whole image scaled down, whatever shape it
-     came in as. Letterboxing against the canvas colour reads as intentional;
-     a cropped sliver does not. */
-  object-fit: contain;
-  background: var(--canvas);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  font-size: 9px;
-}
-
-.feed-list .post-alt { background: var(--ink); border-color: var(--ink); }
-
-.feed-list .post-body { padding: 13px 15px 13px 13px; justify-content: center; }
-.feed-list .post-body h3 a { -webkit-line-clamp: 1; }
-.feed-list .post-body .fine { -webkit-line-clamp: 2; }
-
-@media (max-width: 559px) {
-  .feed-list .post > a { width: 104px; padding: 10px 0 10px 10px; }
-  .feed-list .post-body .fine { display: none; }
-}
-
-.view-toggle { display: flex; align-items: center; gap: 4px; margin-bottom: 16px; }
 
 /* Panel toggles read as real buttons rather than faint tabs, because a
    collapsed section nobody notices is the same as a section that is not
@@ -1121,24 +942,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 .panel-btn .caret { font-size: 9px; line-height: 1; transition: transform 0.15s; }
 .panel-btn[aria-expanded='true'] .caret { transform: rotate(180deg); }
 
-.view-toggle button {
-  padding: 6px 13px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: var(--r-sm);
-}
-
-.view-toggle button[aria-pressed='true'] {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--ink);
-  font-weight: 600;
-}
-
 .rec {
   padding: 11px 13px;
   border: 1px solid var(--line);
@@ -1148,41 +951,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 
 .rec-k { margin: 0 0 3px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .rec-v { margin: 0; font-size: 14px; word-break: break-all; }
-
-.guide {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
-  background: var(--surface);
-  border: 0;
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow);
-  margin-bottom: 12px;
-  cursor: pointer;
-  text-align: left;
-  color: var(--ink);
-}
-
-.guide-n {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--canvas);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-
-.guide:hover .guide-n { background: var(--ink); color: var(--canvas); }
-.guide-body { flex: 1; min-width: 0; }
-.guide-body h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.guide-body p { margin: 3px 0 0; font-size: 13px; color: var(--muted); }
 
 .back {
   display: inline-flex;
@@ -1397,7 +1165,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 
 @media (min-width: 620px) { .rec-grid { grid-template-columns: 1fr 1fr; } }
 
-
 /* ---------- identity ---------- */
 
 .ident {
@@ -1426,49 +1193,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 
 .qr-wrap { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .qr-side { flex: 1; min-width: 200px; }
-
-/* ---------- 2048 ---------- */
-
-.grid2048 {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  padding: 8px;
-  background: #ddd9d2;
-  border-radius: var(--r-md);
-  max-width: 340px;
-  margin: 0 auto 16px;
-  touch-action: none; /* let swipes drive the game instead of scrolling */
-  user-select: none;
-}
-
-.cell2048 {
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: #eae7e1;
-  font-family: var(--sans);
-  font-weight: 700;
-  font-size: 21px;
-  color: var(--ink);
-  transition: background 0.1s;
-}
-
-/* Low tiles stay quiet; the ramp toward ink and then signal blue means the
-   board visibly heats up as you get further, without introducing new hues. */
-.cell2048[data-v='2']    { background: #e2dfd8; }
-.cell2048[data-v='4']    { background: #d8d4cb; }
-.cell2048[data-v='8']    { background: #c9c4b9; }
-.cell2048[data-v='16']   { background: #b4aea1; color: #fff; }
-.cell2048[data-v='32']   { background: #97907f; color: #fff; }
-.cell2048[data-v='64']   { background: #74705f; color: #fff; }
-.cell2048[data-v='128']  { background: var(--ink); color: var(--canvas); font-size: 18px; }
-.cell2048[data-v='256']  { background: #232a4a; color: #fff; font-size: 18px; }
-.cell2048[data-v='512']  { background: #26356e; color: #fff; font-size: 18px; }
-.cell2048[data-v='1024'] { background: #2a44a6; color: #fff; font-size: 15px; }
-.cell2048[data-v='2048'] { background: var(--signal); color: #fff; font-size: 15px; }
-.cell2048.big            { font-size: 14px; }
 
 .pad {
   display: grid;
@@ -1736,8 +1460,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   .pal-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 }
 
-
-
 /* ---------- the faucet tap ----------
    Third of the three round buttons in the bar, so it has to match them exactly:
    any difference in size would move the nav, which is measured to the pixel. */
@@ -1781,53 +1503,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 }
 .faucet-more:hover { color: var(--ink); }
 
-/* ---------- the bell ----------
-   Same size and shape as the theme button beside it, so the two read as a pair
-   rather than as two unrelated controls that happened to land together. */
-
-/* The count sits on the bell rather than beside it: the bar is measured to the
-   pixel, and a badge that changes the button's width would move the nav. */
-
-.bell-menu {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 70;
-  width: 320px; max-width: calc(100vw - 24px);
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
-}
-.topbar .bell-menu { left: 0; right: auto; }
-
-.bell-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px;
-}
-.bell-clear {
-  border: 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 4px;
-}
-.bell-clear:hover { color: var(--ink); }
-.bell-none { margin: 0; padding: 14px 12px; line-height: 1.6; }
-
-.bell-list { max-height: 330px; overflow-y: auto; }
-.bell-item {
-  display: flex; align-items: flex-start; gap: 9px;
-  padding: 10px 12px; border-bottom: 1px solid var(--line);
-  text-decoration: none; color: inherit;
-}
-.bell-item:last-child { border-bottom: 0; }
-.bell-item:hover { background: var(--hover); }
-.bell-item > span:nth-child(2) { flex: 1; min-width: 0; }
-.bell-item b { display: block; font-size: 13px; font-weight: 600; }
-.bell-item i { display: block; font-size: 11.5px; color: var(--muted); font-style: normal; margin-top: 1px; }
-.bell-when { font-size: 11px; color: var(--muted); white-space: nowrap; flex: 0 0 auto; }
-.bell-item.new { background: var(--signal-soft); }
-
-.bell-kind { width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex: 0 0 7px; background: var(--muted); }
-.bell-sold { background: var(--good); }
-.bell-bought { background: var(--signal); }
-
-@media (max-width: 420px) {
-  .topbar .brand-name { display: none; }
-}
-
 /* Keeping a token on your own front page. */
 .tok-head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .tok-star {
@@ -1838,30 +1513,6 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 }
 .tok-star:hover { color: var(--ink); border-color: var(--muted); }
 .tok-star.on { color: var(--signal); border-color: var(--signal-line); background: var(--signal-soft); }
-
-/* ------------------------------------------------------------- archives
- *
- * A plain list of the pages that are still running but off the menus. It is
- * deliberately unadorned: this is a cupboard, not a feature.
- */
-.archive-list { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.archive-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 14px 16px; border-top: 1px solid var(--line);
-  color: inherit; text-decoration: none; background: var(--surface);
-}
-.archive-row:first-child { border-top: 0; }
-.archive-row:hover { background: var(--surface-2, var(--surface)); }
-.archive-row:hover b { color: var(--signal); }
-.archive-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.archive-text b { font-weight: 550; }
-.archive-text .dim { font-size: 13px; line-height: 1.45; }
-.archive-go { flex: 0 0 auto; font-size: 18px; }
-
-/* The feed under the launchpad on the front page. It follows a page rather
-   than starting one, so it drops the top padding a page container carries and
-   sets its own gap instead. */
-.home-feed { padding-top: 0; margin-top: 28px; }
 
 /* ---------- search field in the bar (2f) ---------- */
 .bar-find-form {
@@ -1993,8 +1644,142 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 .faucet-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
 .faucet-row .mono { font-size: 14px; color: var(--text-secondary); }
 
-/* ---------- 404 and the explorer note ---------- */
+/* ---------- 404 ---------- */
 .nf { padding-top: 24px; }
 .nf-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.explorer-note { margin-bottom: 16px; }
-.archive-row svg { flex: none; color: var(--text-secondary); }
+
+/* ---------- Update 02: status and event pills (section 6) ----------
+   12-13px, 600, radius 4. The word is always there; colour is never the only
+   signal. Success / Buy green, Failed / Sell red, Launch amber, the rest
+   neutral. On the tx page the pills are 13px, radius 6, padding 5/10. */
+.pill2 {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  padding: 2px 8px; border-radius: 4px;
+  font-family: var(--font-sans); font-size: 12px; line-height: 18px; font-weight: 600;
+  white-space: nowrap; text-transform: none; letter-spacing: 0;
+  background: var(--bg-sunken); color: var(--text-primary);
+}
+.pill2.positive { background: var(--tint-positive-bg); color: var(--tint-positive-fg); }
+.pill2.negative { background: var(--tint-negative-bg); color: var(--tint-negative-fg); }
+.pill2.brand { background: var(--tint-brand-bg); color: var(--tint-brand-fg); }
+.pill2.pending { background: var(--bg-sunken); color: var(--text-primary); }
+.pill2.lg { font-size: 13px; padding: 5px 10px; border-radius: 6px; }
+.amt-pos { color: var(--status-positive); }
+.amt-neg { color: var(--status-negative); }
+.amt-none { color: var(--text-secondary); }
+
+/* ---------- Update 02: notifications (5b) ----------
+   The bell: 36px with a 1px border on a desktop, a 44px icon on a phone. The
+   unread badge is an amber pill with a 2px surface ring, hidden at zero. */
+.nt { position: relative; flex: none; display: flex; }
+.nt-btn { position: relative; }
+.nt-btn-desk {
+  width: 36px; height: 36px; display: grid; place-items: center; padding: 0;
+  border: 1px solid var(--border-default); border-radius: var(--r-control);
+  background: var(--bg-surface); color: var(--text-primary); cursor: pointer;
+}
+.nt-btn-desk:hover { background: var(--fill-hover); }
+.nt-mobile .bar-icon { display: grid; }
+.nt-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
+  display: grid; place-items: center; border-radius: 9px;
+  background: var(--action-primary); color: var(--action-primary-text);
+  font-size: 10px; line-height: 1; font-weight: 500; box-shadow: 0 0 0 2px var(--bg-surface);
+}
+.nt-mobile .nt-badge { top: 4px; right: 4px; }
+.nt-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 70;
+  width: 400px; max-width: calc(100vw - 24px); max-height: min(640px, calc(100vh - 90px));
+  display: flex; flex-direction: column;
+  background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel);
+  box-shadow: var(--shadow-popover); overflow: hidden;
+}
+.nt-sheet {
+  position: fixed; inset: 0; z-index: 120; display: flex; flex-direction: column;
+  background: var(--bg-surface); padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: fade-in var(--dur-base) ease-out;
+}
+.nt-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+.nt-sheet .nt-head { padding: 6px 12px 6px 4px; min-height: var(--h-bar); box-sizing: border-box; border-bottom: 1px solid var(--border-subtle); }
+.nt-head h2 { margin: 0; flex: 1; font-size: 17px; line-height: 24px; font-weight: 700; }
+.nt-markall { font-size: 13px; }
+.nt-chips { padding: 0 16px 10px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.nt-sheet .nt-chips { padding-top: 10px; }
+.nt-chips .chip { flex: none; }
+.nt-list { flex: 1; overflow-y: auto; border-top: 1px solid var(--border-subtle); }
+.nt-item { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border-subtle); }
+.nt-item.unread { background: var(--bg-canvas); }
+.nt-item-main {
+  flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px;
+  border: 0; background: none; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.nt-item-main:hover { background: var(--fill-hover); }
+.nt-ic { flex: none; width: 32px; height: 32px; border-radius: var(--r-control); display: grid; place-items: center; background: var(--bg-sunken); color: var(--text-primary); }
+.nt-ic.positive { background: var(--tint-positive-bg); color: var(--tint-positive-fg); }
+.nt-ic.negative { background: var(--tint-negative-bg); color: var(--tint-negative-fg); }
+.nt-ic.brand { background: var(--tint-brand-bg); color: var(--tint-brand-fg); }
+.nt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nt-text b { font-size: 14px; line-height: 20px; font-weight: 700; }
+.nt-body { font-size: 13px; line-height: 18px; color: var(--text-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nt-meta { font-size: 12px; line-height: 16px; color: var(--text-secondary); }
+.nt-dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--action-primary); }
+.nt-claim { margin-right: 16px; flex: none; }
+.nt-none { margin: 0; padding: 24px 16px; font-size: 14px; line-height: 1.45; color: var(--text-secondary); }
+.nt-empty { padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.nt-empty p { margin: 0; color: var(--text-secondary); }
+.nt-foot { padding: 12px 16px; border-top: 1px solid var(--border-subtle); font-size: 13px; }
+.nt-sheet .nt-ic { width: 36px; height: 36px; }
+.nt-sheet .nt-text b { font-size: 15px; }
+.nt-sheet .nt-item-main { padding: 14px 16px; }
+
+/* ---------- Update 02: the phone tab bar (5d) ----------
+   Below 1024px only. 72px plus the safe area; five equal columns, items at
+   the bottom. Trade is a raised 54px ink circle with an amber icon. Hidden
+   while the keyboard (a focused field) or a sheet or modal is open. */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end;
+  background: var(--bg-surface); border-top: 1px solid var(--border-default);
+}
+.tabbar-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px;
+  min-height: 44px; padding: 0 0 10px; color: var(--text-secondary); text-decoration: none;
+  font-size: 11px; line-height: 14px; font-weight: 500;
+}
+.tabbar-item:hover { color: var(--text-primary); }
+.tabbar-item.on { color: var(--text-primary); font-weight: 600; }
+.tabbar-trade-btn {
+  width: 54px; height: 54px; margin-top: -30px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--banner-test-bg); color: var(--action-primary);
+  box-shadow: 0 0 0 4px var(--bg-surface);
+}
+[data-theme="dark"] .tabbar-trade-btn { border: 1px solid var(--border-default); }
+.tabbar-item:focus-visible { outline-offset: -2px; }
+@media (max-width: 1023px) {
+  body { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer, .netmenu-scrim, .picker-scrim) .tabbar,
+  body:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="file"]), textarea:focus, select:focus) .tabbar,
+  body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer) .wall-fab { display: none; }
+}
+@media (min-width: 1024px) { .tabbar { display: none; } }
+
+/* The wallet chip collapses to a 36px avatar square below 360px. */
+.pill-ava { display: none; }
+@media (max-width: 359px) {
+  .wallet-pill.connected { width: 36px; height: 36px; padding: 0; justify-content: center; }
+  .wallet-pill.connected .pill-chip { display: none; }
+  .pill-ava { display: grid; place-items: center; }
+}
+
+/* 1024-1279: the side tracks are narrow, so the lockup drops to the symbol,
+   the badge to its short form and the wallet button to one word. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .bar-left .brand .wordmark-name { display: none; }
+  .bar-nav > a, .bar-more > summary { padding: 7px 8px; }
+  .bar-right .netbadge.down .long { display: none; }
+  .bar-right .netbadge.down .short { display: inline; }
+  .bar-right .wallet-pill .pill-long { display: none; }
+  .bar-right .wallet-pill .pill-short { display: inline; }
+}
