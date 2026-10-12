@@ -33,7 +33,7 @@ import { createThruClient, Pubkey, Signature, Transaction } from '@thru/sdk'
 import { createGrpcTransport, createGrpcWebTransport } from '@connectrpc/connect-node'
 import { decodeConfig, decodeMarket, nftAccountFor, PALS_CONFIG, PALS_MARKET, PALS_NFT_MINT, PALS_PROGRAM, PALS_SITE } from '../src/lib/pals/chain.js'
 import { palsInOrder, toSvg } from '../src/lib/pals/art.js'
-import { rpcCandidates, network } from '../src/lib/networks.js'
+import { rpcCandidates, network, addressOf } from '../src/lib/networks.js'
 
 export const config = { runtime: 'nodejs', maxDuration: 30 }
 
@@ -318,7 +318,7 @@ async function overview(client, blockCount = 60, txCount = 25) {
    so each transaction is fetched once more with them. Token accounts and mints
    are read once per warm server and kept, since neither changes. */
 
-const TOKEN_PROGRAM_HEX = '00'.repeat(31) + 'aa'
+const TOKEN_PROGRAM_HEX = Buffer.from(Pubkey.from(addressOf('TOKEN_PROGRAM')).toBytes()).toString('hex')
 const accountInfo = new Map()   // address -> { kind: 'token', mint, owner } | { kind: 'mint', ticker, decimals } | { kind: 'other' }
 
 async function describeAccounts(client, addresses) {
