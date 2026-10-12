@@ -22,15 +22,6 @@
 .lf > span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
 .lf .field { width: 100%; }
 
-/* A pair of buttons that read as one control, rather than two loose ghosts. */
-.seg { display: flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
-.seg button {
-  flex: 1; padding: 9px 10px; font-size: 13px; border: 0; cursor: pointer;
-  background: var(--surface); color: var(--muted); font-family: inherit;
-}
-.seg button + button { border-left: 1px solid var(--line); }
-.seg button[aria-pressed='true'] { background: var(--signal-soft); color: var(--signal); font-weight: 600; }
-
 .lf-picture { display: flex; align-items: center; gap: 12px; }
 .lf-picture .fine { margin: 0; line-height: 1.55; }
 

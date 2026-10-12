@@ -1583,14 +1583,18 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 .pfp-cells { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .pfp-cells > span { display: block; }
 
-/* A token's icon: its picture, or its first letter when it has none. The letter
-   is coloured from the mint, so two tokens are never the same colour. */
-.tok-icon { background: var(--soft); }
-.tok-letter {
-  display: grid; place-items: center;
-  color: #fff; font-weight: 700; line-height: 1; font-family: var(--sans);
+/* A token's avatar: square for creator tokens, round for the two system ones. */
+.tok-icon {
+  display: inline-grid; place-items: center; overflow: hidden; vertical-align: middle;
+  background: var(--bg-sunken); color: var(--text-primary);
+  font-family: var(--font-mono); font-weight: 500; line-height: 1;
 }
-.tok-blank { background: var(--soft); border: 1px dashed var(--line); }
+.tok-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.tok-img { border: 1px solid var(--border-default); }
+.tok-blank-in { width: 45%; height: 45%; border-radius: 4px; background: var(--border-default); }
+.tok-wthru { background: var(--action-primary); color: #151412; }
+.tok-tusd { background: #151412; color: var(--action-primary); }
+[data-theme="dark"] .tok-tusd { box-shadow: inset 0 0 0 1px var(--border-default); }
 .tok-field { display: inline-flex; align-items: center; gap: 8px; }
 
 .foot { margin-top: 34px; text-align: center; }
