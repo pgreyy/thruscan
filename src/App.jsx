@@ -760,7 +760,6 @@ function SiteFooter() {
           <Link to="/get-wallet">ThruScan Wallet</Link>
           <Link to="/explorer">Explorer</Link>
           <Link to="/archives">Archives</Link>
-          <Link to="/" onClick={reopenIntro}>How ThruScan works</Link>
         </nav>
       </div>
     </footer>
