@@ -318,7 +318,7 @@ async function overview(client, blockCount = 60, txCount = 25) {
    so each transaction is fetched once more with them. Token accounts and mints
    are read once per warm server and kept, since neither changes. */
 
-const TOKEN_PROGRAM_HEX = Buffer.from(Pubkey.from(addressOf('TOKEN_PROGRAM')).toBytes()).toString('hex')
+const TOKEN_PROGRAM_HEX = Array.from(Pubkey.from(addressOf('TOKEN_PROGRAM')).toBytes(), (b) => b.toString(16).padStart(2, '0')).join('')
 const accountInfo = new Map()   // address -> { kind: 'token', mint, owner } | { kind: 'mint', ticker, decimals } | { kind: 'other' }
 
 async function describeAccounts(client, addresses) {
