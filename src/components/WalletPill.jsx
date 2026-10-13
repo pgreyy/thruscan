@@ -402,9 +402,9 @@ export function WalletPill() {
         </>
       ) : !wallet.unlocked ? (
         <>
-          <button className="wallet-pill" onClick={toggle} aria-expanded={open} title={address ?? undefined}>
+          <button className="wallet-pill locked" onClick={toggle} aria-expanded={open} title={address ?? undefined} aria-label="Unlock wallet">
             <Icon name="locked" size={16} />
-            <span>Unlock</span>
+            <span className="pill-word">Unlock</span>
           </button>
           {open && <Panel wallet={wallet} pfp={pfp} onClose={() => setOpen(false)} />}
         </>

@@ -967,22 +967,38 @@ details[open] > .move-summary::after { transform: rotate(90deg); }
 .move-row:first-child { border-top: 0; }
 .move-error { grid-column: 2 / -1; color: var(--status-negative); }
 
-/* Activity opens in a side panel from the Wallet page title. */
+/* Activity opens from the Wallet page title: a side panel from 1024px, a
+   bottom sheet below. Its own class names, so it never meets the phone nav
+   drawer's rules (which hide .drawer from 1024px). */
 .activity-open { display: inline-flex; align-items: center; gap: 6px; }
-.drawer-scrim { position: fixed; inset: 0; z-index: 60; background: var(--scrim); display: flex; justify-content: flex-end; }
-.drawer {
-  position: relative;
-  width: min(460px, 100%);
-  height: 100%;
-  overflow-y: auto;
-  background: var(--canvas);
-  box-shadow: -12px 0 32px rgba(22, 24, 29, 0.12);
-  padding: 16px;
-  animation: drawer-in .18s ease-out;
+.wact-scrim {
+  position: fixed; inset: 0; z-index: 120; background: var(--scrim);
+  display: flex; justify-content: flex-end; align-items: stretch;
+  animation: fade-in var(--dur-base) ease-out;
 }
-.drawer .card { margin: 0; }
-.drawer-top { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-@keyframes drawer-in { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.wact-panel {
+  position: relative; display: flex; flex-direction: column; gap: 12px;
+  width: min(460px, 100%); height: 100%; overflow-y: auto; box-sizing: border-box;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-canvas); border-left: 1px solid var(--border-default);
+  box-shadow: var(--shadow-modal);
+  animation: wact-side var(--dur-base) ease-out;
+}
+.wact-panel .card { margin: 0; }
+.wact-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.wact-head h2 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 700; }
+.wact-grab { display: none; }
+@keyframes wact-side { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+@keyframes wact-up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+@media (max-width: 1023px) {
+  .wact-scrim { align-items: flex-end; justify-content: stretch; }
+  .wact-panel {
+    width: 100%; height: auto; max-height: 88vh; border-left: 0;
+    border-top: 1px solid var(--border-default); border-radius: var(--r-modal) var(--r-modal) 0 0;
+    animation-name: wact-up;
+  }
+  .wact-grab { display: block; width: 36px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--border-default); }
+}
 
 /* Wall: the transaction link sits at the right end of the message footer. */
 .wall-msg-foot .wall-tx { margin-left: auto; padding: 0; background: none; color: var(--ink); font-size: inherit; cursor: pointer; }
