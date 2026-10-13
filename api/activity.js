@@ -58,6 +58,11 @@ const KINDS = new Set([
    excluded unless asked for by name. */
 const HIDDEN_KINDS = ['noop', 'oracle']
 
+/* 2048 is retired: its moves and leaderboard names are left out of the feed
+   (the programs stay on chain; their transactions still open by link). */
+const RETIRED_PROGRAM_KEYS = ['G2048_PROGRAM', 'ID_PROGRAM']
+const retiredPrograms = () => RETIRED_PROGRAM_KEYS.map((k) => activeAddresses()[k]).filter(Boolean)
+
 /* What "ThruScan only" means for rows that already carry a kind: the
    launchpad, swap, the wall, .id names and the games. The chain path answers
    the same question more precisely, from ThruScan's own accounts. */
@@ -127,6 +132,7 @@ async function queryPostgres({ kinds, scope, address, cursor, limit }) {
   if (kinds) where.push(`a.kind = ANY(${p(kinds)})`)
   else where.push(`a.kind <> ALL(${p(HIDDEN_KINDS)})`)
   if (scope === 'thruscan') where.push(`a.kind = ANY(${p(THRUSCAN_KINDS)})`)
+  if (retiredPrograms().length) where.push(`a.program <> ALL(${p(retiredPrograms())})`)
   if (cursor) where.push(`( a.slot, a.block_offset ) < ( ${p(cursor.slot)}, ${p(cursor.offset)} )`)
 
   const from = address
@@ -155,6 +161,8 @@ async function querySqlite({ kinds, scope, address, cursor, limit }) {
     if (kinds) { where.push(`a.kind IN (${kinds.map(() => '?').join(',')})`); params.push(...kinds) }
     else { where.push(`a.kind NOT IN (${HIDDEN_KINDS.map(() => '?').join(',')})`); params.push(...HIDDEN_KINDS) }
     if (scope === 'thruscan') { where.push(`a.kind IN (${THRUSCAN_KINDS.map(() => '?').join(',')})`); params.push(...THRUSCAN_KINDS) }
+    const retired = retiredPrograms()
+    if (retired.length) { where.push(`a.program NOT IN (${retired.map(() => '?').join(',')})`); params.push(...retired) }
     if (cursor) {
       /* SQLite compares row values the same way, but spelling it out keeps
          this readable next to the Postgres version. */
@@ -212,6 +220,7 @@ async function queryChain({ kinds, scope, address, cursor, limit }) {
   const A = { ...(await addressesFor(url)), ...activeAddresses() }
   const own = [...new Set(OWN_ACCOUNTS.map((k) => A[k]).filter(Boolean))]
   const decode = makeDecoder(A)
+  const retired = new Set(RETIRED_PROGRAM_KEYS.map((k) => A[k]).filter(Boolean))
   const { PageRequest, Filter } = await import('@thru/sdk')
 
   /* How many listings gave up. The node now and then closes a stream with an
@@ -258,7 +267,7 @@ async function queryChain({ kinds, scope, address, cursor, limit }) {
         const row = decode(txn)
         if (!row?.signature) continue
         last = row
-        if (!kindOk(kinds, row.kind)) continue
+        if (!kindOk(kinds, row.kind) || retired.has(row.program)) continue
         /* "Show older" means strictly before a row, and the chain hands back
            everything newest first, so the cursor is a filter rather than a
            seek. Less efficient than the database path, invisible at this

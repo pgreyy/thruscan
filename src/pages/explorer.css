@@ -1,6 +1,6 @@
-/* The Explorer (Update 02, 5e-5g).
-   H1, the three URL tabs, then the tab. Blocks & transactions: six stat
-   boxes (3 x 2 on a desktop, 2 across on a phone) and two lists on a
+/* The Explorer (Update 02, 5e-5g; Update 03).
+   H1, the three URL tabs, then the tab. Blocks & transactions: three stat
+   boxes in one row (compact on a phone) and two lists on a
    0.8fr / 1.2fr grid. Wall: the composer in a 380px column beside the list;
    on a phone, a floating Write button and a bottom sheet. */
 
@@ -21,10 +21,15 @@
 .ex-stat dt { font-size: 13px; line-height: 18px; color: var(--text-secondary); }
 .ex-stat dd { margin: 0; font-size: 28px; line-height: 34px; font-weight: 500; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 819px) {
-  .ex-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .ex-stat { padding: 12px 14px; gap: 2px; }
-  .ex-stat dt { font-size: 12px; }
-  .ex-stat dd { font-size: 20px; line-height: 26px; }
+  .ex-stats { gap: 8px; }
+  .ex-stat { padding: 10px 10px; gap: 2px; }
+  .ex-stat dt { font-size: 11.5px; line-height: 15px; }
+  .ex-stat dd { font-size: 17px; line-height: 22px; }
+}
+/* Three across while they fit; below that, two and one. */
+@media (max-width: 359px) {
+  .ex-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ex-stat:last-child { grid-column: 1 / -1; }
 }
 
 /* ---- latest blocks / transactions ---- */

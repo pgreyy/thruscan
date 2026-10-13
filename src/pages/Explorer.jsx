@@ -2,8 +2,8 @@
 //
 // The Explorer (Update 02, 5e-5g): one page for what used to be three.
 //
-//   /explorer                 Blocks & transactions: the chain's vital signs,
-//                             ThruPad's totals, the newest blocks and txs
+//   /explorer                 Blocks & transactions: the chain's vital signs
+//                             and the newest blocks and txs
 //   /explorer?tab=activity    the activity feed (&address= narrows it)
 //   /explorer?tab=wall        the wall (&filter=to-you, &to=<address>)
 //
@@ -12,10 +12,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { describe } from '../lib/activity.js'
+import { describe, isRetiredGame } from '../lib/activity.js'
 import { kindOfLabel } from '../lib/pills.js'
 import { relTime, fullUtc } from '../lib/when.js'
-import { usePadMarket } from '../lib/padmarket.js'
 import { Feed } from '../components/Feed.jsx'
 import { EventPill, StatusPill } from '../components/Pill.jsx'
 import { WallTab } from './Wall.jsx'
@@ -63,10 +62,8 @@ function Stat({ label, value, title }) {
 
 function BlocksTab() {
   const { data, error } = useOverview()
-  const pad = usePadMarket(data)
   const blocks = data?.blocks ?? []
-  const txs = data?.transactions ?? []
-  const t = pad.totals
+  const txs = (data?.transactions ?? []).filter((t) => !isRetiredGame(t))
 
   return (
     <>
@@ -74,9 +71,6 @@ function BlocksTab() {
         <Stat label="Finalized block" value={num(data?.finalized)} />
         <Stat label="Block time" value={data?.blockTimeMs ? `${Math.round(data.blockTimeMs)} ms` : '–'} title="Average over the last 60 blocks" />
         <Stat label="Transactions / sec" value={data?.tps !== undefined && data?.tps !== null ? data.tps.toFixed(data.tps < 10 ? 1 : 0) : '–'} />
-        <Stat label="Tokens launched" value={num(t.launches)} />
-        <Stat label="Trades, last 24 h" value={num(t.trades24)} title="Every buy and sell on ThruPad in the last 24 hours, from each launch's trade history" />
-        <Stat label="WTHRU held in curves" value={t.held === null ? '–' : t.held.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} title="WTHRU in each curve's vault, less unclaimed creator fees" />
       </dl>
 
       {error && !data && <p className="notice bad">Could not read the chain: {error}</p>}

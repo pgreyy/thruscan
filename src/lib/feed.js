@@ -12,7 +12,7 @@
 // list here means the chain is quiet, never that something is unconfigured.
 
 import {
-  describe, programName, movements, formatDelta, fetchEvents, EOA_PROGRAM,
+  describe, programName, movements, formatDelta, fetchEvents, EOA_PROGRAM, isRetiredGame,
 } from './activity.js'
 import {
   THRUSWAP_PROGRAM, THRUPAD_PROGRAM, WALL_PROGRAM, TOKEN_PROGRAM,
@@ -70,7 +70,7 @@ export async function fetchFeed({ group = 'all', address = null, before = null, 
     }
   }
 
-  return { items: body.items, next: body.next, problem: null, source: body.source }
+  return { items: body.items.filter((i) => !isRetiredGame(i)), next: body.next, problem: null }
 }
 
 /* The dot beside each row. Kept to three states rather than one colour per
