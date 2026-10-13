@@ -20,8 +20,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './wallet-pill.css'
 import { Link } from 'react-router-dom'
-import { useWallet } from '../pages/Wallet.jsx'
-import { locked, unlock, currentAddress } from '../lib/wallet.js'
+import { useWallet, AutoLockSetting } from '../pages/Wallet.jsx'
+import { lockNow, unlock, currentAddress } from '../lib/wallet.js'
+import { autoLockWords } from '../lib/walletSession.js'
 import { hasWallet, storedWallet } from '../lib/wallet.js'
 import { WTHRU_MINT } from '../lib/addresses.js'
 import { withSuffix } from '../lib/names.js'
@@ -119,7 +120,7 @@ function Panel({ wallet, pfp, onClose }) {
     return (
       <div className="pill-panel">
         <div className="pill-panel-pad">
-        <label className="label" htmlFor="pill-password">Your browser wallet is locked. Enter its password to sign.</label>
+        <label className="label" htmlFor="pill-password">Your browser wallet is locked. Balances stay readable; enter the password to sign.</label>
         <input
           id="pill-password"
           className="field"
@@ -256,12 +257,15 @@ function Panel({ wallet, pfp, onClose }) {
           </button>
         </>
       ) : (
-        <button
-          className="pill-row"
-          onClick={() => { locked(); wallet.setState({ unlocked: false, balances: {} }); onClose() }}
-        >
-          <span>Lock</span>
-        </button>
+        <>
+          <AutoLockSetting compact />
+          <p className="pill-note fine">
+            Stays unlocked {autoLockWords()}. For larger amounts, the ThruScan Wallet extension is the safer choice.
+          </p>
+          <button className="pill-row" onClick={() => { lockNow(); onClose() }}>
+            <span>Lock now</span><Icon name="locked" size={16} />
+          </button>
+        </>
       )}
     </div>
   )
