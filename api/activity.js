@@ -9,8 +9,10 @@
 // query against a table.
 //
 // Routes (GET):
-//   /api/activity                      the newest activity, everyone's
+//   /api/activity                      the newest activity on the whole chain
 //   /api/activity?kind=buy             one kind: buy, sell, launch, swap, mint…
+//   /api/activity?kinds=buy,sell,swap  several kinds
+//   /api/activity?scope=thruscan       only ThruScan's own programs and accounts
 //   /api/activity?address=ta...        everything one wallet took part in
 //   /api/activity?before=18500.168     the page after a row, for "show older"
 //   /api/activity?limit=50             up to 200
@@ -55,6 +57,15 @@ const KINDS = new Set([
    chain being alive rather than of anybody doing anything, so both are
    excluded unless asked for by name. */
 const HIDDEN_KINDS = ['noop', 'oracle']
+
+/* What "ThruScan only" means for rows that already carry a kind: the
+   launchpad, swap, the wall, .id names and the games. The chain path answers
+   the same question more precisely, from ThruScan's own accounts. */
+const THRUSCAN_KINDS = ['pad', 'launch', 'buy', 'sell', 'claim', 'graduate', 'migrate', 'pool', 'liquidity', 'swap', 'wall', 'name', 'game']
+
+/** Does a row pass the kind filter? An explicit list wins; otherwise the
+ *  chain's own keepalives and price posts are hidden. */
+const kindOk = (kinds, k) => (kinds ? kinds.includes(k) : !HIDDEN_KINDS.includes(k))
 
 /* A Thru address or signature, as the chain formats them. Used to reject
    anything shaped wrong before it gets near a query. */
@@ -105,7 +116,7 @@ function shape(row) {
 
 let pool = null
 
-async function queryPostgres({ kind, address, cursor, limit }) {
+async function queryPostgres({ kinds, scope, address, cursor, limit }) {
   const { default: pg } = await import('pg')
   pool ??= new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3 })
 
@@ -113,8 +124,9 @@ async function queryPostgres({ kind, address, cursor, limit }) {
   const params = []
   const p = (v) => { params.push(v); return `$${params.length}` }
 
-  if (kind) where.push(`a.kind = ${p(kind)}`)
+  if (kinds) where.push(`a.kind = ANY(${p(kinds)})`)
   else where.push(`a.kind <> ALL(${p(HIDDEN_KINDS)})`)
+  if (scope === 'thruscan') where.push(`a.kind = ANY(${p(THRUSCAN_KINDS)})`)
   if (cursor) where.push(`( a.slot, a.block_offset ) < ( ${p(cursor.slot)}, ${p(cursor.offset)} )`)
 
   const from = address
@@ -130,7 +142,7 @@ async function queryPostgres({ kind, address, cursor, limit }) {
   return r.rows
 }
 
-async function querySqlite({ kind, address, cursor, limit }) {
+async function querySqlite({ kinds, scope, address, cursor, limit }) {
   const file = process.env.INDEX_DB || join(process.cwd(), 'indexer', 'index.db')
   if (!existsSync(file)) return null
 
@@ -140,8 +152,9 @@ async function querySqlite({ kind, address, cursor, limit }) {
     const where = []
     const params = []
 
-    if (kind) { where.push('a.kind = ?'); params.push(kind) }
+    if (kinds) { where.push(`a.kind IN (${kinds.map(() => '?').join(',')})`); params.push(...kinds) }
     else { where.push(`a.kind NOT IN (${HIDDEN_KINDS.map(() => '?').join(',')})`); params.push(...HIDDEN_KINDS) }
+    if (scope === 'thruscan') { where.push(`a.kind IN (${THRUSCAN_KINDS.map(() => '?').join(',')})`); params.push(...THRUSCAN_KINDS) }
     if (cursor) {
       /* SQLite compares row values the same way, but spelling it out keeps
          this readable next to the Postgres version. */
@@ -178,21 +191,20 @@ const MAX_PAGES = 4
    show their slot number, which is true, rather than a guessed time. */
 const MAX_TIME_READS = 60
 
-/* ThruScan's own accounts, whose transactions make up the feed when there is
- * no indexer. Everything the site does touches one of these: the pad and swap
+/* ThruScan's own accounts, whose transactions make up "ThruScan only" when
+ * there is no indexer. Everything the site does touches one of these: the pad and swap
  * registries (launches, trades, pools, liquidity), the two programs (which also
  * lists their deployment), the name root (every ThruID), and the wall and the
  * game boards. Blank means not deployed on this network, and is skipped.
  *
- * Thru's own programs are deliberately not here. The global listing is mostly
- * other projects' calls and the chain's own keepalives, and walking it for
- * "the newest 50" pushed ThruScan's rows out of the window within minutes. */
+ * The default feed is the whole chain (client.transactions.list), so other
+ * projects' calls show too; this list is only for the ThruScan-only chip. */
 const OWN_ACCOUNTS = [
   'THRUPAD_REGISTRY', 'THRUSWAP_REGISTRY', 'THRUPAD_PROGRAM', 'THRUSWAP_PROGRAM',
   'NAME_ROOT', 'WALL_ACCOUNT', 'WORDLE_BOARD', 'G2048_BOARD', 'ID_REGISTRY',
 ]
 
-async function queryChain({ kind, address, cursor, limit }) {
+async function queryChain({ kinds, scope, address, cursor, limit }) {
   const { client, url } = await resolveClient()
   /* The decoder needs every program the site deploys to label it, and the
      site's own table is the one place that lists them all, overrides included.
@@ -200,7 +212,7 @@ async function queryChain({ kind, address, cursor, limit }) {
   const A = { ...(await addressesFor(url)), ...activeAddresses() }
   const own = [...new Set(OWN_ACCOUNTS.map((k) => A[k]).filter(Boolean))]
   const decode = makeDecoder(A)
-  const { PageRequest } = await import('@thru/sdk')
+  const { PageRequest, Filter } = await import('@thru/sdk')
 
   /* How many listings gave up. The node now and then closes a stream with an
      internal error (NGHTTP2_INTERNAL_ERROR, about one call in fifty), and
@@ -222,22 +234,31 @@ async function queryChain({ kind, address, cursor, limit }) {
     throw last
   }
 
+  /* Where a walk stopped reading when it ran out of pages rather than out of
+     chain: the cursor "Show older" carries on from, even when every row it
+     read was filtered out. */
+  let scannedTo = null
+
   /* Walk one listing, newest first, and keep what survives the filters. */
   const walk = async (fetchPage, pages) => {
     const rows = []
     let pageToken
+    let last = null
+    let exhausted = false
     for (let i = 0; i < pages && rows.length < limit; i++) {
       let listed
       try {
         listed = await listPage(fetchPage, pageToken)
       } catch {
         failed++
+        exhausted = true
         break
       }
       for (const txn of listed.transactions ?? []) {
         const row = decode(txn)
         if (!row?.signature) continue
-        if (kind ? row.kind !== kind : HIDDEN_KINDS.includes(row.kind)) continue
+        last = row
+        if (!kindOk(kinds, row.kind)) continue
         /* "Show older" means strictly before a row, and the chain hands back
            everything newest first, so the cursor is a filter rather than a
            seek. Less efficient than the database path, invisible at this
@@ -246,15 +267,16 @@ async function queryChain({ kind, address, cursor, limit }) {
         rows.push(row)
       }
       pageToken = listed.page?.nextPageToken
-      if (!pageToken) break
+      if (!pageToken) { exhausted = true; break }
     }
+    if (!exhausted && rows.length < limit && last) rows.scannedTo = last
     return rows
   }
 
   let out
   if (address) {
     out = await walk((page) => client.transactions.listForAccount(address, { page }), MAX_PAGES)
-  } else if (own.length) {
+  } else if (scope === 'thruscan' && own.length) {
     /* One listing per account of ours, newest first, in parallel, merged by
      * time. Each listing is already sorted, so keeping the first `limit` of
      * each is enough to know the first `limit` of all of them; a transaction
@@ -269,10 +291,14 @@ async function queryChain({ kind, address, cursor, limit }) {
       .filter((r) => (seen.has(r.signature) ? false : seen.add(r.signature)))
       .sort((a, b) => (b.slot - a.slot) || (b.blockOffset - a.blockOffset))
   } else {
-    /* Nothing of ours is deployed on this network, so there is nothing to
-       filter to: show the chain's own newest, which is what the page did
-       before. */
-    out = await walk((page) => client.transactions.list({ page }), MAX_PAGES)
+    /* The whole chain, newest first. "Show older" seeks with the node's own
+       filter rather than walking down from the top again, so any depth of
+       history is reachable; the cursor check in walk() then drops the rest of
+       the cursor's own slot. The slot must be an unsigned literal (see
+       transactionsInSlot in indexer/index.mjs). */
+    const filter = cursor ? new Filter({ expression: `transaction.slot <= ${cursor.slot}u` }) : undefined
+    out = await walk((page) => client.transactions.list({ filter, page }), MAX_PAGES)
+    scannedTo = out.scannedTo ?? null
   }
   out = out.slice(0, limit)
 
@@ -314,6 +340,9 @@ async function queryChain({ kind, address, cursor, limit }) {
   /* Carried on the array so the handler can read it without changing what the
      two other paths return. */
   shaped.partial = failed > 0
+  /* A short page that stopped for lack of pages, not lack of chain, still has
+     older rows: page on from where the reading stopped. */
+  if (shaped.length < limit && scannedTo) shaped.next = `${scannedTo.slot}.${scannedTo.blockOffset}`
   return shaped
 }
 
@@ -332,6 +361,18 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ ok: false, error: `Unknown kind "${kindRaw}".` }))
     }
 
+    const kindsRaw = q.get('kinds')
+    const kinds = kindsRaw ? kindsRaw.split(',').map((k) => k.trim()).filter(Boolean) : (kindRaw ? [kindRaw] : null)
+    if (kinds && (kinds.length > 30 || kinds.some((k) => !KINDS.has(k)))) {
+      res.statusCode = 400
+      return res.end(JSON.stringify({ ok: false, error: 'Unknown kind in "kinds".' }))
+    }
+    const scopeRaw = q.get('scope')
+    if (scopeRaw && scopeRaw !== 'thruscan') {
+      res.statusCode = 400
+      return res.end(JSON.stringify({ ok: false, error: `Unknown scope "${scopeRaw}".` }))
+    }
+
     const addressRaw = q.get('address')
     if (addressRaw && !ADDRESS.test(addressRaw)) {
       res.statusCode = 400
@@ -339,7 +380,7 @@ export default async function handler(req, res) {
     }
 
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number(q.get('limit')) || DEFAULT_LIMIT))
-    const args = { kind: kindRaw || null, address: addressRaw || null, cursor: parseCursor(q.get('before')), limit }
+    const args = { kinds, scope: scopeRaw || null, address: addressRaw || null, cursor: parseCursor(q.get('before')), limit }
 
     let source = 'postgres'
     let rows = null
@@ -366,7 +407,9 @@ export default async function handler(req, res) {
       partial
         ? 'public, s-maxage=2'     // short, so a hiccup is not what everyone sees for a minute
         : source === 'chain'
-          ? 'public, s-maxage=15, stale-while-revalidate=60'
+          /* The newest page is the live feed, refreshed every 10 s, so it is
+             cached only briefly; older pages never change. */
+          ? (args.cursor ? 'public, s-maxage=60, stale-while-revalidate=300' : 'public, s-maxage=3, stale-while-revalidate=10')
           : 'public, s-maxage=5, stale-while-revalidate=30',
     )
 
@@ -375,7 +418,7 @@ export default async function handler(req, res) {
     return res.end(JSON.stringify({
       ok: true,
       items,
-      next: items.length === limit ? cursorOf(rows[rows.length - 1]) : null,
+      next: items.length === limit ? cursorOf(rows[rows.length - 1]) : (rows.next ?? null),
       /* Which path answered. The browser does not change what it draws, but
          it is the first thing to look at when the feed is slow or short. */
       source,

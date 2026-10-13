@@ -22,6 +22,7 @@ import { ROOT_SUFFIX } from './names.js'
 
 const KIND_GROUPS = [
   { id: 'all', label: 'All', kinds: null },
+  { id: 'thruscan', label: 'ThruScan only', kinds: null, scope: 'thruscan' },
   { id: 'launch', label: 'Launches', kinds: ['launch'] },
   { id: 'trade', label: 'Trades', kinds: ['buy', 'sell', 'swap'] },
   { id: 'nft', label: 'NFTs', kinds: ['nft'] },
@@ -33,19 +34,15 @@ const KIND_GROUPS = [
 export { KIND_GROUPS }
 
 /**
- * One page of activity.
- *
- * `kind` takes a single kind, because that is what the endpoint filters on. A
- * group covering several kinds is filtered here instead, which is honest about
- * the cost: it fetches a page and keeps part of it. Worth it for now, and the
- * right fix later is for the endpoint to take a list.
+ * One page of activity: the whole chain, newest first, unless a group narrows
+ * it (by kinds, or to ThruScan's own programs) or `address` narrows it to one
+ * wallet. The endpoint does the filtering, so a page is a full page.
  */
 export async function fetchFeed({ group = 'all', address = null, before = null, limit = 50 } = {}) {
   const g = KIND_GROUPS.find((x) => x.id === group) ?? KIND_GROUPS[0]
-  const single = g.kinds && g.kinds.length === 1 ? g.kinds[0] : null
-
   const q = new URLSearchParams()
-  if (single) q.set('kind', single)
+  if (g.kinds) q.set('kinds', g.kinds.join(','))
+  if (g.scope) q.set('scope', g.scope)
   if (address) q.set('address', address)
   if (before) q.set('before', before)
   q.set('limit', String(limit))
@@ -73,12 +70,7 @@ export async function fetchFeed({ group = 'all', address = null, before = null, 
     }
   }
 
-  /* A group covering several kinds is narrowed here. `all` keeps everything. */
-  const items = g.kinds && g.kinds.length > 1
-    ? body.items.filter((i) => g.kinds.includes(i.kind))
-    : body.items
-
-  return { items, next: body.next, problem: null, source: body.source }
+  return { items: body.items, next: body.next, problem: null, source: body.source }
 }
 
 /* The dot beside each row. Kept to three states rather than one colour per
@@ -110,6 +102,8 @@ export const asItem = (row) => ({ ...row, feePayer: row.who, rw: row.rw ?? [], r
  *  "a program call" to it, and almost every write the site makes is a bundle.
  *  For those the decoder has already read what is inside, so its label wins. */
 export function detailOf(row) {
+  /* Another project's program: a call, named by its address. */
+  if (row.kind === 'other' && !programName(row.program)) return row.program
   /* describe() reads the opcode from the instruction. A row indexed before the
      instruction was kept has none, and its own label is the better answer. */
   if (!row.data && row.label) return row.label
