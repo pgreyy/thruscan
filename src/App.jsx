@@ -26,7 +26,6 @@ import { PalsPage } from './pages/Pals.jsx'
 import { NftsPage } from './pages/Nfts.jsx'
 import { StatsPage } from './pages/Stats.jsx'
 import { WordlePage } from './pages/Wordle.jsx'
-import { getBlockHeight } from './lib/rpcClient'
 import { network } from './lib/networks.js'
 import './styles.css'
 
@@ -122,9 +121,9 @@ function Toast({ toast, onClose }) {
 
 /* ---------- shell ---------- */
 
-/* The test-network strip can be closed; the badge in the bar cannot, so the
-   site never stops saying it is a test network. The choice is read before the
-   first paint so a closed strip never flashes. */
+/* The test-network strip can be closed; "Show test network notice" in the
+   More menu and the phone drawer brings it back. The choice is read before
+   the first paint so a closed strip never flashes. */
 const STRIP_KEY = 'thruscan_testnet_banner_dismissed'
 function readStripClosed() {
   try { return localStorage.getItem(STRIP_KEY) === '1' } catch { return false }
@@ -142,128 +141,6 @@ const INTRO_KEY = 'thruscan_intro'
 function reopenIntro() {
   try { localStorage.removeItem(`${INTRO_KEY}_dismissed`) } catch { /* private mode */ }
   window.dispatchEvent(new Event('thruscan-intro'))
-}
-
-/* The networks the menu lists: the one this build is pointed at. Its name
-   comes from the network config, never from a string typed here. */
-const NETWORKS = [network]
-
-const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-const titleCase = (w) => w.charAt(0).toUpperCase() + w.slice(1)
-
-/* The network badge (2f): which network, and that it is a test one. It is a
-   button that opens the network menu on click, tap, Enter or Space, never on
-   hover: hover does not exist on touch and closes by accident.
- *
- * The block height is read through the proxy on a timer; it is the one number
- * that proves the site is talking to a real chain, so it stays, in the
- * tooltip. Dashed until the first read answers, red with a cross once a read
- * fails. Never green: "healthy" is not something the site can promise. */
-function NetworkMenu({ stripClosed, onShowStrip }) {
-  const [height, setHeight] = useState(null)
-  const [down, setDown] = useState(false)
-  const [readAt, setReadAt] = useState(null)
-  /* Open on the page it was opened on, so following a link puts it away. */
-  const { pathname } = useLocation()
-  const [openOn, setOpenOn] = useState(null)
-  const open = openOn === pathname
-  const setOpen = (v) => setOpenOn((was) => ((typeof v === 'function' ? v(was === pathname) : v) ? pathname : null))
-  const wrap = useRef(null)
-  const btn = useRef(null)
-  const pop = useRef(null)
-
-  useEffect(() => {
-    let alive = true
-    const tick = async () => {
-      try {
-        const h = await getBlockHeight()
-        const n = (h && typeof h === 'object')
-          ? Object.values(h).find((v) => typeof v === 'string' || typeof v === 'number')
-          : h
-        if (!alive) return
-        setHeight(n == null ? null : String(n))
-        setDown(n == null)
-        if (n != null) setReadAt(Date.now())
-      } catch {
-        if (alive) setDown(true)
-      }
-    }
-    tick()
-    const id = setInterval(tick, 12000)
-    return () => { alive = false; clearInterval(id) }
-  }, [])
-
-  useEffect(() => {
-    if (!open) return undefined
-    pop.current?.focus()
-    const away = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpenOn(null) }
-    const key = (e) => {
-      if (e.key !== 'Escape') return
-      setOpenOn(null)
-      btn.current?.focus()
-    }
-    document.addEventListener('pointerdown', away)
-    document.addEventListener('keydown', key)
-    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key) }
-  }, [open])
-
-  /* The network's name comes from the build rather than from a string typed
-     here, so it cannot go on saying "alphanet" on the day that stops being
-     true. */
-  const name = network.label.toUpperCase()
-  const pretty = height && !Number.isNaN(Number(height)) ? Number(height).toLocaleString() : height
-  const title = `${network.label}${network.test ? ' (test network)' : ''}${pretty ? ` · block ${pretty}` : ''}`
-  const state = down ? 'down' : !height ? 'checking' : 'ok'
-
-  return (
-    <div className="netmenu" ref={wrap}>
-      <button
-        ref={btn} type="button" title={title}
-        className={`netbadge${state === 'ok' ? '' : ` ${state}`}`}
-        aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-      >
-        {state === 'down' && <><Icon name="failed" size={12} stroke={2.4} /><span className="long">{name} · UNREACHABLE</span><span className="short">{network.test ? 'TEST' : name}</span></>}
-        {state === 'checking' && <><span className="netbadge-dot" /><span className="long">CHECKING NETWORK</span><span className="short">CHECKING</span></>}
-        {state === 'ok' && <><span className="netbadge-dot" /><span className="long">{name}{network.test ? ' · TEST' : ''}</span><span className="short">{network.test ? 'TEST' : name}</span></>}
-        <Icon name="expand" size={12} stroke={1.8} className="netbadge-chev" />
-      </button>
-      <span className="sr-only" role="status">{state === 'down' ? 'Network unreachable' : state === 'checking' ? 'Checking network' : ''}</span>
-
-      {open && (
-        <>
-          <div className="netmenu-scrim" aria-hidden="true" onPointerDown={() => setOpenOn(null)} />
-          <div className="netmenu-pop" ref={pop} role="dialog" aria-label="Network" tabIndex={-1}>
-            <span className="netmenu-grab" aria-hidden="true" />
-            <div className="netmenu-label">Network</div>
-            {NETWORKS.map((n) => (
-              <div key={n.label} className="netmenu-net">
-                <div className="netmenu-net-top">
-                  <span className="netbadge-dot" />
-                  <b>{titleCase(n.label)}</b>
-                  {n.test && <span className="netmenu-chip">TEST</span>}
-                  {n === network && <Icon name="success" size={16} className="netmenu-check" title="Current network" />}
-                </div>
-                {n.test && <div className="netmenu-sub">Thru test network. Tokens have no value.</div>}
-              </div>
-            ))}
-            <div className={`netmenu-status ${state}`}>
-              <span className="netmenu-status-k">
-                {state === 'down' ? <Icon name="failed" size={12} stroke={2.4} /> : <span className="netbadge-dot" />}
-                {state === 'down' ? 'Unreachable' : state === 'checking' ? 'Checking…' : 'Reachable'}
-              </span>
-              {readAt && <span className="netmenu-time">Last update {hhmm(readAt)}</span>}
-            </div>
-            {network.test && stripClosed && (
-              <>
-                <div className="menu-sep" />
-                <button type="button" className="netmenu-item" onClick={() => { onShowStrip(); setOpen(false); btn.current?.focus() }}>Show test network notice</button>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  )
 }
 
 /* The test-network strip, under the bar on every page while the network is a
@@ -363,7 +240,8 @@ function Shell({ children }) {
       <header className="bar">
         {/* Desktop: a three-column grid, so the search sits in the true
             centre. Phone: the groups dissolve into one row (display:
-            contents) and each item takes its place by order. */}
+            contents) and each item takes its place by order. The logo
+            stands alone on the left; there is no network badge. */}
         <div className="bar-in">
           <div className="bar-left">
             {isDetail && (
@@ -393,6 +271,9 @@ function Shell({ children }) {
                   {MORE_NAV.map((l) => moreLink(l, closeMore))}
                   <div className="menu-sep" />
                   <ThemeRow />
+                  {network.test && stripClosed && (
+                    <button type="button" className="menu-item" onClick={(e) => { closeMore(e); showStrip() }}>Show test network notice</button>
+                  )}
                 </div>
               </details>
             </nav>
@@ -401,7 +282,6 @@ function Shell({ children }) {
           <div className="bar-search"><Search bar /></div>
 
           <div className="bar-right">
-            <NetworkMenu stripClosed={stripClosed} onShowStrip={showStrip} />
             <span className="bar-spacer" />
             <button className="bar-icon bar-find" onClick={() => setFinding((f) => !f)} aria-label="Search" aria-expanded={finding}>
               <Icon name="search" />
@@ -433,6 +313,9 @@ function Shell({ children }) {
             <div className="menu-sep" />
             {MORE_NAV.map((l) => moreLink(l, undefined, 'drawer-link'))}
             <div className="menu-sep" />
+            {network.test && stripClosed && (
+              <button type="button" className="drawer-link" onClick={() => { showStrip(); setDrawer(false) }}>Show test network notice</button>
+            )}
             <ThemeRow />
           </nav>
         </>
