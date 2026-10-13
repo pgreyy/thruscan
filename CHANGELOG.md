@@ -1,5 +1,14 @@
 # Changelog
 
+## Update 03
+
+- **Footer: desktop only.** Below 1024px the site footer is hidden and the bottom tab bar replaces it; the body keeps its tab-bar padding, and ThruScan Wallet (`/get-wallet`) stays in the phone drawer.
+- **Explorer, Blocks & transactions:** three stat boxes in one row (Finalized block, Block time, Transactions / sec). The ThruPad boxes (Tokens launched, Trades in the last 24 h, WTHRU held in curves) and the data that fed them are gone.
+- **Explorer, Activity:** no description line and no "reading from the chain" warning; the live "Updated … · refreshes every 10 s" indicator sits at the right of the filter chips (under them on phones). Retired 2048 events ("Moved in 2048", "Set a leaderboard name" and the rest) are filtered out of every activity list.
+- **No network badge.** The "● TEST ▾" badge, its menu and its phone sheet are removed; the logo stands alone. "Show test network notice" moved to the bottom of the More menu and into the phone drawer above Theme. The dismissible test-network strip is unchanged.
+- **ThruPad home:** Recent activity and its polling are removed and the token list spans the full width; on phones there is no Create button under the title (the tab bar's Launch covers it).
+- **Tab bar:** Home · Launch · Trade · Explorer · Assets, with "Explore" renamed "Explorer".
+
 ## Update 02 (website, and ThruScan Wallet 0.5.1)
 
 - **Header and navigation.** The desktop bar is a three-column grid with the search in the true centre; the nav reads ThruPad · Swap · Explorer · More, and More holds Collections · ThruID · Faucet · ThruScan Wallet · Wordle. The network menu loses the "not available" line and "How ThruScan works"; the network name everywhere comes from the network config.

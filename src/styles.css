@@ -192,9 +192,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
  *
  * One bar on every width (Update 02, 5a). From 1024px it is a three-column
  * grid so the search sits in the true centre: the lockup and the nav on the
- * left, search in the middle, the network badge, the bell and the wallet on
- * the right. Below that it is the phone bar: the mark, the badge, a spacer,
- * search, the bell, the wallet and the menu, each a 44px target. Under it, on
+ * left, search in the middle, the bell and the wallet on the right. Below
+ * that it is the phone bar: the mark alone on the left, a spacer, search, the
+ * bell, the wallet and the menu, each a 44px target. (Update 03 removed the
+ * network badge.) Under it, on
  * every page, the test-network strip; under everything on a phone, the tab
  * bar (5d). */
 
@@ -217,7 +218,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .bar-left, .bar-right { display: contents; }
   .bar-back { order: 0; margin-right: -4px; }
   .brand { order: 1; margin-right: 4px; }
-  .netmenu { order: 2; }
   .bar-spacer { order: 3; }
   .bar-find { order: 4; }
   .nt { order: 5; }
@@ -311,87 +311,6 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 @media (min-width: 1024px) { .bar-searchrow { display: none; } }
 
-/* ---------- network badge ----------
-   DM Mono, uppercase, an ink outline and a dot. Never green: "healthy" is not
-   something the site can promise. Dashed while the first read is out, red
-   with a cross when the chain cannot be reached. */
-.netbadge {
-  flex: none; display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 7px; border: 1px solid var(--text-primary); border-radius: var(--r-chip);
-  font-family: var(--font-mono); font-size: 12px; line-height: 16px; text-transform: uppercase;
-  color: var(--text-primary); white-space: nowrap;
-}
-.netbadge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
-.netbadge.checking { border-style: dashed; border-color: var(--text-secondary); color: var(--text-secondary); }
-.netbadge.checking .netbadge-dot { background: none; border: 1px solid currentColor; }
-.netbadge.down { border-color: var(--status-negative); color: var(--status-negative); }
-.netbadge .short { display: none; }
-/* The badge is the network menu's button; it looks the same, plus a chevron. */
-button.netbadge { background: none; font-family: var(--font-mono); cursor: pointer; position: relative; }
-.netbadge-chev { flex: none; }
-.netbadge[aria-expanded='true'] .netbadge-chev { transform: rotate(180deg); }
-@media (max-width: 819px) { button.netbadge::after { content: ''; position: absolute; inset: -12px -4px; } }
-
-/* ---------- network menu ----------
-   A popover under the badge, right-aligned to it; a bottom sheet with the
-   phone bar. Lists the one network ThruScan runs on. */
-.netmenu { position: relative; flex: none; display: flex; }
-.netmenu-pop {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 70;
-  width: 280px; padding: 6px;
-  display: flex; flex-direction: column;
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--r-panel); box-shadow: var(--shadow-popover);
-  color: var(--text-primary); font-size: 14px; text-transform: none;
-}
-.netmenu-pop:focus { outline: none; }
-.netmenu-pop:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.netmenu-scrim, .netmenu-grab { display: none; }
-.netmenu-label { padding: 8px 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.netmenu-net { padding: 8px 10px; border-radius: var(--r-control); background: var(--bg-sunken); }
-.netmenu-net-top { display: flex; align-items: center; gap: 8px; }
-.netmenu-net-top b { font-size: 14px; font-weight: 600; }
-.netmenu-chip {
-  padding: 1px 5px; border: 1px solid var(--border-default); border-radius: var(--r-chip);
-  font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--text-secondary);
-}
-.netmenu-check { margin-left: auto; }
-.netmenu-sub { margin-top: 2px; padding-left: 14px; font-size: 12px; color: var(--text-secondary); }
-.netmenu-status {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 10px 10px 4px; font-size: 13px;
-}
-.netmenu-status-k { display: inline-flex; align-items: center; gap: 6px; }
-.netmenu-status.checking .netmenu-status-k { color: var(--text-secondary); }
-.netmenu-status.checking .netbadge-dot { background: none; border: 1px solid currentColor; }
-.netmenu-status.down .netmenu-status-k { color: var(--status-negative); }
-.netmenu-time { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
-.netmenu-note { margin: 4px 0 0; padding: 4px 10px 6px; font-size: 12px; color: var(--text-secondary); }
-.netmenu-item {
-  display: flex; align-items: center; min-height: 40px; padding: 0 10px;
-  border: 0; border-radius: var(--r-control); background: none;
-  color: var(--text-primary); font: inherit; font-size: 14px; text-align: left; text-decoration: none; cursor: pointer;
-}
-.netmenu-item:hover { background: var(--fill-hover); color: var(--text-primary); }
-@media (max-width: 1023px) {
-  .netmenu-scrim { display: block; position: fixed; inset: 0; z-index: 80; background: var(--scrim); animation: fade-in var(--dur-base) ease-out; }
-  .netmenu-pop {
-    position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 81;
-    width: auto; max-height: 85vh; overflow-y: auto;
-    padding: 8px 12px calc(16px + env(safe-area-inset-bottom, 0px));
-    border-width: 1px 0 0; border-radius: var(--r-modal) var(--r-modal) 0 0;
-    box-shadow: var(--shadow-modal);
-  }
-  .netmenu-grab { display: block; width: 36px; height: 4px; margin: 0 auto 6px; border-radius: 2px; background: var(--border-default); }
-  .netmenu-item { min-height: 44px; }
-}
-@media (max-width: 519px) {
-  .netbadge { font-size: 11px; padding: 3px 5px; gap: 5px; }
-  .netbadge .netbadge-dot { width: 5px; height: 5px; }
-  .netbadge .long { display: none; }
-  .netbadge .short { display: inline; }
-}
-
 /* ---------- test-network strip ----------
    Under the bar on every page. Ink in light mode, raised stone in dark. */
 .teststrip {
@@ -447,7 +366,11 @@ button.netbadge { background: none; font-family: var(--font-mono); cursor: point
   display: flex; align-items: center; min-height: 44px; padding: 0 10px;
   border-radius: var(--r-control); color: var(--text-primary); text-decoration: none; font-size: 15px;
 }
-.drawer a.drawer-link:hover { background: var(--fill-hover); }
+.drawer a.drawer-link:hover, .drawer button.drawer-link:hover { background: var(--fill-hover); }
+.drawer button.drawer-link {
+  display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--r-control);
+  background: none; color: var(--text-primary); font: inherit; font-size: 15px; text-align: left; cursor: pointer;
+}
 .drawer a.drawer-link[aria-current='page'] { background: var(--bg-sunken); font-weight: 600; }
 .drawer .menu-sep { margin: 8px 4px; }
 @keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -460,9 +383,10 @@ button.netbadge { background: none; font-family: var(--font-mono); cursor: point
 .main { flex: 1; padding: 32px var(--page-x) 48px; }
 .page { max-width: var(--w-content); margin: 0 auto; }
 
-/* ---------- footer (Update 02, 5k) ----------
-   The symbol and name, the tagline, and one link. On a phone the two stack
-   and the page's bottom padding clears the tab bar. */
+/* ---------- footer (Update 02, 5k; Update 03) ----------
+   The symbol and name, the tagline, and one link. Desktop only: below 1024px
+   the tab bar replaces it (ThruScan Wallet stays in the drawer), and the
+   body's bottom padding keeps content clear of the tab bar. */
 .site-foot { background: var(--bg-surface); border-top: 1px solid var(--border-default); }
 .site-foot-in {
   max-width: var(--w-content); margin: 0 auto; padding: 20px var(--page-x); box-sizing: content-box;
@@ -476,11 +400,7 @@ button.netbadge { background: none; font-family: var(--font-mono); cursor: point
 .site-foot-text { margin: 0; font-size: 13px; color: var(--text-secondary); }
 .site-foot-link { font-size: 13px; font-weight: 500; color: var(--text-primary); text-decoration: none; text-underline-offset: 2px; }
 .site-foot-link:hover { text-decoration: underline; color: var(--text-primary); }
-@media (max-width: 819px) {
-  .site-foot-in { flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 16px; }
-  .site-foot-id { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .site-foot-link { display: inline-flex; align-items: center; min-height: 44px; }
-}
+@media (max-width: 1023px) { .site-foot { display: none; } }
 
 .wrap { max-width: 720px; margin: 0 auto; }
 .wrap-wide { max-width: 940px; margin: 0 auto; }
@@ -1759,7 +1679,7 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 .tabbar-item:focus-visible { outline-offset: -2px; }
 @media (max-width: 1023px) {
   body { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
-  body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer, .netmenu-scrim, .picker-scrim, .wact-scrim) .tabbar,
+  body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer, .picker-scrim, .wact-scrim) .tabbar,
   body:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="file"]), textarea:focus, select:focus) .tabbar,
   body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer) .wall-fab { display: none; }
 }
@@ -1776,13 +1696,11 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   .wallet-pill.locked .pill-word { display: none; }
 }
 
-/* 1024-1279: the side tracks are narrow, so the lockup drops to the symbol,
-   the badge to its short form and the wallet button to one word. */
+/* 1024-1279: the side tracks are narrow, so the lockup drops to the symbol
+   and the wallet button to one word. */
 @media (min-width: 1024px) and (max-width: 1279px) {
   .bar-left .brand .wordmark-name { display: none; }
   .bar-nav > a, .bar-more > summary { padding: 7px 8px; }
-  .bar-right .netbadge.down .long { display: none; }
-  .bar-right .netbadge.down .short { display: inline; }
   .bar-right .wallet-pill .pill-long { display: none; }
   .bar-right .wallet-pill .pill-short { display: inline; }
 }

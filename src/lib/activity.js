@@ -19,6 +19,11 @@ export const EOA_PROGRAM = 'taEOAD2uLK1SLzPgtabFLUAx22yDlBs9DE9nZFTOESIGRr'
 /* Where `thru program create` and `upgrade` land; every deployment is a call to it. */
 const MANAGER_PROGRAM = 'taMGRmPoSTkUtF6UlmCIq58K8OYsnXshOMPdobxxHytqmu'
 
+/* 2048 is retired (Update 03): its moves and its leaderboard names are left
+   out of every activity list. Both programs are still on chain, so a link to
+   one of their transactions still opens. */
+export const isRetiredGame = (item) => !!item?.program && (item.program === G2048_PROGRAM || item.program === ID_PROGRAM)
+
 export async function fetchHistory(addresses, pages = null) {
   const list = [...new Set(addresses.filter(Boolean))].slice(0, 6)
   if (list.length === 0) return { items: [], next: null }
@@ -28,7 +33,7 @@ export async function fetchHistory(addresses, pages = null) {
   let body
   try { body = await res.json() } catch { throw new Error(`History did not load (${res.status}).`) }
   if (!res.ok || body.ok === false) throw new Error(body.error || `History did not load (${res.status}).`)
-  return { items: body.items ?? [], next: body.next ?? null }
+  return { items: (body.items ?? []).filter((i) => !isRetiredGame(i)), next: body.next ?? null }
 }
 
 function bytesOf(b64) {

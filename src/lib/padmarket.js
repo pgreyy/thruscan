@@ -2,7 +2,7 @@
 //
 // ThruPad as a market: every launch with its price, market cap, curve progress
 // and the last 24 hours of trading, worked out once and shared by the home
-// page (Trending and the list tabs) and the Explorer's stat boxes.
+// page (Trending and the list tabs) and the profile's prices.
 //
 // The launches come from the registry and their vaults (useChainData). The
 // 24-hour figures come from each launch's trade history, read through
@@ -80,7 +80,7 @@ function dayStats(trades, qd, nowPrice, now) {
 /* ---------- the hook ---------- */
 
 /**
- * { data, rows, loading, error, reload, readAt, decimals, tickers, totals }
+ * { data, rows, loading, error, reload, readAt, decimals, tickers }
  * rows: each launch with now (price), cap (market cap), raised, progress,
  * ageMs, and day: { count, volume, change } once its history is read.
  * `overview` is the chain overview ({ finalized, blockTimeMs }) for ages.
@@ -127,12 +127,5 @@ export function usePadMarket(overview) {
     }
   })
 
-  const read = rows.filter((r) => r.day)
-  const totals = {
-    launches: data ? rows.length : null,
-    trades24: data && read.length === rows.length ? read.reduce((s, r) => s + r.day.count, 0) : null,
-    held: data ? rows.filter((r) => r.inWthru).reduce((s, r) => s + r.raised, 0) : null,
-  }
-
-  return { ...pad, rows, totals, now }
+  return { ...pad, rows, now }
 }

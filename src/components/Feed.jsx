@@ -165,7 +165,6 @@ export function Feed({ address = null, limit = 30, showFilters = true, embedded 
   const [loading, setLoading] = useState(true)
   const [problem, setProblem] = useState(null)
   const [detail, setDetail] = useState(null)
-  const [source, setSource] = useState(null)
   const [names, setNames] = useState(() => new Map())
   const [extra, setExtra] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(null)
@@ -200,7 +199,6 @@ export function Feed({ address = null, limit = 30, showFilters = true, embedded 
     }
     setProblem(r.problem)
     setDetail(r.detail ?? null)
-    setSource(r.source ?? null)
     setPollError(!!r.problem)
     if (!r.problem) setUpdatedAt(Date.now())
     setLoading(false)
@@ -288,32 +286,29 @@ export function Feed({ address = null, limit = 30, showFilters = true, embedded 
 
   return (
     <section className="act">
-      <div className="act-head-row">
+      {(!embedded || address) && (
         <div className="act-head-text">
           {!embedded && <h1 className="act-h1">Activity</h1>}
-          <p className="act-lead">
-            {address
-              ? <>Transactions involving <Link className="mono" to={`/account/${address}`}>{shortId(address)}</Link> on Thru {net}. <Link to="/explorer?tab=activity">Show everyone&rsquo;s</Link></>
-              : <>Everyone&rsquo;s launches, trades, swaps, mints and names on Thru {net}, read from the chain.</>}
-          </p>
+          {address && (
+            <p className="act-lead">
+              Transactions involving <Link className="mono" to={`/account/${address}`}>{shortId(address)}</Link> on Thru {net}. <Link to="/explorer?tab=activity">Show everyone&rsquo;s</Link>
+            </p>
+          )}
         </div>
+      )}
+
+      {/* The filter chips, with the live indicator at the right of the same
+          row on a desktop and under the chips on a phone. */}
+      <div className="act-bar">
+        {showFilters && (
+          <div className="chips act-chips" role="group" aria-label="Filter activity">
+            {KIND_GROUPS.map((g) => (
+              <button key={g.id} className="chip" aria-pressed={group === g.id} onClick={() => setGroup(g.id)}>{g.label}</button>
+            ))}
+          </div>
+        )}
         {status}
       </div>
-
-      {showFilters && (
-        <div className="chips act-chips" role="group" aria-label="Filter activity">
-          {KIND_GROUPS.map((g) => (
-            <button key={g.id} className="chip" aria-pressed={group === g.id} onClick={() => setGroup(g.id)}>{g.label}</button>
-          ))}
-        </div>
-      )}
-
-      {source === 'chain' && (
-        <div className="notice" role="status">
-          <Icon name="warning" size={18} />
-          <span>Reading straight from the chain, which is slower. Older events and some filters may be incomplete.</span>
-        </div>
-      )}
 
       <div role="table" aria-label="Activity" className="act-table">
         <div role="row" className="act-tr act-th">

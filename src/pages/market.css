@@ -67,14 +67,10 @@
 
 
 /* ---- the two columns ---- */
-.mk-cols { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; align-items: start; }
-@media (max-width: 1199px) { .mk-cols { grid-template-columns: minmax(0, 1fr); } }
+.mk-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; align-items: start; }
+/* Below 1024px the bottom bar's Launch tab creates a token; the title stands alone. */
+@media (max-width: 1023px) { .mk .mk-actions { display: none; } }
 .mk-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.mk-side { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
-@media (min-width: 820px) and (max-width: 1199px) {
-  .mk-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
-}
-.mk-side > section { display: flex; flex-direction: column; gap: 10px; }
 
 .mk .mk-tabs { margin: 0; font-size: 16px; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
 .mk .mk-tabs::-webkit-scrollbar { display: none; }
@@ -120,11 +116,6 @@ a.mk-tr:hover { background: var(--fill-hover); color: var(--text-primary); }
 .mk-skel-row { display: flex; gap: 10px; align-items: center; height: 52px; }
 .mk-skel .skel { display: inline-block; }
 
-/* ---- side lists ---- */
-.mk-side-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.mk-side-head .h3 { font-size: 16px; font-weight: 700; }
-.mk-viewall { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.mk-list { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-panel); overflow: hidden; }
 
 .mk-crow { display: flex; gap: 10px; align-items: center; padding: 12px 14px; min-height: 64px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); text-decoration: none; }
 .mk-crow:last-child { border-bottom: 0; }
@@ -137,15 +128,7 @@ a.mk-tr:hover { background: var(--fill-hover); color: var(--text-primary); }
 .mk-crow-line .mono { font-size: 12px; flex: none; }
 .mk-crow-line > .mono:not(.dim) { font-size: 14px; }
 .mk-c-chg { width: 52px; text-align: right; }
-.mk-list .mk-crow { padding: 12px 14px; }
-.mk-list .mk-crow-line:first-child > .mono { font-size: 12px; }
 
-.mk-feed { display: flex; flex-direction: column; border-top: 1px solid var(--border-default); }
-.mk-feed-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-default); font-size: 14px; color: var(--text-primary); text-decoration: none; }
-.mk-feed-row:hover { color: var(--text-primary); background: var(--fill-hover); }
-.mk-feed-row .mono { font-size: 13px; flex: none; }
-.mk-feed-what { display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
-@media (max-width: 819px) { .mk-feed-row { min-height: 48px; } }
 
 /* ---- phones: two-line rows, tabs that scroll ---- */
 .mk-compact { display: none; }
@@ -194,7 +177,6 @@ a.mk-tr:hover { background: var(--fill-hover); color: var(--text-primary); }
   .mk-tcard-art { width: 160px; height: 160px; }
 }
 
-.mk-feed-detail { overflow: hidden; text-overflow: ellipsis; color: var(--text-body); }
 
 /* The create view replaces the home page's content while it is open. */
 .mk-create-page { padding-top: 0; }
