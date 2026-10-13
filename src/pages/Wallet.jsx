@@ -1254,10 +1254,14 @@ function ActivityDrawer({ addresses, me, onClose }) {
   }, [onClose])
 
   return createPortal(
-    <div className="drawer-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Activity">
-        <div className="drawer-top"><button className="btn ghost" onClick={onClose}>Close</button></div>
-        <Activity addresses={addresses} me={me} />
+    <div className="wact-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <aside className="wact-panel" role="dialog" aria-modal="true" aria-labelledby="wact-title">
+        <span className="wact-grab" aria-hidden="true" />
+        <div className="wact-head">
+          <h2 id="wact-title">Your activity</h2>
+          <button type="button" className="btn ghost sm" onClick={onClose} autoFocus>Close</button>
+        </div>
+        <Activity addresses={addresses} me={me} title="Transactions" />
       </aside>
     </div>,
     document.body,

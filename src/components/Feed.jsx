@@ -154,7 +154,7 @@ function SkeletonRows({ n = 6 }) {
   ))
 }
 
-const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', wall: 'Wall', name: 'ThruID' }
+const GROUP_NOUN = { launch: 'launch', trade: 'trade', nft: 'NFT', token: 'token', wall: 'Wall', name: 'ThruID', thruscan: 'ThruScan' }
 
 /* `embedded` drops the page heading, for the Explorer's Activity tab, which
    has its own. `address` narrows the feed to one wallet. */
@@ -184,8 +184,20 @@ export function Feed({ address = null, limit = 30, showFilters = true, embedded 
        where a list was is worse than a list a few seconds old; the header
        line says the refresh failed instead. */
     if (quiet && r.problem) { setLoading(false); setPollError(true); return }
-    setItems(r.items)
-    setNext(r.next)
+    if (quiet) {
+      /* A refresh adds what is new on top and keeps everything already on
+         screen, including pages loaded with "Show older", and keeps the
+         cursor for the next older page. */
+      setItems((old) => {
+        const seen = new Set(old.map((i) => i.signature))
+        const fresh = r.items.filter((i) => !seen.has(i.signature))
+        return fresh.length ? [...fresh, ...old] : old
+      })
+      setNext((n) => n ?? r.next)
+    } else {
+      setItems(r.items)
+      setNext(r.next)
+    }
     setProblem(r.problem)
     setDetail(r.detail ?? null)
     setSource(r.source ?? null)

@@ -1759,7 +1759,7 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
 .tabbar-item:focus-visible { outline-offset: -2px; }
 @media (max-width: 1023px) {
   body { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
-  body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer, .netmenu-scrim, .picker-scrim) .tabbar,
+  body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer, .netmenu-scrim, .picker-scrim, .wact-scrim) .tabbar,
   body:has(input:focus:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="file"]), textarea:focus, select:focus) .tabbar,
   body:has(.sheet-scrim, .modal-scrim, .nt-sheet, .drawer) .wall-fab { display: none; }
 }
@@ -1771,6 +1771,9 @@ input, textarea, select { max-width: 100%; box-sizing: border-box; }
   .wallet-pill.connected { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .wallet-pill.connected .pill-chip { display: none; }
   .pill-ava { display: grid; place-items: center; }
+  /* Locked: the lock alone, so the bar still fits at 320px. */
+  .wallet-pill.locked { width: 44px; height: 44px; padding: 0; justify-content: center; border-color: transparent; }
+  .wallet-pill.locked .pill-word { display: none; }
 }
 
 /* 1024-1279: the side tracks are narrow, so the lockup drops to the symbol,
