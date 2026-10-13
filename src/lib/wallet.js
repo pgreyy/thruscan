@@ -53,6 +53,10 @@ import { newPhrase, accountFromPhrase, phraseProblem } from './seed.js'
 import { isExternal, externalAddress, externalSend, provider } from './external.js'
 import { buildWrap, buildUnwrap, WTHRU_MINT_ADDRESS } from './wthru.js'
 import { MAX_STATE_UNITS } from './addresses.js'
+import {
+  saveSession, restoreSession, touchSession, clearSessions, broadcast, onBroadcast,
+  autoLock, setAutoLockPref,
+} from './walletSession.js'
 
 const STORE_KEY = 'thruscan.wallet.v1'
 const ENDPOINT = '/api/wallet'
@@ -218,18 +222,146 @@ export { isExternal } from './external.js'
  *  exported, which is why every caller should make the visitor confirm. */
 export function forgetWallet() {
   localStorage.removeItem(STORE_KEY)
-  locked()
+  lockNow()
 }
 
-/* ---------- the unlocked key, in memory only ---------- */
+/* ---------- the unlocked key ----------
+ *
+ * In memory while the tab is open, and for a limited time across refreshes
+ * through walletSession.js (wrapped with a non-extractable key in IndexedDB,
+ * never stored raw). The setting is Auto-lock: 15 minutes, 1 hour (default),
+ * 8 hours after the last signature, or this tab only. */
 
-let session = null   // { address, publicKey, privateKey }
+let session = null   // { address, publicKey, privateKey, phrase, expiresAt }
+
+const sessionListeners = new Set()
+/** fn() whenever the wallet locks or unlocks, here or in another tab. */
+export function onSessionChange(fn) {
+  sessionListeners.add(fn)
+  return () => sessionListeners.delete(fn)
+}
+const sessionChanged = () => sessionListeners.forEach((fn) => { try { fn() } catch { /* keep going */ } })
+
+let expiryTimer = null
+function scheduleExpiry() {
+  clearTimeout(expiryTimer)
+  if (!session?.expiresAt) return
+  // setTimeout caps at about 24.8 days; the longest setting is 8 hours.
+  expiryTimer = setTimeout(() => { if (session && Date.now() >= session.expiresAt) lockNow() }, Math.max(0, session.expiresAt - Date.now()) + 50)
+}
+/* Timers are throttled in background tabs, so check again whenever the tab
+   comes back. */
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && session?.expiresAt && Date.now() >= session.expiresAt) lockNow()
+  })
+}
+
+/** Zero the key in this tab only. */
+function dropSession() {
+  if (session?.privateKey) session.privateKey.fill(0)
+  session = null
+  clearTimeout(expiryTimer)
+}
 
 // A connected wallet is always "unlocked" as far as this site is concerned:
 // it asks for its own password, in its own window, when it needs to.
-export function isUnlocked() { return isExternal() || session !== null }
+export function isUnlocked() {
+  /* Past its time: lock straight after this render rather than during it. */
+  if (session?.expiresAt && Date.now() >= session.expiresAt) { queueMicrotask(lockNow); return isExternal() }
+  return isExternal() || session !== null
+}
 export function currentAddress() { return externalAddress() ?? session?.address ?? storedWallet()?.address ?? null }
-export function locked() { if (session?.privateKey) session.privateKey.fill(0); session = null }
+
+/** Lock everywhere: zero the key here, delete the stored copy, and tell every
+ *  other open tab to lock too. */
+export function lockNow() {
+  const had = session !== null
+  dropSession()
+  clearSessions()
+  broadcast('lock')
+  if (had) sessionChanged()
+}
+/** Kept for older callers: the same as Lock now. */
+export const locked = lockNow
+
+/** Start (or restart) the stored copy after the key is in memory. */
+async function keepSession() {
+  if (!session) return
+  try {
+    session.expiresAt = await saveSession({ address: session.address, privateKey: session.privateKey, phrase: session.phrase })
+    scheduleExpiry()
+    broadcast('unlock')
+  } catch { /* no IndexedDB: the wallet stays unlocked for this page only */ }
+  sessionChanged()
+}
+
+/** Change Auto-lock. An unlocked wallet is re-stored under the new rule. */
+export async function setAutoLock(id) {
+  setAutoLockPref(id)
+  if (session) await keepSession()
+  else await clearSessions()
+}
+export { autoLock }
+
+/* On load: pick the session back up if there is one in date for this wallet. */
+async function restore() {
+  const stored = storedWallet()
+  if (!stored || session || isExternal()) return
+  const got = await restoreSession(stored.address).catch(() => null)
+  if (!got || session) return
+  session = { address: stored.address, publicKey: b64.decode(stored.publicKey), privateKey: got.privateKey, phrase: got.phrase, expiresAt: got.expiresAt }
+  scheduleExpiry()
+  sessionChanged()
+}
+export const sessionReady = typeof window === 'undefined' ? Promise.resolve() : restore()
+
+if (typeof window !== 'undefined') {
+  onBroadcast(({ type }) => {
+    if (type === 'lock' && session) { dropSession(); sessionChanged() }
+    if (type === 'unlock' && !session) restore()
+  })
+}
+
+/* ---------- asking for the password, once, only to sign ----------
+ *
+ * Nothing that only reads asks for the password. Anything that signs awaits
+ * ensureUnlocked(): it resolves at once when the wallet is unlocked, and
+ * otherwise opens the one unlock prompt (components/Unlock.jsx registers
+ * it). Several signatures asked for at the same moment share that prompt. */
+
+let promptHandler = null
+let pendingUnlock = null
+export function setUnlockPrompt(fn) {
+  promptHandler = fn
+  return () => { if (promptHandler === fn) promptHandler = null }
+}
+export async function ensureUnlocked() {
+  await sessionReady
+  if (isUnlocked()) return true
+  if (!hasWallet()) throw new Error('NO_WALLET')
+  if (!promptHandler) throw new Error('Unlock the wallet first.')
+  pendingUnlock ??= promptHandler().finally(() => { pendingUnlock = null })
+  await pendingUnlock
+  return true
+}
+
+/** The unlocked key for a signature, asking for the password if needed, and
+ *  moving the auto-lock time forward. */
+async function needSession() {
+  if (isExternal()) return { address: externalAddress(), external: true }
+  await ensureUnlocked()
+  if (!session) throw new Error('Unlock the wallet first.')
+  touchSession().then((at) => { if (at && session) { session.expiresAt = at; scheduleExpiry() } })
+  return session
+}
+
+/** The wallet's address, for things that need no signature. */
+function walletAddress() {
+  const address = currentAddress()
+  if (!address) throw new Error('Open a wallet first.')
+  return address
+}
 
 async function persist(address, publicKey, privateKey, password, phrase = null) {
   const salt = crypto.getRandomValues(new Uint8Array(16))
@@ -274,7 +406,10 @@ export async function createWallet(password) {
   const phrase = newPhrase()
   const pair = accountFromPhrase(phrase)
   await persist(pair.address, pair.publicKey, pair.privateKey, password, phrase)
+  dropSession()
+  await clearSessions()
   session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey, phrase }
+  await keepSession()
   return { address: pair.address, phrase }
 }
 
@@ -287,7 +422,10 @@ export async function importPhrase(phrase, password) {
   const pair = accountFromPhrase(phrase)
   const clean = String(phrase).trim().toLowerCase().split(/\s+/).join(' ')
   await persist(pair.address, pair.publicKey, pair.privateKey, password, clean)
+  dropSession()
+  await clearSessions()
   session = { address: pair.address, publicKey: pair.publicKey, privateKey: pair.privateKey, phrase: clean }
+  await keepSession()
   return { address: pair.address }
 }
 
@@ -305,7 +443,10 @@ export async function importWallet(privateKeyHex, password) {
   // seed.js always used toThruFmt.
   const address = Pubkey.from(publicKey).toThruFmt()
   await persist(address, publicKey, privateKey, password)
+  dropSession()
+  await clearSessions()
   session = { address, publicKey, privateKey }
+  await keepSession()
   return { address }
 }
 
@@ -321,6 +462,9 @@ export async function unlock(password) {
       await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, b64.decode(stored.ct)),
     )
   } catch {
+    /* A wrong password clears any stored session copy, so a refresh after
+       one is locked too. */
+    await clearSessions()
     throw new Error('Wrong password.')
   }
   let phrase = null
@@ -333,7 +477,9 @@ export async function unlock(password) {
     } catch { /* the key decrypted, so a phrase that will not is not fatal */ }
   }
 
+  dropSession()
   session = { address: stored.address, publicKey: b64.decode(stored.publicKey), privateKey, phrase }
+  await keepSession()
   return { address: stored.address }
 }
 
@@ -360,11 +506,6 @@ export function hasPhrase() {
   return Boolean(stored?.phraseCt)
 }
 
-function requireSession() {
-  if (isExternal()) return { address: externalAddress(), external: true }
-  if (!session) throw new Error('Unlock the wallet first.')
-  return session
-}
 
 /* ---------- on chain ---------- */
 
@@ -378,7 +519,7 @@ export async function registerOnChain() {
     if (await accountExists(address)) return { already: true, address }
     throw new Error('Open your wallet extension and press Activate, then come back.')
   }
-  const { address, publicKey, privateKey } = requireSession()
+  const { address, publicKey, privateKey } = await needSession()
 
   const { chainId, sponsor, exists } = await api('prepare', { address })
   if (exists) return { already: true, address }
@@ -448,7 +589,7 @@ export async function registerAndFund(onStep = () => {}) {
  * knows how to make the standard one.
  */
 export async function openTokenAccount(mint, owner = null, seed = new Uint8Array(32)) {
-  const { address } = requireSession()
+  const address = walletAddress()
   const standard = (owner ?? address) === address && seed.every((b) => b === 0)
   if (standard) return api('open', { owner: address, mint })
   return openTokenAccountPaidByMe({ payer: address, mint, owner: owner ?? address, seed })
@@ -562,7 +703,7 @@ async function signAndSendNow({
 }) {
   stateUnits = clampState(stateUnits)
   if (isExternal()) return sendWithConnectedWallet({ program, readWrite, readOnly, data, computeUnits, stateUnits, memoryUnits })
-  const { address, privateKey } = requireSession()
+  const { address, privateKey } = await needSession()
   const { nonce, startSlot, chainId, balance } = await api('prepare', { address })
 
   // Pay a real fee when there is a balance to pay it from, and zero when there
@@ -632,7 +773,7 @@ export async function wrapThru(amount) {
 
 /** Unwrap `amount` WTHRU base units back to native THRU. Returns the signature. */
 export async function unwrapThru(amount) {
-  const { address } = requireSession()
+  const address = walletAddress()
   const source = await deriveTokenAccount(WTHRU_MINT_ADDRESS, address)
   return signAndSend(buildUnwrap({ source, amount: BigInt(amount) }))
 }
@@ -669,7 +810,7 @@ export async function claimNativeThru(amount = NATIVE_FAUCET_MAX) {
 
 /** Claim tUSD. The endpoint opens the token account first if there is not one. */
 export async function claimTusd() {
-  const { address } = requireSession()
+  const address = walletAddress()
   return api('faucet', { owner: address })
 }
 
@@ -706,7 +847,7 @@ const TOKEN_OP_BURN = 0x04
 
 /** Burn tokens the wallet holds. Used to hand tUSD back to the faucet. */
 export async function burnToken(mint, amount) {
-  const { address } = requireSession()
+  const address = walletAddress()
   const account = await deriveTokenAccount(mint, address)
 
   const readWrite = sortAddresses([mint, account])
@@ -747,7 +888,7 @@ export async function burnToken(mint, amount) {
 const TOKEN_OP_TRANSFER = 0x02
 
 export async function transferToken(mint, to, amount) {
-  const { address } = requireSession()
+  const address = walletAddress()
   const source = await deriveTokenAccount(mint, address)
   const dest = await deriveTokenAccount(mint, to)
 
@@ -776,7 +917,6 @@ export async function transferToken(mint, to, amount) {
 
 /** Give up a name. Signed by its owner. */
 export async function releaseName(domainAccount) {
-  requireSession()
   const data = new Uint8Array(8)
   const dv = new DataView(data.buffer)
   dv.setUint32(0, 4, true)             // UNREGISTER
@@ -840,7 +980,7 @@ export async function returnNativeThru(amount) {
  * signs once: the launch itself.
  */
 export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
-  const { address } = requireSession()
+  const address = walletAddress()
   const ticker = String(symbol ?? '').trim().toUpperCase()
   if (!/^[A-Z0-9]{2,8}$/.test(ticker)) return { ok: false, error: 'A ticker is 2 to 8 letters or digits.' }
   if (!padProgram) return { ok: false, error: 'No ThruPad program configured.' }
@@ -888,12 +1028,12 @@ export async function signUserMessage(text) {
       throw e
     }
   }
-  const { publicKey, privateKey } = requireSession()
+  const { publicKey, privateKey } = await needSession()
   return b64.encode(await signMessage(bytes, privateKey, publicKey))
 }
 
 export async function claimName(name) {
-  const { address } = requireSession()
+  const address = walletAddress()
   return api('name-register', { name, owner: address })
 }
 
