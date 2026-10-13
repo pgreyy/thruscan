@@ -4,14 +4,13 @@
 //
 // The title and the two actions, the "New here?" steps, what is trending,
 // then every token under five tabs (market cap, new, active, near graduation,
-// graduated) beside what just happened. The launchpad's totals moved to the
-// Explorer. Everything here is read from the chain or the indexer; where a
+// graduated), across the full width. On a phone the Launch tab in the bottom
+// bar is the way to create a token, so the title stands alone. Everything here is read from the chain or the indexer; where a
 // number cannot be read the page says so in place rather than leaving a hole.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { allTokenMeta } from '../lib/tokenmeta.js'
-import { fetchFeed, detailOf } from '../lib/feed.js'
 import { THRUPAD_PROGRAM, THRUPAD_REGISTRY, WTHRU_MINT } from '../lib/addresses.js'
 import { network } from '../lib/networks.js'
 import { hasWallet } from '../lib/wallet.js'
@@ -19,16 +18,13 @@ import { relTime, fullUtc, clock, since } from '../lib/when.js'
 import { usePadMarket } from '../lib/padmarket.js'
 import { TokenIcon } from '../components/TokenMeta.jsx'
 import { Icon } from '../components/Icon.jsx'
-import { EventPill } from '../components/Pill.jsx'
 import { EXTENSION_URL } from '../lib/external.js'
 import { useWallet } from './Wallet.jsx'
 import { CreateLaunchCard, compactNumber } from './Dex.jsx'
 import './market.css'
 
 const TOP_ROWS = 10
-const FEED_ROWS = 6
 const TRENDING = 10
-const NET = network.label.toLowerCase()
 
 /* ---------- formatting ---------- */
 
@@ -82,12 +78,6 @@ async function readJson(url) {
 }
 
 const readOverview = () => readJson('/api/rpc?action=overview')
-
-const readActivity = async () => {
-  const r = await fetchFeed({ group: 'all', limit: FEED_ROWS })
-  if (r.problem) throw new Error(r.detail || 'The chain is not answering right now.')
-  return r.items
-}
 
 /** A clock that ticks once a second, for "read 8s ago". */
 function useNow(ms = 1000) {
@@ -319,7 +309,6 @@ export function MarketHome({ create = false }) {
 
   const overview = usePoll(readOverview, 5000)
   const pad = usePadMarket(overview.data)
-  const activity = usePoll(readActivity, 10_000)
   const readAt = pad.readAt ?? null
 
   useEffect(() => {
@@ -477,26 +466,6 @@ export function MarketHome({ create = false }) {
           </div>
         </section>
 
-        <aside className="mk-side">
-          <section>
-            <div className="mk-side-head"><h2 className="h3">Recent activity</h2><Link to="/explorer?tab=activity" className="mk-viewall">View in Explorer</Link></div>
-            <div className="mk-feed">
-              {activity.loading && !activity.data && <Skeleton rows={3} />}
-              {activity.error && !activity.data && <p className="mk-note">Activity can't be read right now.</p>}
-              {activity.data && activity.data.length === 0 && <p className="mk-note">Nothing has happened on {NET} yet.</p>}
-              {(activity.data ?? []).map((a) => (
-                <Link key={a.signature} to={`/tx/${a.signature}`} className="mk-feed-row">
-                  <span className="mk-feed-what">
-                    <EventPill kind={a.kind} />
-                    <span className="mk-feed-detail">{detailOf(a)}</span>
-                    {!a.ok && <span className="pill2 negative">Failed</span>}
-                  </span>
-                  <span className="mono dim" title={fullUtc(a.time)}>{relTime(a.time)}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </aside>
       </div>
     </div>
   )
