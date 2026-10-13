@@ -23,6 +23,7 @@
 //   /api/rpc?action=version
 //   /api/rpc?action=chainInfo
 //   /api/rpc?action=endpoint      -> which endpoint/protocol is live
+//   /api/rpc?action=block&slot=N   -> one block and its transactions
 //   /api/rpc?action=history&addresses=ta...,ta...&pages={json}  -> recent transactions
 //   /api/rpc?action=pals[&wallet=ta...]  -> Pixel Pals: count, price, minters, and this wallet's Pals
 //   /api/rpc?action=pal&id=N             -> Pal N's metadata (what the NFT on chain points at)
@@ -241,6 +242,45 @@ function serializeHistoryItem(tx) {
     ok: ex ? (ex.vmError ?? 0) === 0 && BigInt(ex.userErrorCode ?? 0n) === 0n : null,
     error: ex ? { vm: ex.vmError ?? 0, user: ex.userErrorCode?.toString() ?? '0' } : null,
   }
+}
+
+/* ---------- block ----------
+   One block's header and every transaction in it, for /block/:height. The
+   transactions come from the same list call as the overview, filtered to the
+   slot, paged until the node runs out. */
+
+const BLOCK_TX_PAGE = 200
+const BLOCK_TX_MAX = 2000
+
+async function blockDetail(client, slot) {
+  let header = null
+  try {
+    const b = await withTimeout(
+      client.ctx.query.getBlock({ selector: { case: 'slot', value: BigInt(slot) }, view: 1 }),
+      CALL_TIMEOUT_MS,
+    )
+    header = b?.header ?? null
+  } catch { /* unknown height: the page shows its empty state */ }
+  if (!header) return { found: false, slot: String(slot) }
+
+  const time = tsMs(header.blockTime)
+  const rows = []
+  let pageToken = null
+  do {
+    const res = await withTimeout(client.ctx.query.listTransactions({
+      filter: { expression: `transaction.slot == uint(${BigInt(slot)})` },
+      page: { pageSize: BLOCK_TX_PAGE, ...(pageToken ? { pageToken } : {}) },
+    }), CALL_TIMEOUT_MS)
+    for (const p of res.transactions ?? []) {
+      const row = serializeHistoryItem(Transaction.fromProto(p))
+      row.time = time
+      rows.push(row)
+    }
+    pageToken = res.page?.nextPageToken || null
+  } while (pageToken && rows.length < BLOCK_TX_MAX)
+  rows.sort((a, b) => a.offset - b.offset)
+
+  return { found: true, slot: String(slot), time, transactions: rows }
 }
 
 /* ---------- overview ----------
@@ -807,6 +847,13 @@ export default async function handler(req, res) {
       case 'overview': {
         const data = await overview(client)
         return json(res, 200, { ok: true, ...data }, { cacheSeconds: 2 })
+      }
+
+      case 'block': {
+        const slot = String(params.slot ?? '')
+        if (!/^\d{1,20}$/.test(slot)) return json(res, 400, { ok: false, error: 'missing or bad slot' })
+        const data = await blockDetail(client, slot)
+        return json(res, 200, { ok: true, ...data }, { cacheSeconds: data.found ? 30 : 2 })
       }
 
       case 'history': {

@@ -18,7 +18,7 @@ import { TabBar } from './components/TabBar.jsx'
 import { UnlockHost } from './components/UnlockHost.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Search } from './pages/Home.jsx'
-import { ExplorerPage } from './pages/Explorer.jsx'
+import { ExplorerPage, BlockPage } from './pages/Explorer.jsx'
 import { TxPage, AccountPage } from './pages/Detail.jsx'
 import { TokenPage } from './pages/Token.jsx'
 import { GetWalletPage } from './pages/GetWallet.jsx'
@@ -50,7 +50,7 @@ const MORE_NAV = [
 
 /* Pages you arrive at from a list. On a phone they get a back arrow in the
    bar, since there is no nav item lit to take you back up. */
-const DETAIL_PATHS = ['/launch/', '/token/', '/tx/', '/account/']
+const DETAIL_PATHS = ['/launch/', '/token/', '/tx/', '/account/', '/block/']
 
 /* Whether the desktop bar is showing (1024px and up). */
 const DESK = '(min-width: 1024px)'
@@ -389,6 +389,7 @@ export default function App() {
             <Route path="/wall" element={<ToExplorer tab="wall" />} />
             <Route path="/launch" element={<Navigate to="/" replace />} />
             <Route path="/tx/:id" element={<TxPage />} />
+            <Route path="/block/:height" element={<BlockPage />} />
             <Route path="/account/:id" element={<AccountPage />} />
             <Route path="/token/:mint" element={<TokenPage />} />
             <Route path="/swap" element={<SwapPage />} />
