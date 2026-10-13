@@ -15,6 +15,7 @@ import { WalletPill } from './components/WalletPill.jsx'
 import { useDismissDetails } from './lib/dismiss.js'
 import { NotificationBell, NotificationWatch } from './components/Notifications.jsx'
 import { TabBar } from './components/TabBar.jsx'
+import { UnlockHost } from './components/UnlockHost.jsx'
 import { ProfilePage } from './pages/Profile.jsx'
 import { Search } from './pages/Home.jsx'
 import { ExplorerPage } from './pages/Explorer.jsx'
@@ -496,6 +497,7 @@ export default function App() {
       <ToastHost>
         <Shell>
           <Counted />
+          <UnlockHost />
           <Routes>
             <Route path="/" element={<HomeRoute />} />
             <Route path="/create" element={<MarketHome create />} />

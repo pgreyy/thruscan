@@ -25,15 +25,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import {
-  createWallet, importWallet, unlock, locked, forgetWallet,
-  hasWallet, storedWallet, isUnlocked, currentAddress,
-  registerAndFund, openTokenAccount, tokenBalances, accountExists,
-  deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult,
-  claimNativeThru, nativeBalance,
-  importPhrase, exportPhrase, hasPhrase,
-  transferToken, releaseName, claimNameFor, sendNativeThru, checkName,
+  createWallet, importWallet, forgetWallet, hasWallet, storedWallet, isUnlocked, currentAddress, registerAndFund, openTokenAccount, tokenBalances, accountExists, deriveTokenAccount, exportPrivateKey, signAndSend, waitForResult, claimNativeThru, nativeBalance, importPhrase, exportPhrase, hasPhrase, transferToken, releaseName, claimNameFor, sendNativeThru, checkName, ensureUnlocked, lockNow, onSessionChange, setAutoLock, autoLock,
 } from '../lib/wallet.js'
 import { displayDecimals } from '../lib/wthru.js'
+import { AUTOLOCK_OPTIONS, autoLockWords } from '../lib/walletSession.js'
 import { knownMints, ownedNames } from '../lib/holdings.js'
 import {
   onExternalChange, restoreExternal, isExternal, externalConnected, externalName, hasProvider,
@@ -74,6 +69,10 @@ function setState(patch) {
   state = { ...state, ...patch }
   listeners.forEach((fn) => fn(state))
 }
+
+// Locking or unlocking, here or in another tab, or a session picked back up
+// after a refresh. Balances are public, so they stay on screen while locked.
+onSessionChange(() => setState({ address: currentAddress(), unlocked: isUnlocked() }))
 
 // Connecting or disconnecting an outside wallet swaps whose balances these are.
 onExternalChange(() => {
@@ -287,10 +286,10 @@ function BackupCard({ wallet }) {
             Type the words or scan the code on another device to restore this wallet.
           </p>
           <div className="inline" style={{ marginTop: 14 }}>
-            <button className="btn secondary" onClick={() => setShown(shown ? null : exportPhrase())}>
+            <button className="btn secondary" onClick={() => (shown ? setShown(null) : revealAfterUnlock(() => setShown(exportPhrase())))}>
               {shown ? 'Hide phrase' : 'Show phrase'}
             </button>
-            <button className="btn ghost" onClick={() => setShowQR((q) => !q)}>
+            <button className="btn ghost" onClick={() => (showQR ? setShowQR(false) : revealAfterUnlock(() => setShowQR(true)))}>
               {showQR ? 'Hide code' : 'Show a code to scan'}
             </button>
           </div>
@@ -473,69 +472,6 @@ function CreateWallet({ onDone }) {
   )
 }
 
-function UnlockWallet({ onDone }) {
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-  const stored = storedWallet()
-
-  const go = async () => {
-    setBusy(true); setError(null)
-    try {
-      const { address } = await unlock(password)
-      setState({ address, unlocked: true })
-      onDone?.()
-    } catch (e) {
-      setError(String(e?.message ?? e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h2 className="h2">Unlock</h2>
-          <p className="sub mono">{short(stored?.address)}</p>
-        </div>
-      </div>
-      <div className="stack" style={{ marginTop: 16 }}>
-        <input
-          className="field"
-          type="password"
-          value={password}
-          onChange={(e) => { setPassword(e.target.value); setError(null) }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && password) go() }}
-          placeholder="Password"
-          autoComplete="current-password"
-          autoFocus
-        />
-        <button className="btn" onClick={go} disabled={busy || !password}>
-          {busy ? 'Unlocking' : 'Unlock'}
-        </button>
-      </div>
-      {error && <p className="notice bad" style={{ marginTop: 14 }}>{error}</p>}
-      <p className="fine" style={{ marginTop: 14 }}>
-        Lost the password? There is no way back into this key. You can{' '}
-        <button
-          className="btn ghost"
-          style={{ padding: '2px 8px' }}
-          onClick={() => {
-            if (confirm('This deletes the stored key. If you did not export it, it is gone for good. Continue?')) {
-              forgetWallet()
-              setState({ address: null, unlocked: false, registered: false, balances: {} })
-            }
-          }}
-        >
-          start over
-        </button>{' '}
-        with a new one.
-      </p>
-    </section>
-  )
-}
-
 /* ---------- the live wallet ---------- */
 
 function Balances({ wallet, mints }) {
@@ -701,6 +637,11 @@ export function TopUpCard() {
   )
 }
 
+/** Secrets are shown only from an unlocked wallet: ask once, then show. */
+function revealAfterUnlock(show) {
+  ensureUnlocked().then(show).catch(() => { /* dismissed */ })
+}
+
 function Danger({ wallet }) {
   const [shown, setShown] = useState(null)
 
@@ -712,15 +653,12 @@ function Danger({ wallet }) {
       </p>
 
       <div className="inline" style={{ marginTop: 14, flexWrap: 'wrap' }}>
-        <button className="btn ghost" onClick={() => setShown(shown ? null : exportPrivateKey())}>
+        <button className="btn ghost" onClick={() => (shown ? setShown(null) : revealAfterUnlock(() => setShown(exportPrivateKey())))}>
           {shown ? 'Hide key' : 'Show private key'}
         </button>
-        <button
-          className="btn ghost"
-          onClick={() => { locked(); setState({ unlocked: false, balances: {} }) }}
-        >
-          Lock
-        </button>
+        {isUnlocked() && (
+          <button className="btn ghost" onClick={() => lockNow()}>Lock now</button>
+        )}
         <button
           className="btn danger"
           onClick={() => {
@@ -748,6 +686,35 @@ const STEP_LABEL = {
   registering: 'Registering',
   waiting: 'Waiting for the chain',
   funding: 'Claiming THRU for fees',
+}
+
+/** How long the browser wallet stays unlocked, and the setting that decides. */
+export function AutoLockSetting({ compact = false }) {
+  const [value, setValue] = useState(() => autoLock())
+  const change = async (v) => { setValue(v); await setAutoLock(v) }
+  return (
+    <label className={compact ? 'pill-row autolock-row' : 'autolock'}>
+      <span>Auto-lock</span>
+      <select className="autolock-select" value={value} onChange={(e) => change(e.target.value)} aria-label="Auto-lock">
+        {AUTOLOCK_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </select>
+    </label>
+  )
+}
+
+/** The locked state, said plainly. Balances stay readable; signing asks. */
+function LockedNote() {
+  return (
+    <section className="card locked-note">
+      <div className="card-head">
+        <div>
+          <h2 className="h2">Locked</h2>
+          <p className="sub">Your balances are below. You are asked for the password once, when you next sign something.</p>
+        </div>
+        <button className="btn secondary" onClick={() => ensureUnlocked().catch(() => {})}><Icon name="locked" size={18} />Unlock</button>
+      </div>
+    </section>
+  )
 }
 
 function LiveWallet({ wallet, mints }) {
@@ -1320,8 +1287,8 @@ export function WalletPage() {
         <h1 className="h1">Wallet</h1>
         {hasWallet() && wallet.address && (
           <div className="quick-row">
-            {wallet.unlocked && wallet.registered && <QuickButton icon="send" label="Send" onClick={() => setQuick('send')} />}
-            {wallet.unlocked && <QuickButton icon="receive" label="Receive" onClick={() => setQuick('receive')} />}
+            {wallet.registered && <QuickButton icon="send" label="Send" onClick={() => setQuick('send')} />}
+            <QuickButton icon="receive" label="Receive" onClick={() => setQuick('receive')} />
             <QuickButton icon="activity" label="Activity" onClick={() => setShowActivity(true)} />
           </div>
         )}
@@ -1338,8 +1305,8 @@ export function WalletPage() {
 
       {!hasWallet() && <ConnectCard />}
       {!hasWallet() && <CreateWallet onDone={() => bump((n) => n + 1)} />}
-      {hasWallet() && !wallet.unlocked && <UnlockWallet onDone={() => bump((n) => n + 1)} />}
-      {hasWallet() && wallet.unlocked && <LiveWallet wallet={wallet} mints={mints} />}
+      {hasWallet() && !wallet.unlocked && !isExternal() && <LockedNote />}
+      {hasWallet() && <LiveWallet wallet={wallet} mints={mints} />}
 
       <section className="card">
         <h2 className="h2">At a glance</h2>
@@ -1364,7 +1331,16 @@ export function WalletPage() {
             <span>When mainnet comes</span>
             <span className="fine">Export the key to another wallet</span>
           </div>
+          <div className="row">
+            <span>Stays unlocked</span>
+            <span className="fine">{autoLockWords().replace(/^for /, '')}, then locks itself</span>
+          </div>
+          <div className="row">
+            <span>Larger amounts</span>
+            <span className="fine">The <Link to="/get-wallet">ThruScan Wallet extension</Link> is the safer choice</span>
+          </div>
         </div>
+        {hasWallet() && !isExternal() && <AutoLockSetting />}
       </section>
     </div>
   )
