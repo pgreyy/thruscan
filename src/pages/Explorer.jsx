@@ -151,6 +151,7 @@ export function BlockPage() {
 
   return (
     <div className="page ex">
+      <div className="ex-panel-head"><Link to="/explorer">← Overview</Link></div>
       <h1 className="h1 ex-h1">Block <span className="mono">{valid ? num(height) : height}</span></h1>
       {valid && (
         <div className="ex-panel-head">
