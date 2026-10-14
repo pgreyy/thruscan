@@ -89,6 +89,16 @@ export function metaProblem(meta) {
   return null
 }
 
+/** A new launch must carry a picture. Returns a reason to refuse, or null.
+ *  Run in the launch form and again in api/wallet.js pad-accounts, so a
+ *  launch made through ThruScan cannot skip it. Tokens launched before this
+ *  rule keep whatever they have. */
+export function launchImageProblem(image) {
+  const url = String(image ?? '').trim()
+  if (!url) return 'Add a token image to launch.'
+  return metaProblem({ ...EMPTY_META, image: url })
+}
+
 export const xUrl = (handle) => (handle ? `https://x.com/${handle}` : null)
 export const telegramUrl = (handle) => (handle ? `https://t.me/${handle}` : null)
 
