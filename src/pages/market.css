@@ -127,7 +127,8 @@ a.mk-tr:hover { background: var(--fill-hover); color: var(--text-primary); }
 .mk-crow-line .mk-bar { flex: 1; }
 .mk-crow-line .mono { font-size: 12px; flex: none; }
 .mk-crow-line > .mono:not(.dim) { font-size: 14px; }
-.mk-c-chg { width: 52px; text-align: right; }
+.mk-c-chg { flex: 0 0 auto; min-width: 8ch; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mk-crow-line > .mono.dim { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 
 /* ---- phones: two-line rows, tabs that scroll ---- */

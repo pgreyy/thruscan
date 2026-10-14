@@ -204,6 +204,7 @@ async function historyFor(client, address, pageToken) {
 }
 
 const timeCache = new Map()
+const launchTimeCache = new Map()   // tokenVault -> { slot, time, signature }
 
 async function blockTimes(client, slots) {
   const out = {}
@@ -809,6 +810,38 @@ export default async function handler(req, res) {
         const out = await eventsFor(client, signatures)
         // A transaction's events never change once it has landed.
         return json(res, 200, { ok: true, ...out }, { cacheSeconds: 3600 })
+      }
+
+      case 'launchtime': {
+        // When a launch happened: the block time of the LAUNCH transaction,
+        // which is the oldest thrupad transaction on its token vault (the one
+        // that minted the supply into it). The registry's start_slot cannot
+        // say, because a pooled launch's start_slot holds its pool id. The
+        // answer never changes, so it is kept once found.
+        const tokenVault = String(params.tokenVault ?? '')
+        if (!/^ta[A-Za-z0-9_-]{44}$/.test(tokenVault)) return json(res, 400, { ok: false, error: 'missing tokenVault' })
+        if (launchTimeCache.has(tokenVault)) return json(res, 200, { ok: true, ...launchTimeCache.get(tokenVault) }, { cacheSeconds: 3600 })
+        let oldest = null, oldestPad = null, token = null
+        for (let i = 0; i < 30; i++) {
+          const res2 = await withTimeout(client.ctx.query.listTransactionsForAccount({
+            account: Pubkey.from(tokenVault).toProtoPubkey(),
+            page: { pageSize: 100, ...(token ? { pageToken: token } : {}) },
+          }), CALL_TIMEOUT_MS)
+          for (const p of res2.transactions ?? []) {
+            const row = serializeHistoryItem(Transaction.fromProto(p))
+            oldest = row
+            if (row.program === addressOf('THRUPAD_PROGRAM') && row.data && Buffer.from(row.data, 'base64')[0] === 0x01) oldestPad = row
+          }
+          token = res2.page?.nextPageToken || null
+          if (!token) break
+        }
+        if (token) return json(res, 200, { ok: true, time: null, partial: true }, { cacheSeconds: 60 })
+        const pick = oldestPad ?? oldest
+        if (!pick) return json(res, 200, { ok: true, time: null }, { cacheSeconds: 60 })
+        const time = (await blockTimes(client, [pick.slot]))[pick.slot] ?? null
+        const out = { slot: pick.slot, time, signature: pick.signature }
+        if (time) launchTimeCache.set(tokenVault, out)
+        return json(res, 200, { ok: true, ...out }, { cacheSeconds: time ? 3600 : 60 })
       }
 
       case 'launchtrades': {

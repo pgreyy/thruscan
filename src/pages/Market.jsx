@@ -40,11 +40,16 @@ function price(v) {
 /** A market cap to one decimal place, like the design. */
 const cap = (v) => (Number.isFinite(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–')
 
-function pct(c) {
+/** A 24 h change in at most eight characters, so a row never wraps:
+ *  +226.2%, +12.3K%, +4.5M%, and beyond that >+999M%. */
+export function pct(c) {
   if (c === null || !Number.isFinite(c)) return null
-  if (c > 999) return '>+999%'
   const sign = c > 0 ? '+' : c < 0 ? '−' : ''
-  return `${sign}${Math.abs(c).toFixed(1)}%`
+  const a = Math.abs(c)
+  if (a >= 999.95e6) return `>${sign}999M%`
+  if (a >= 999.95e3) return `${sign}${(a / 1e6).toFixed(1)}M%`
+  if (a >= 999.95) return `${sign}${(a / 1e3).toFixed(1)}K%`
+  return `${sign}${a.toFixed(1)}%`
 }
 
 /* ---------- data ---------- */
