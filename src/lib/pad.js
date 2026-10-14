@@ -18,7 +18,7 @@
 // quote mint moved out of the header and onto each launch):
 //
 //   off  size  field
-//   0x00    1  state (0 empty, 1 live, 2 graduated)
+//   0x00    1  state (0 empty, 1 live, 2 frozen with no pool, 3 pooled)
 //   0x01    2  fee_bps (u16) — the creator's cut, capped at 1000
 //   0x03    1  name_len
 //   0x04   32  name
@@ -60,7 +60,11 @@ export const OP_GRADUATE = 0x05
 
 export const STATE_EMPTY = 0
 export const STATE_LIVE = 1
+// Frozen with no pool. Only the first GRADUATE wrote it; the current one can
+// still take a launch from here into a pool.
 export const STATE_GRADUATED = 2
+// Frozen, reserves in a thruswap pool. start_slot then holds the pool id.
+export const STATE_POOLED = 3
 
 export const NAME_MAX = 32
 export const SYMBOL_MAX = 8
@@ -138,7 +142,11 @@ export function decodePadRegistry(input) {
     launches.push({
       id: i,
       state,
-      graduated: state === STATE_GRADUATED,
+      // Graduated means the curve is closed, pool or not. Only a pooled launch
+      // has somewhere to trade.
+      graduated: state === STATE_GRADUATED || state === STATE_POOLED,
+      pooled: state === STATE_POOLED,
+      poolId: state === STATE_POOLED ? Number(dv.getBigUint64(base + 0xf5, true)) : null,
       feeBps: dv.getUint16(base + 0x01, true),
       name: readText(bytes, base + 0x04, bytes[base + 0x03], NAME_MAX),
       symbol: readText(bytes, base + 0x25, bytes[base + 0x24], SYMBOL_MAX),
@@ -431,17 +439,67 @@ export function buildClaimInstruction({ registry, launchId, quoteVault, dest }) 
   return { data: w.done(), readWrite, readOnly }
 }
 
-/** GRADUATE. Freezes the curve once enough real quote has been raised. */
-export function buildGraduateInstruction({ registry, launchId, quoteVault }) {
-  const readWrite = sortAccounts([registry, quoteVault])
-  const at = (a) => 2 + readWrite.indexOf(a)
+/**
+ * What GRADUATE moves into the pool, computed exactly as thrupad2.c's
+ * seed_amounts does: the largest pair at the curve's price vq/vt that the real
+ * reserves cover. `raised` is the quote vault less the creator fees owed;
+ * `tokens` is the token vault. Returns { quote, tokens } or null.
+ */
+export function graduationSeed({ vq, vt, raised, tokens }) {
+  const VQ = BigInt(vq), VT = BigInt(vt), Q = BigInt(raised), T = BigInt(tokens)
+  if (VQ <= 0n || VT <= 0n || Q <= 0n || T <= 0n) return null
+  const seed = Q * VT <= VQ * T
+    ? { quote: Q, tokens: (Q * VT) / VQ }
+    : { quote: (T * VQ) / VT, tokens: T }
+  return seed.quote > 0n && seed.tokens > 0n ? seed : null
+}
 
-  const w = writer(7)
+/** The default slippage bound, as basis points off a quoted amount. */
+export const SLIPPAGE_BPS = 100n
+
+/** `amount` less the default slippage, never below 1. */
+export function withSlippage(amount, bps = SLIPPAGE_BPS) {
+  const out = (BigInt(amount) * (BPS_DENOM - BigInt(bps))) / BPS_DENOM
+  return out > 0n ? out : 1n
+}
+
+/**
+ * GRADUATE: freeze the curve and seed a fresh thruswap pool from its reserves,
+ * in one instruction. The pool vaults and LP mint must already exist, empty
+ * and owned by thruswap (the server opens them: see api/wallet.js graduate).
+ * `minSeedQuote` is the caller's slippage bound on the quote seeded.
+ */
+export function buildGraduateInstruction({
+  registry, launchId, tokenVault, quoteVault, mint, quoteMint,
+  swapProgram, swapRegistry, poolId, poolTokenVault, poolQuoteVault, lpMint, minSeedQuote,
+}) {
+  const readWrite = sortAccounts([registry, tokenVault, quoteVault, poolTokenVault, poolQuoteVault, swapRegistry])
+  const readOnly = sortAccounts([TOKEN_PROGRAM, swapProgram, lpMint, mint, quoteMint])
+  const at = (a) => {
+    const i = readWrite.indexOf(a)
+    if (i >= 0) return 2 + i
+    const j = readOnly.indexOf(a)
+    if (j >= 0) return 2 + readWrite.length + j
+    throw new PadDecodeError(`${a} is not in the account list`)
+  }
+
+  const w = writer(35)
   w.u8(OP_GRADUATE)
+  w.u16(at(TOKEN_PROGRAM))
   w.u16(at(registry))
   w.u16(launchId)
+  w.u16(at(tokenVault))
   w.u16(at(quoteVault))
-  return { data: w.done(), readWrite, readOnly: [] }
+  w.u16(at(mint))
+  w.u16(at(quoteMint))
+  w.u16(at(swapProgram))
+  w.u16(at(swapRegistry))
+  w.u16(poolId)
+  w.u16(at(poolTokenVault))
+  w.u16(at(poolQuoteVault))
+  w.u16(at(lpMint))
+  w.u64(minSeedQuote)
+  return { data: w.done(), readWrite, readOnly }
 }
 
 export function toHex(bytes) {

@@ -59,9 +59,12 @@
  *            choosing. Anyone may call it; the money only ever goes to the
  *            recorded creator's destination.
  *
- *   GRADUATE [0x05][...]
- *            Once enough quote has been collected, freezes the curve. After
- *            this the reserves are ready to seed a thruswap pool.
+ *   GRADUATE [0x05][...][min_seed_quote u64]
+ *            Once enough quote has been raised: freezes the curve, moves its
+ *            reserves into a fresh thruswap pool at the curve's final price,
+ *            and has thruswap record that pool, all in one instruction. If any
+ *            part fails the whole thing reverts, so a launch is never left
+ *            frozen without a pool. Anyone may call it. See do_graduate.
  *
  * Every u16 index is a position in the transaction's account list, which Thru
  * sorts ascending by raw public key bytes. Indices are passed in and validated
@@ -92,7 +95,29 @@
 
 #define STATE_EMPTY     ((uchar)0)
 #define STATE_LIVE      ((uchar)1)
+/* Frozen with no pool. Only the first version of GRADUATE ever wrote this, and
+   nothing now does; a launch left here can still be graduated into a pool. */
 #define STATE_GRADUATED ((uchar)2)
+/* Frozen, and its reserves are a thruswap pool. start_slot then holds the pool
+   id: the anti-snipe window it recorded only matters while buys are open. */
+#define STATE_POOLED    ((uchar)3)
+
+/* The thruswap program a graduating launch seeds. Pinned at build time rather
+   than passed in, because whoever names the "swap program" decides where the
+   reserves go: a caller who could pick it could pick one of their own. The
+   default is betanet's; another network builds with -DTHRUSWAP_PROGRAM_ADDR. */
+#ifndef THRUSWAP_PROGRAM_ADDR
+/* taEj_vKiRMfShniAZG5eOg1TJNXbLTcpqyoTUQVFiJFcUL */
+#define THRUSWAP_PROGRAM_ADDR { \
+  0x12,0x3f,0xef,0x2a,0x24,0x4c,0x7d,0x28,0x67,0x88,0x06,0x46,0xe5,0xe3,0xa0,0xd5, \
+  0x32,0x4d,0x5d,0xb2,0xd3,0x72,0x9a,0xb2,0xa1,0x35,0x10,0x54,0x58,0x89,0x15,0xc5 }
+#endif
+static uchar const thruswap_program_addr[ 32 ] = THRUSWAP_PROGRAM_ADDR;
+
+#define SWAP_OP_CREATE_SEEDED ((uchar)0x05)
+#define SWAP_VERSION          ((uchar)1)
+#define SWAP_HDR_SZ           (37UL)
+#define SWAP_POOL_SZ          (179UL)
 
 #define NAME_MAX   (32UL)
 #define SYMBOL_MAX (8UL)
@@ -134,6 +159,9 @@
 #define ERR_NO_FEES       (28UL)
 #define ERR_SUPPLY        (29UL)
 #define ERR_TOKEN_PROG    (30UL)  /* the "token program" named is not the token program */
+#define ERR_SWAP_PROG     (31UL)  /* the "swap program" named is not the pinned thruswap */
+#define ERR_POOL_NOT_FRESH (32UL) /* a pool vault already holds something */
+#define ERR_SEED          (33UL)  /* thruswap did not record the pool it was asked to */
 
 /* --------------------------------------------------------------- storage */
 
@@ -443,8 +471,8 @@ struct __attribute__(( packed )) trade_args {
 static launch_rec_t *
 load_live( struct trade_args const * a ) {
   launch_rec_t * rec = open_launch( a->reg_idx, a->launch_id, (uchar **)0 );
-  if( rec->state == STATE_EMPTY )     tsdk_revert( ERR_NOT_READY );
-  if( rec->state == STATE_GRADUATED ) tsdk_revert( ERR_GRADUATED );
+  if( rec->state == STATE_EMPTY ) tsdk_revert( ERR_NOT_READY );
+  if( rec->state != STATE_LIVE )  tsdk_revert( ERR_GRADUATED );   /* frozen or pooled */
 
   /* The caller says where the vaults are; the record says where they must be.
      Disagreement means the transaction is lying about which accounts it
@@ -585,37 +613,190 @@ do_claim( uchar const * data, ulong data_sz ) {
 
 /* --------------------------------------------------------------- GRADUATE */
 
+/* GRADUATE takes every account the seeding touches. The pool's vaults and LP
+   mint are made beforehand (account creation needs a transaction of its own),
+   empty and owned by thruswap; nothing of value exists until this runs.
+
+   Accounts: this registry, both curve vaults, both pool vaults and thruswap's
+   registry read-write; the token program, thruswap, the LP mint and both
+   mints read-only. */
 struct __attribute__(( packed )) grad_args {
   uchar  op;
+  ushort token_prog_idx;
   ushort reg_idx;
   ushort launch_id;
+  ushort token_vault_idx;
   ushort quote_vault_idx;
+  ushort token_mint_idx;
+  ushort quote_mint_idx;
+  ushort swap_prog_idx;
+  ushort swap_reg_idx;
+  ushort pool_id;
+  ushort pool_token_vault_idx;
+  ushort pool_quote_vault_idx;
+  ushort lp_mint_idx;
+  ulong  min_seed_quote;   /* the caller's slippage bound, from its own quote */
 };
 
+/* thruswap's CREATE_SEEDED, byte for byte as thruswap.c declares create_args.
+   Indices are into this same transaction's account list. */
+struct __attribute__(( packed )) swap_create_ix {
+  uchar  op;
+  ushort reg_idx;
+  ushort pool_id;
+  ushort mint_a_idx;
+  ushort mint_b_idx;
+  ushort vault_a_idx;
+  ushort vault_b_idx;
+  ushort lp_mint_idx;
+  ushort fee_bps;
+};
+FD_STATIC_ASSERT( sizeof( struct swap_create_ix ) == 17UL, swap_create_ix_size );
+
+/* A pool vault: a token account of the right mint, owned by thruswap, empty.
+   thruswap checks the first two again; empty is ours to insist on, because a
+   vault that already holds something would open the pool at a price the curve
+   never reached. */
+static void
+require_fresh_pool_vault( ushort idx, tn_pubkey_t const * mint ) {
+  if( !tsdk_is_account_idx_valid( idx ) ) tsdk_revert( ERR_BAD_IDX );
+  if( !tsdk_account_exists( idx ) )       tsdk_revert( ERR_NO_ACCOUNT );
+  tsdk_account_meta_t const * meta = tsdk_get_account_meta( idx );
+  if( meta->data_sz != (uint)TN_TOKEN_TOKEN_ACCOUNT_SZ ) tsdk_revert( ERR_NOT_TOKEN_ACC );
+  uchar const * d = (uchar const *)tsdk_get_account_data_ptr( idx );
+  if( memcmp( d,      mint->key,             32UL ) != 0 ) tsdk_revert( ERR_MINT_MISMATCH );
+  if( memcmp( d + 32, thruswap_program_addr, 32UL ) != 0 ) tsdk_revert( ERR_VAULT_OWNER );
+  if( vault_balance( idx ) != 0UL ) tsdk_revert( ERR_POOL_NOT_FRESH );
+}
+
+/* What goes into the pool.
+ *
+ * The curve's price is vq/vt, its virtual reserves. Its real reserves are the
+ * token vault T and the quote it raised, Q. Those are not in the same ratio:
+ * the virtual quote that gave the curve its opening price was never paid in,
+ * and the snipe tax was paid in without buying anything. So the seed is the
+ * largest pair at exactly vq/vt that the real reserves can cover:
+ *
+ *   Q/T <= vq/vt   quote is the short side: all of Q, and Q*vt/vq tokens
+ *   otherwise      tokens are the short side: all of T, and T*vq/vt quote
+ *
+ * Both divisions round down, so the pool never holds more than was there and
+ * its price is within one base unit of the curve's. Whatever is left over
+ * stays in the curve's vaults, which no instruction can move once the curve is
+ * frozen: leftover tokens are out of circulation for good, and leftover quote
+ * (only possible from the snipe tax) is locked rather than handed to anyone. */
+static void
+seed_amounts( ulong vq, ulong vt, ulong q_real, ulong t_real,
+              ulong * seed_q, ulong * seed_t ) {
+  if( vq == 0UL || vt == 0UL ) tsdk_revert( ERR_DUST );
+  if( (uint128)q_real * (uint128)vt <= (uint128)vq * (uint128)t_real ) {
+    *seed_q = q_real;
+    *seed_t = mul_div( q_real, vt, vq );
+  } else {
+    *seed_t = t_real;
+    *seed_q = mul_div( t_real, vq, vt );
+  }
+  if( *seed_q == 0UL || *seed_t == 0UL ) tsdk_revert( ERR_DUST );
+}
+
+/* GRADUATE, which now means graduate AND seed, atomically.
+ *
+ * Why it cannot leave a launch frozen without a pool: the freeze, both
+ * transfers and thruswap's record of the pool are one instruction. Every token
+ * call and the thruswap call return a code, and any non-zero code reverts, so
+ * either all of it lands or none of it does.
+ *
+ * Why the first swap after it is not free money. The pool opens at the curve's
+ * own final price, not near it, so there is no gap to close. And it is never
+ * deeper than the curve was: seed_q <= vq and seed_t <= vt, so the pool's
+ * constant product is at most the curve's. A round trip across the two, buying
+ * on the curve just before and selling into the pool just after (or selling on
+ * the curve and buying from the pool), trades at the same starting price into
+ * a market at least as shallow, and pays the creator fee on one side and 30
+ * basis points on the other. Moving the curve first only moves where the pool
+ * opens; it does not open a gap. Anyone trading in the first block after this
+ * gets the curve's price plus the pool's fee, exactly as later.
+ *
+ * Why anyone may call it: it decides nothing. The threshold, the price, the
+ * amounts and the destination program are all fixed by state and by this
+ * binary. The caller chooses only which fresh pool slot and vaults to use, and
+ * those must be empty and unused, which thruswap checks again. */
 static void
 do_graduate( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct grad_args ) ) tsdk_revert( ERR_BAD_INSTR );
   struct grad_args a;
   memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
 
   uchar * base = (uchar *)0;
   launch_rec_t * rec = open_launch( a.reg_idx, a.launch_id, &base );
-  if( rec->state != STATE_LIVE ) tsdk_revert( ERR_NOT_LIVE );
+  /* LIVE, or frozen by the old GRADUATE before this version existed. A pooled
+     launch fails here, which is what makes a second call revert. */
+  if( rec->state != STATE_LIVE && rec->state != STATE_GRADUATED ) tsdk_revert( ERR_NOT_LIVE );
+
+  require_addr( a.token_vault_idx, &rec->token_vault );
   require_addr( a.quote_vault_idx, &rec->quote_vault );
+  require_addr( a.token_mint_idx,  &rec->mint );
+  require_addr( a.quote_mint_idx,  &rec->quote_mint );
+  if( memcmp( account_addr( a.swap_prog_idx )->key, thruswap_program_addr, 32UL ) != 0 ) {
+    tsdk_revert( ERR_SWAP_PROG );
+  }
 
   pad_hdr_t hdr;
   memcpy( &hdr, base, HDR_SZ );
 
   /* Raised means real quote backing the curve, not including fees the creator
      is owed. Counting those would let a launch graduate on money that is about
-     to leave. */
-  ulong held = vault_balance( a.quote_vault_idx );
+     to leave, and seeding them would hand the creator's money to the pool. */
+  ulong held   = vault_balance( a.quote_vault_idx );
   ulong raised = held > rec->creator_fees ? held - rec->creator_fees : 0UL;
   if( raised < hdr.grad_threshold ) tsdk_revert( ERR_TOO_SOON );
 
-  /* Freezing the curve is the whole of graduation here. The reserves stay
-     where they are, owned by this program, ready to seed a thruswap pool. */
-  rec->state = STATE_GRADUATED;
+  require_fresh_pool_vault( a.pool_token_vault_idx, &rec->mint );
+  require_fresh_pool_vault( a.pool_quote_vault_idx, &rec->quote_mint );
+
+  ulong seed_q = 0UL, seed_t = 0UL;
+  seed_amounts( rec->vq, rec->vt, raised, vault_balance( a.token_vault_idx ), &seed_q, &seed_t );
+  if( seed_q < a.min_seed_quote ) tsdk_revert( ERR_SLIPPAGE );
+
+  /* Freeze first, so nothing below can run against a live curve. */
+  rec->state      = STATE_POOLED;
+  rec->start_slot = (ulong)a.pool_id;
+
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.token_vault_idx, a.pool_token_vault_idx,
+                                 seed_t, (tsdk_invoke_auth_t const *)0 ) );
+  TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.quote_vault_idx, a.pool_quote_vault_idx,
+                                 seed_q, (tsdk_invoke_auth_t const *)0 ) );
+
+  struct swap_create_ix ix;
+  ix.op          = SWAP_OP_CREATE_SEEDED;
+  ix.reg_idx     = a.swap_reg_idx;
+  ix.pool_id     = a.pool_id;
+  ix.mint_a_idx  = a.quote_mint_idx;
+  ix.mint_b_idx  = a.token_mint_idx;
+  ix.vault_a_idx = a.pool_quote_vault_idx;
+  ix.vault_b_idx = a.pool_token_vault_idx;
+  ix.lp_mint_idx = a.lp_mint_idx;
+  ix.fee_bps     = 0U;   /* thruswap's default, 30 basis points */
+
+  ulong callee_err = 0UL;
+  ulong rc = tsys_invoke( &ix, sizeof( ix ), a.swap_prog_idx, (tsdk_invoke_auth_t const *)0, &callee_err );
+  if( rc != TSDK_SUCCESS ) tsdk_revert( 0x0300UL | ( rc & 0xFFUL ) );
+  if( callee_err != 0UL )  tsdk_revert( 0x0400UL | ( callee_err & 0xFFUL ) );
+
+  /* Trust, but read it back: the pool record must now exist over exactly the
+     vaults the reserves just went into, with its burned seed in place. */
+  tsdk_account_meta_t const * sm = tsdk_get_account_meta( a.swap_reg_idx );
+  if( memcmp( sm->owner.key, thruswap_program_addr, 32UL ) != 0 ) tsdk_revert( ERR_SEED );
+  ulong off = SWAP_HDR_SZ + (ulong)a.pool_id * SWAP_POOL_SZ;
+  if( (ulong)sm->data_sz < off + SWAP_POOL_SZ ) tsdk_revert( ERR_SEED );
+  uchar const * sb = (uchar const *)tsdk_get_account_data_ptr( a.swap_reg_idx );
+  if( sb[ 0 ] != SWAP_VERSION ) tsdk_revert( ERR_SEED );
+  uchar const * p = sb + off;   /* in_use u8, fee u16, mint_a, mint_b, vault_a, vault_b, lp_mint, lp_supply */
+  if( p[ 0 ] != 1U ) tsdk_revert( ERR_SEED );
+  if( memcmp( p + 0x43, account_addr( a.pool_quote_vault_idx )->key, 32UL ) != 0 ) tsdk_revert( ERR_SEED );
+  if( memcmp( p + 0x63, account_addr( a.pool_token_vault_idx )->key, 32UL ) != 0 ) tsdk_revert( ERR_SEED );
+  if( TSDK_LOAD( ulong, p + 0xa3 ) == 0UL ) tsdk_revert( ERR_SEED );
 }
 
 /* ------------------------------------------------------------- entrypoint */

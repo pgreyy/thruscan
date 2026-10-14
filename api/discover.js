@@ -23,6 +23,8 @@
 // Schedule it by adding this to vercel.json:
 //   { "crons": [{ "path": "/api/discover", "schedule": "0 7 * * *" }] }
 
+import { graduateReady } from './wallet.js'
+
 export const config = { runtime: 'nodejs', maxDuration: 60 }
 
 const TABLE = 'Discoveries'
@@ -281,8 +283,21 @@ export default async function handler(req, res) {
     return
   }
 
+  // The ThruPad keeper rides on this cron, because the Hobby plan allows one
+  // daily cron and twelve functions. It graduates launches that are past their
+  // threshold into swap pools; see graduate in api/wallet.js. It runs first,
+  // and a failure here is reported, not allowed to stop discovery. One launch
+  // per run: a graduation can take four landed transactions, and this function
+  // has 60 seconds in all. The Open pool button covers anything waiting.
+  let keeper
+  try {
+    keeper = await graduateReady({ max: 1 })
+  } catch (e) {
+    keeper = { ok: false, error: String(e?.message ?? e).slice(0, 300) }
+  }
+
   if (!process.env.AIRTABLE_API_KEY || !process.env.AIRTABLE_BASE_ID || !process.env.OPENAI_API_KEY) {
-    res.status(503).send(JSON.stringify({ ok: false, error: 'missing configuration' }))
+    res.status(503).send(JSON.stringify({ ok: false, error: 'missing configuration', keeper }, (k, v) => (typeof v === 'bigint' ? v.toString() : v)))
     return
   }
 
@@ -350,6 +365,7 @@ export default async function handler(req, res) {
       dropped,
       // Non-empty means nothing reached Airtable, whatever the queued count says.
       writeErrors,
-    })
+      keeper,
+    }, (k, v) => (typeof v === 'bigint' ? v.toString() : v))
   )
 }
