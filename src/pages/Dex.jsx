@@ -69,6 +69,7 @@ import { FeeSharingPanel } from '../components/FeeSharing.jsx'
 import { FEE_SHARING } from '../lib/features.js'
 import { useTxFlow, NETWORK_ROW } from '../lib/txflow.js'
 import { launchAgeMs, loadLaunchTime } from '../lib/launchtime.js'
+import { compactNumber, pct } from '../lib/cardfmt.js'
 import { useTab } from '../lib/useTab.js'
 import './launch.css'
 
@@ -2006,16 +2007,7 @@ export function marketCap(launch, quoteDecimals) {
 }
 
 /** 1,234 -> 1.2K, 1,200,000 -> 1.2M. A market cap is read, not counted. */
-export function compactNumber(n) {
-  if (n === null || !isFinite(n)) return '–'
-  const abs = Math.abs(n)
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(abs >= 1e10 ? 0 : 2)}B`
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 2)}M`
-  if (abs >= 1e3) return `${(n / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}K`
-  if (abs >= 1) return n.toFixed(2)
-  if (abs === 0) return '0'
-  return n.toPrecision(2)
-}
+export { compactNumber }
 
 function LaunchCard({ launch, balances, tickers, decimals, threshold, meta }) {
   const quote = tickers?.[launch.quoteMint] || short(launch.quoteMint)
@@ -2217,7 +2209,7 @@ export function LaunchDetail({ id }) {
           <span className="ld-price-v mono">{nowPrice !== null ? fullPrice(nowPrice) : '–'} <small>{quote}</small></span>
           {change && (
             <span className={`ld-chg mono ${change.pct > 0.05 ? 'up' : change.pct < -0.05 ? 'down' : ''}`}>
-              {change.pct > 0.05 ? '▲ +' : change.pct < -0.05 ? '▼ −' : ''}{Math.abs(change.pct).toFixed(1)}% · {change.label}
+              {change.pct > 0.05 ? '▲ ' : change.pct < -0.05 ? '▼ ' : ''}{Math.abs(change.pct) <= 0.05 ? '0.0%' : pct(change.pct)} · {change.label}
             </span>
           )}
         </div>

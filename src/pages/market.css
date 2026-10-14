@@ -169,9 +169,15 @@ a.mk-tr:hover { background: var(--fill-hover); color: var(--text-primary); }
 .mk-tcard-name { font-size: 16px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mk-tcard-name .mono { font-size: 14px; }
 .mk-tcard-name b { font-weight: 700; }
-.mk-tcard-cap { display: flex; gap: 8px; align-items: baseline; }
-.mk-tcard-cap .mono:first-child { font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
-.mk-tcard-cap .mono:last-child { font-size: 14px; }
+/* Numbers and units never break inside themselves. The pieces sit in a
+   wrapping row, so when they do not fit side by side the change drops to its
+   own line, and the unit drops below its number, as whole words. */
+.mk-nw { white-space: nowrap; }
+.mk-tcard-cap { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; min-width: 0; }
+.mk-tcard-val { display: inline-flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; min-width: 0; }
+.mk-tcard-num { font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+.mk-tcard-unit { font-size: 12px; color: var(--text-secondary); }
+.mk-tcard-cap > .mono:last-child { font-size: 14px; }
 @media (max-width: 819px) {
   .mk-trend-track { gap: 12px; }
   .mk-tcard { flex-basis: 160px; }

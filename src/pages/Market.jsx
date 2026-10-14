@@ -20,7 +20,8 @@ import { TokenIcon } from '../components/TokenMeta.jsx'
 import { Icon } from '../components/Icon.jsx'
 import { EXTENSION_URL } from '../lib/external.js'
 import { useWallet } from './Wallet.jsx'
-import { CreateLaunchCard, compactNumber } from './Dex.jsx'
+import { CreateLaunchCard } from './Dex.jsx'
+import { compactNumber, pct, cardValue } from '../lib/cardfmt.js'
 import './market.css'
 
 const TOP_ROWS = 10
@@ -39,18 +40,6 @@ function price(v) {
 
 /** A market cap to one decimal place, like the design. */
 const cap = (v) => (Number.isFinite(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–')
-
-/** A 24 h change in at most eight characters, so a row never wraps:
- *  +226.2%, +12.3K%, +4.5M%, and beyond that >+999M%. */
-export function pct(c) {
-  if (c === null || !Number.isFinite(c)) return null
-  const sign = c > 0 ? '+' : c < 0 ? '−' : ''
-  const a = Math.abs(c)
-  if (a >= 999.95e6) return `>${sign}999M%`
-  if (a >= 999.95e3) return `${sign}${(a / 1e6).toFixed(1)}M%`
-  if (a >= 999.95) return `${sign}${(a / 1e3).toFixed(1)}K%`
-  return `${sign}${a.toFixed(1)}%`
-}
 
 /* ---------- data ---------- */
 
@@ -165,7 +154,7 @@ function Change({ value }) {
   const text = pct(value)
   if (text === null) return <span className="dim">–</span>
   const flat = Math.abs(value) < 0.05
-  return <span className={flat ? 'dim' : value > 0 ? 'mk-up' : 'mk-down'}>{flat ? '0.0%' : text}</span>
+  return <span className={`mk-nw ${flat ? 'dim' : value > 0 ? 'mk-up' : 'mk-down'}`}>{flat ? '0.0%' : text}</span>
 }
 
 function Bar({ progress, graduated }) {
@@ -265,8 +254,11 @@ function Trending({ rows, meta }) {
             </span>
             <span className="mk-tcard-name"><span className="mono dim">{i + 1}</span> <b>{l.name || l.symbol}</b></span>
             <span className="mk-tcard-cap">
-              <span className="mono">{compactNumber(l.cap)} {l.unit}</span>
-              <span className="mono"><Change value={l.day?.change ?? null} /></span>
+              <span className="mk-tcard-val">
+                <span className="mono mk-nw mk-tcard-num">{cardValue(l.cap, l.unit).num}</span>{' '}
+                <span className="mono mk-nw mk-tcard-unit">{l.unit}</span>
+              </span>
+              <span className="mono mk-nw"><Change value={l.day?.change ?? null} /></span>
             </span>
           </Link>
         ))}
