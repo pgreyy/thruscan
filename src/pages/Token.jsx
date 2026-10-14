@@ -132,6 +132,7 @@ export function TokenPage() {
                   {fav ? 'On your front page' : 'Add to front page'}
                 </button>
                 {launch && <Link className="home-badge plain-link" to={`/launch/${launch.id}`}>{launch.graduated ? 'Graduated launch' : 'Trade on ThruPad'}</Link>}
+                {launch?.pooled && <Link className="home-badge plain-link" to={`/swap?from=${encodeURIComponent(launch.quoteMint)}&to=${encodeURIComponent(mint)}`}>Trade in its Swap pool</Link>}
               </span>
             </div>
             <Field k="Ticker">

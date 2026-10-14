@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
   decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru,
@@ -26,7 +26,7 @@ import {
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
-  buildBuyInstruction, buildSellInstruction, buildLaunchInstruction, buildClaimInstruction,
+  buildBuyInstruction, buildSellInstruction, buildLaunchInstruction, buildClaimInstruction, withSlippage,
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
@@ -35,7 +35,7 @@ import { customMints, customMeta, onCustomMintsChange } from '../lib/customToken
 import { displayDecimals } from '../lib/wthru.js'
 import {
   deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
-  burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances,
+  burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances, requestGraduation,
 } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { TokenIcon } from '../components/TokenMeta.jsx'
@@ -488,9 +488,9 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
                 {show('feePct') ? <span className="helper bad"><Icon name="failed" size={14} stroke={2} />{fieldError.feePct}</span> : <span className="helper">On every trade, up to 10%. Claim it any time.</span>}
               </div>
               <div className="cr-field">
-                <span className="label"><span className="term" title="When the WTHRU raised on the curve reaches this, the program moves the liquidity into a Swap pool.">Graduation</span></span>
+                <span className="label"><span className="term" title="Once the WTHRU raised on the curve reaches this, anyone can graduate the launch: the curve closes and its reserves open a Swap pool at the curve's last price, in one transaction.">Graduation</span></span>
                 <span className="field cr-fixed mono">{gradText}</span>
-                <span className="helper">When the curve fills, liquidity moves to a Swap pool.</span>
+                <span className="helper">Past this, the curve can graduate into a Swap pool at its last price.</span>
               </div>
             </div>
             <div className="cr-explain">
@@ -840,8 +840,11 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
     return [thru, ...seen.values()]
   }, [pools, tickers, wallet.balances, wallet.tickers, wallet.native, wallet.address, custom])
 
-  const [fromMint, setFromMint] = useState(null)
-  const [toMint, setToMint] = useState(null)
+  // ?from=&to= preselects a pair, which is how a graduated launch links to
+  // its pool. Anything else in the URL is ignored.
+  const [params] = useSearchParams()
+  const [fromMint, setFromMint] = useState(() => params.get('from'))
+  const [toMint, setToMint] = useState(() => params.get('to'))
   const [amount, setAmount] = useState('')
   const [error, setError] = useState(null)
 
@@ -878,12 +881,17 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
   const poolTo = toMint === THRU ? WTHRU_MINT : toMint
   const wrapOnly = (fromMint === THRU && toMint === WTHRU_MINT) || (fromMint === WTHRU_MINT && toMint === THRU)
 
+  /* Anyone can create a pool, so a pair can have several, and the first one
+     listed is not necessarily the real market: a stranger could open a thin
+     pool at a silly price ahead of a launch's graduation pool. Trade against
+     the deepest one, by the product of its reserves. */
   const pool = useMemo(() => {
     if (!poolFrom || !poolTo || wrapOnly) return null
-    return pools.find(
-      (p) => (p.mintA === poolFrom && p.mintB === poolTo) || (p.mintB === poolFrom && p.mintA === poolTo),
-    ) ?? null
-  }, [pools, poolFrom, poolTo, wrapOnly])
+    const depth = (p) => (balances[p.vaultA] ?? 0n) * (balances[p.vaultB] ?? 0n)
+    return pools
+      .filter((p) => (p.mintA === poolFrom && p.mintB === poolTo) || (p.mintB === poolFrom && p.mintA === poolTo))
+      .reduce((best, p) => (best === null || depth(p) > depth(best) ? p : best), null)
+  }, [pools, poolFrom, poolTo, wrapOnly, balances])
 
   const flipped = pool ? pool.mintA !== poolFrom : false
   const vaultIn = pool ? (flipped ? pool.vaultB : pool.vaultA) : null
@@ -982,12 +990,12 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
         payer: wallet.address, program: SWAP_PROGRAM,
         registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
         userIn: accounts.userIn, userOut: accounts.userOut,
-        amountIn, minOut: 1n, wrap: amountIn,
+        amountIn, minOut: withSlippage(quote.amountOut), wrap: amountIn,
       }), sent)
       : await sendBuilt(SWAP_PROGRAM, buildSwapInstruction({
         registry: SWAP_REGISTRY, poolId: pool.id, vaultIn, vaultOut,
         userIn: accounts.userIn, userOut: accounts.userOut,
-        amountIn, minOut: 1n,
+        amountIn, minOut: withSlippage(quote.amountOut),
       }), sent)
 
     if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
@@ -1999,7 +2007,7 @@ function LaunchCard({ launch, balances, tickers, decimals, threshold, meta }) {
           </>
         )}
         {launch.graduated && (
-          <span className="lcard-note">{Number(launch.tradeCount)} trades · the curve is frozen</span>
+          <span className="lcard-note">{Number(launch.tradeCount)} trades · {launch.pooled ? 'now in a Swap pool' : 'the curve is frozen'}</span>
         )}
       </span>
     </Link>
@@ -2194,10 +2202,7 @@ export function LaunchDetail({ id }) {
                 <span>{fmt(raised, quoteDecimals, 1)} {quote} raised</span>
                 <span>graduates at {fmt(threshold, quoteDecimals, 1)}</span>
               </div>
-              <div className="ld-caveat">
-                <Icon name="warning" size={16} />
-                <span>At graduation the program moves liquidity into a Swap pool. This is written into ThruPad but has not yet been seen happen on {network.label.toLowerCase()}.</span>
-              </div>
+              <Graduation launch={launch} raised={raised} threshold={threshold} quoteMint={quoteMint} onDone={() => reload(true)} />
             </div>
             <dl className="ld-stats">
               <div><dt>Total supply</dt><dd className="mono">{fmt(supply, DECIMALS, 0)}</dd></div>
@@ -2395,6 +2400,58 @@ function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
 }
 
 /** Buy and sell, for one launch (the 3j panel, and the 3k sheet). */
+/** Swap, opened on the pair a graduated launch trades in. */
+function poolLink(quoteMint, mint) {
+  return `/swap?from=${encodeURIComponent(quoteMint)}&to=${encodeURIComponent(mint)}`
+}
+
+/* Graduation, as the launch page states it. Three honest cases: still on the
+   curve, past the threshold with no pool yet (anyone may open it), or pooled. */
+function Graduation({ launch, raised, threshold, quoteMint, onDone }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const ready = !launch.pooled && raised >= threshold
+
+  const open = async () => {
+    setBusy(true); setError(null)
+    try {
+      await requestGraduation(launch.id)
+      onDone?.()
+    } catch (e) {
+      setError(String(e?.message ?? e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (launch.pooled) {
+    return (
+      <div className="ld-caveat">
+        <Icon name="success" size={16} />
+        <span>Graduated into Swap pool {launch.poolId}, opened at the curve's last price. <Link to={poolLink(quoteMint, launch.mint)}>Trade it on Swap</Link>.</span>
+      </div>
+    )
+  }
+  if (ready) {
+    return (
+      <div className="ld-caveat">
+        <Icon name="warning" size={16} />
+        <span>
+          Past its graduation threshold. Opening the pool closes the curve and moves its reserves into a Swap pool at the curve's last price, in one transaction. Anyone can do it, and it runs daily on its own.
+          {' '}<button className="btn sm secondary" onClick={open} disabled={busy}>{busy ? 'Opening pool…' : 'Open pool'}</button>
+          {error && <span className="helper bad"> {error}</span>}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="ld-caveat">
+      <Icon name="warning" size={16} />
+      <span>At graduation the curve closes and its reserves open a Swap pool at the curve's last price, in one transaction. That happens once the threshold is reached.</span>
+    </div>
+  )
+}
+
 function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, onTraded, mode = 'panel', initialSide = 'buy', onClose }) {
   const [side, setSide] = useState(initialSide)
   const [amount, setAmount] = useState('')
@@ -2480,7 +2537,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
       registry: PAD_REGISTRY, launchId: launch.id,
       tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
       userToken: resolved.userToken, userQuote: resolved.userQuote,
-      amountIn, minOut: 1n,
+      amountIn, minOut: withSlippage(out),
     }
     const built = side === 'buy' ? buildBuyInstruction(args) : buildSellInstruction(args)
     const result = await sendBuilt(PAD_PROGRAM, built, (sig) => progress('sent', sig))
@@ -2543,7 +2600,9 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
         </div>
       )}
       {launch.graduated ? (
-        <p className="notice"><Icon name="success" size={18} /><span>Graduated: the curve is closed. <Link to="/swap">Trade it on Swap</Link>.</span></p>
+        launch.pooled
+          ? <p className="notice"><Icon name="success" size={18} /><span>Graduated: the curve is closed. <Link to={poolLink(quoteMint, launch.mint)}>Trade it in its Swap pool</Link>.</span></p>
+          : <p className="notice"><Icon name="warning" size={18} /><span>The curve is closed but has no pool yet. Open it from the curve progress panel.</span></p>
       ) : (
         <>
           <div className="seg tp-seg" role="group" aria-label="Buy or sell">

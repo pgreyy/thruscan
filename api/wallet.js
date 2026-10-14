@@ -40,6 +40,8 @@ import { sendLanded } from '../src/lib/sendLanded.js'
 import { decodeConfig, buildAllow, PALS_CONFIG, WTHRU_MINT } from '../src/lib/pals/chain.js'
 import { MAX_STATE_UNITS } from '../src/lib/addresses.js'
 import { grpcUrl, addressOf, network } from '../src/lib/networks.js'
+import { decodePadRegistry, graduationSeed, withSlippage, buildGraduateInstruction, STATE_LIVE, STATE_GRADUATED } from '../src/lib/pad.js'
+import { decodeSwapRegistry } from '../src/lib/swap.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -506,6 +508,37 @@ function randomSeed() {
   ).digest())
 }
 
+/** INITIALIZE_MINT with the sponsor as creator and payer, 6 decimals, no freeze
+ *  authority. Returns { mint, already, signature }; an existing mint at the
+ *  derived address is reported, not re-made. */
+async function createMintFor(c, { seed, authority, ticker }) {
+  const sponsor = process.env.THRU_SPONSOR_PUBKEY
+  const mint = deriveMint(sponsor, seed)
+  if (await getAccount(c, mint)) return { mint, already: true }
+
+  const proof = await proofs.generateStateProof(c.ctx, { address: mint, proofType: PROOF_CREATING })
+
+  const head = Buffer.alloc(1 + 2 + 1 + 32 + 32 + 32 + 1 + 1 + 8 + 32)
+  let o = 0
+  head.writeUInt8(0x00, o); o += 1
+  head.writeUInt16LE(2, o); o += 2          // the mint, the only read-write account
+  head.writeUInt8(6, o); o += 1             // decimals
+  Buffer.from(toBytes(sponsor)).copy(head, o); o += 32    // creator: has to be the payer
+  Buffer.from(toBytes(authority)).copy(head, o); o += 32  // mint authority
+  o += 32                                   // freeze authority: none
+  head.writeUInt8(0, o); o += 1             // has_freeze
+  head.writeUInt8(ticker.length, o); o += 1
+  head.write(ticker, o, 8, 'ascii'); o += 8
+  Buffer.from(seed).copy(head, o)
+
+  const signature = await sponsorSend(c, {
+    program: TOKEN_PROGRAM,
+    readWrite: [mint],
+    data: concat(new Uint8Array(head), proof.proof),
+  })
+  return { mint, already: false, signature }
+}
+
 async function openTokenAccountFor({ c, mint, owner, seed }) {
   const account = deriveTokenAccount(mint, owner, seed)
   if (await getAccount(c, account)) return { account, already: true }
@@ -565,31 +598,9 @@ async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
   const pad = padProgram || process.env.THRU_PAD_PROGRAM
   if (!ADDRESS_RE.test(pad ?? '')) return { ok: false, error: 'No launchpad program configured.' }
 
-  const sponsor = process.env.THRU_SPONSOR_PUBKEY
-  const mintSeed = randomSeed()
-  const mint = deriveMint(sponsor, mintSeed)
-  if (await getAccount(c, mint)) return { ok: false, error: 'Seed collision. Try again.' }
-
-  const proof = await proofs.generateStateProof(c.ctx, { address: mint, proofType: PROOF_CREATING })
-
-  const head = Buffer.alloc(1 + 2 + 1 + 32 + 32 + 32 + 1 + 1 + 8 + 32)
-  let o = 0
-  head.writeUInt8(0x00, o); o += 1
-  head.writeUInt16LE(2, o); o += 2          // the mint, the only read-write account
-  head.writeUInt8(6, o); o += 1             // decimals
-  Buffer.from(toBytes(sponsor)).copy(head, o); o += 32    // creator: has to be the payer
-  Buffer.from(toBytes(pad)).copy(head, o); o += 32        // mint authority: thrupad
-  o += 32                                   // freeze authority: none
-  head.writeUInt8(0, o); o += 1             // has_freeze
-  head.writeUInt8(ticker.length, o); o += 1
-  head.write(ticker, o, 8, 'ascii'); o += 8
-  Buffer.from(mintSeed).copy(head, o)
-
-  const mintSig = await sponsorSend(c, {
-    program: TOKEN_PROGRAM,
-    readWrite: [mint],
-    data: concat(new Uint8Array(head), proof.proof),
-  })
+  const made = await createMintFor(c, { seed: randomSeed(), authority: pad, ticker })
+  if (made.already) return { ok: false, error: 'Seed collision. Try again.' }
+  const { mint, signature: mintSig } = made
 
   // The vaults refer to the mint, so it has to exist before they are made.
   for (let i = 0; i < 10 && !(await getAccount(c, mint)); i++) {
@@ -619,6 +630,165 @@ async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
     quoteVault: quoteVault.account,
     signature: mintSig,
   }
+}
+
+/* ---------- graduation ----------
+   A launch past its threshold graduates with one thrupad instruction that
+   freezes the curve and seeds a thruswap pool from its reserves (see
+   do_graduate in programs/thrupad2.c). That instruction needs three accounts
+   that do not exist yet: a pool vault for each side and an LP mint, all
+   thruswap's. Making accounts takes a transaction each and a state proof a
+   browser cannot produce, so the sponsor makes them, empty, and then sends the
+   graduation itself.
+
+   None of this lets the sponsor touch anyone's money. The accounts it makes
+   are owned by thruswap from birth, and GRADUATE moves only what thrupad's own
+   rules say to move, to where they say. The sponsor pays fees and state.
+
+   Anyone can ask (the "Open pool" button), and the daily cron asks for every
+   launch that is ready (graduateReady, called from api/discover.js). */
+
+const PAD_PROGRAM_ADDR = addressOf('THRUPAD_PROGRAM')
+const PAD_REGISTRY_ADDR = addressOf('THRUPAD_REGISTRY')
+const SWAP_PROGRAM_ADDR = addressOf('THRUSWAP_PROGRAM')
+const SWAP_REGISTRY_ADDR = addressOf('THRUSWAP_REGISTRY')
+
+async function dataOf(c, address) {
+  const a = await getAccount(c, address)
+  return a ? Buffer.from(a?.data?.data ?? []) : null
+}
+const tokenAmountOf = (buf) => (buf && buf.length >= 72 ? buf.readBigUInt64LE(64) : 0n)
+
+/** A launch's graduation, read from the chain: whether it is ready and why not. */
+async function graduationState(c, launchId) {
+  const regBytes = await dataOf(c, PAD_REGISTRY_ADDR)
+  if (!regBytes) return { ok: false, error: 'The launch registry cannot be read.' }
+  const reg = decodePadRegistry(new Uint8Array(regBytes))
+  const launch = reg.launches.find((l) => l.id === launchId)
+  if (!launch) return { ok: false, error: 'No launch with that id.' }
+  if (launch.pooled) return { ok: true, already: true, poolId: launch.poolId }
+  if (launch.state !== STATE_LIVE && launch.state !== STATE_GRADUATED) return { ok: false, error: 'That launch cannot graduate.' }
+
+  const [quoteBuf, tokenBuf] = await Promise.all([dataOf(c, launch.quoteVault), dataOf(c, launch.tokenVault)])
+  const held = tokenAmountOf(quoteBuf)
+  const raised = held > launch.creatorFees ? held - launch.creatorFees : 0n
+  if (raised < reg.gradThreshold) {
+    return { ok: false, error: 'This launch has not reached its graduation threshold yet.', raised, threshold: reg.gradThreshold }
+  }
+  const seed = graduationSeed({ vq: launch.vq, vt: launch.vt, raised, tokens: tokenAmountOf(tokenBuf) })
+  if (!seed) return { ok: false, error: 'The curve has nothing to seed a pool with.' }
+  return { ok: true, launch, seed }
+}
+
+/** The pool vaults and LP mint for one graduation attempt.
+ *
+ *  The seeds are fixed per launch and attempt, so a retry after a failure
+ *  finds the accounts it already paid for instead of making new ones. The
+ *  attempt number moves on only when an account is unusable: already in a
+ *  pool record, holding something, or an LP mint that has minted. Someone can
+ *  do that to these accounts on purpose, since they are public once made; it
+ *  costs them a transaction and costs this a few more accounts, nothing else. */
+async function graduationAccounts(c, launch, pools) {
+  const sponsor = process.env.THRU_SPONSOR_PUBKEY
+  const used = new Set(pools.flatMap((p) => [p.vaultA, p.vaultB, p.lpMint]))
+  const seedFor = (attempt, kind) => sha256(Buffer.from(`thruscan-grad|${PAD_REGISTRY_ADDR}|${launch.id}|${attempt}|${kind}`))
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const s = { tok: seedFor(attempt, 'tok'), quote: seedFor(attempt, 'quote'), lp: seedFor(attempt, 'lp') }
+    const poolTokenVault = deriveTokenAccount(launch.mint, SWAP_PROGRAM_ADDR, s.tok)
+    const poolQuoteVault = deriveTokenAccount(launch.quoteMint, SWAP_PROGRAM_ADDR, s.quote)
+    const lpMint = deriveMint(sponsor, s.lp)
+    if ([poolTokenVault, poolQuoteVault, lpMint].some((a) => used.has(a))) continue
+
+    const [tb, qb, lb] = await Promise.all([dataOf(c, poolTokenVault), dataOf(c, poolQuoteVault), dataOf(c, lpMint)])
+    if (tokenAmountOf(tb) > 0n || tokenAmountOf(qb) > 0n) continue
+    if (lb && lb.length >= 9 && lb.readBigUInt64LE(1) > 0n) continue
+
+    // One at a time, each landed before the next: the sponsor's nonce is read
+    // from the chain, and two sends in a row would share it.
+    for (const [address, make] of [
+      [poolTokenVault, () => openTokenAccountFor({ c, mint: launch.mint, owner: SWAP_PROGRAM_ADDR, seed: s.tok })],
+      [poolQuoteVault, () => openTokenAccountFor({ c, mint: launch.quoteMint, owner: SWAP_PROGRAM_ADDR, seed: s.quote })],
+      [lpMint, () => createMintFor(c, { seed: s.lp, authority: SWAP_PROGRAM_ADDR, ticker: 'TPLP' })],
+    ]) {
+      if (await getAccount(c, address)) continue
+      await make()
+      if (!(await landed(c, address))) throw new Error(`pool account ${address} did not land`)
+    }
+    return { poolTokenVault, poolQuoteVault, lpMint }
+  }
+  throw new Error('no usable pool accounts after 8 attempts')
+}
+
+/** Graduate one launch into a new pool. Safe to call for any launch: one that
+ *  is not ready is refused here, and the program refuses it again. */
+async function graduate(c, { launchId }) {
+  if (!PAD_PROGRAM_ADDR || !PAD_REGISTRY_ADDR || !SWAP_PROGRAM_ADDR || !SWAP_REGISTRY_ADDR) {
+    return { ok: false, error: `ThruPad or Swap is not deployed on ${network.label}.` }
+  }
+  const id = Number(launchId)
+  if (!Number.isInteger(id) || id < 0 || id > 65535) return { ok: false, error: 'That is not a launch id.' }
+
+  const st = await graduationState(c, id)
+  if (!st.ok || st.already) return st
+  const { launch, seed } = st
+
+  const swapBytes = await dataOf(c, SWAP_REGISTRY_ADDR)
+  if (!swapBytes) return { ok: false, error: 'The pool registry cannot be read.' }
+  const swapReg = decodeSwapRegistry(new Uint8Array(swapBytes))
+  const taken = new Set(swapReg.pools.map((p) => p.id))
+  let poolId = -1
+  for (let i = 0; i < swapReg.capacity; i++) if (!taken.has(i)) { poolId = i; break }
+  if (poolId < 0) return { ok: false, error: 'The pool registry is full.' }
+
+  const accts = await graduationAccounts(c, launch, swapReg.pools)
+
+  // The seed can only shrink between this read and the transaction if someone
+  // sells on the curve in between; the bound says how far is acceptable.
+  const built = buildGraduateInstruction({
+    registry: PAD_REGISTRY_ADDR, launchId: id,
+    tokenVault: launch.tokenVault, quoteVault: launch.quoteVault,
+    mint: launch.mint, quoteMint: launch.quoteMint,
+    swapProgram: SWAP_PROGRAM_ADDR, swapRegistry: SWAP_REGISTRY_ADDR, poolId,
+    ...accts,
+    minSeedQuote: withSlippage(seed.quote),
+  })
+  const signature = await sponsorSend(c, {
+    program: PAD_PROGRAM_ADDR, readWrite: built.readWrite, readOnly: built.readOnly, data: built.data, stateUnits: 4_096,
+  })
+
+  // Landed is not the same as succeeded: read the result.
+  let ex = null
+  try { ex = (await c.transactions.get(signature))?.executionResult ?? null } catch { /* read below */ }
+  const ok = ex && (ex.vmError ?? 0) === 0 && BigInt(ex.userErrorCode ?? 0n) === 0n
+  if (!ok) {
+    return { ok: false, signature, error: ex ? `Graduation reverted (error ${ex.userErrorCode ?? ex.vmError}).` : 'Graduation was sent but its result could not be read.' }
+  }
+  return { ok: true, signature, poolId }
+}
+
+/** Every launch that is past its threshold and not yet pooled, graduated in
+ *  turn, at most `max` per run. For the cron. */
+export async function graduateReady({ max = 3 } = {}) {
+  if (!process.env.THRU_SPONSOR_PUBKEY || !process.env.THRU_SPONSOR_PRIVKEY) return { ok: false, error: 'no sponsor key' }
+  if (!PAD_REGISTRY_ADDR) return { ok: true, graduated: [] }
+  const c = client()
+  const regBytes = await dataOf(c, PAD_REGISTRY_ADDR)
+  if (!regBytes) return { ok: false, error: 'launch registry unreadable' }
+  const reg = decodePadRegistry(new Uint8Array(regBytes))
+  const results = []
+  for (const l of reg.launches) {
+    if (results.length >= max) break
+    if (l.pooled || (l.state !== STATE_LIVE && l.state !== STATE_GRADUATED)) continue
+    const st = await graduationState(c, l.id)
+    if (!st.ok || st.already) continue
+    try {
+      results.push({ id: l.id, symbol: l.symbol, ...(await graduate(c, { launchId: l.id })) })
+    } catch (e) {
+      results.push({ id: l.id, symbol: l.symbol, ok: false, error: String(e?.message ?? e).slice(0, 300) })
+    }
+  }
+  return { ok: true, graduated: results }
 }
 
 /* ---------- names ----------
@@ -826,7 +996,7 @@ export default async function handler(req, res) {
     || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown'
   const metered = action === 'create' || action === 'open' || action === 'faucet'
-    || action === 'name-register' || action === 'pad-accounts'
+    || action === 'name-register' || action === 'pad-accounts' || action === 'graduate'
 
   if (metered) {
     const wait = overBudget(ip)
@@ -851,6 +1021,11 @@ export default async function handler(req, res) {
       }
       case 'balances': return json(res, 200, await balances(c, body))
       case 'pad-accounts':  return json(res, 200, await padAccounts(c, body))
+      case 'graduate': {
+        const out = await graduate(c, body)
+        if (!out.ok && !out.signature) refund(ip)
+        return json(res, out.ok ? 200 : 400, out)
+      }
       case 'name-check':    return json(res, 200, await nameCheck(c, body))
       case 'name-register': return json(res, 200, await nameRegister(c, body))
       case 'proof':    return json(res, 200, await proofFor(c, body))

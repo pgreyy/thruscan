@@ -989,6 +989,14 @@ export async function createLaunchAccounts({ symbol, quoteMint, padProgram }) {
   return api('pad-accounts', { owner: address, symbol: ticker, quoteMint, padProgram })
 }
 
+/** Ask the server to graduate a launch into a Swap pool. No wallet needed: the
+ *  sponsor pays, and the program decides everything that moves. Resolves to
+ *  { ok, signature, poolId } or { ok, already, poolId }; throws with the
+ *  reason when it is refused. */
+export async function requestGraduation(launchId) {
+  return api('graduate', { launchId })
+}
+
 /* ---------- names ----------
    Claiming is sponsored, because registering under a root needs that root's
    authority and ThruScan holds it. Records are not: the name service checks the

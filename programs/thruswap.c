@@ -43,8 +43,10 @@
  *   CREATE  [0x01][pool_regs][mint_a][mint_b][vault_a][vault_b][lp_mint][fee_bps]
  *           Records a pool over two mints. The vaults must already exist as
  *           token accounts owned by this program, and lp_mint must be a mint
- *           whose authority is this program. The program verifies all of that
- *           rather than taking the caller's word for it.
+ *           whose authority is this program and which has never minted. The
+ *           program verifies all of that rather than taking the caller's word
+ *           for it. No vault or LP mint may belong to another pool: see
+ *           require_unshared for what happened before that rule existed.
  *
  *   ADD     [0x02][...][amount_a u64][amount_b u64]
  *           Deposits both sides, mints LP tokens in return.
@@ -55,6 +57,14 @@
  *   SWAP    [0x04][...][amount_in u64][min_out u64]
  *           Trades one side for the other along the curve, after a 30 basis
  *           point fee that stays in the pool for liquidity providers.
+ *
+ *   CREATE_SEEDED [0x05][same fields as CREATE]
+ *           CREATE for vaults that are already funded, called by thrupad in the
+ *           same instruction that moves a graduating curve's reserves in. The
+ *           opening price is the ratio of what the vaults hold. The LP supply
+ *           for that liquidity is recorded but never minted, so no account
+ *           holds a claim on it and nobody can ever withdraw it: the seed is
+ *           burned at birth. Later providers ADD against it as normal.
  *
  * All u16 and u64 fields are little endian and every struct is packed, so the
  * layouts here are exactly the bytes on the wire.
@@ -75,6 +85,7 @@
 #define OP_ADD    (0x02)
 #define OP_REMOVE (0x03)
 #define OP_SWAP   (0x04)
+#define OP_CREATE_SEEDED (0x05)
 
 #define SWAP_VERSION ((uchar)1)
 #define REG_ACC_IDX  ((ushort)2)   /* INIT declares exactly one account */
@@ -114,6 +125,8 @@
 #define ERR_OVERFLOW      (21UL)
 #define ERR_LP_SUPPLY     (22UL)
 #define ERR_TOKEN_PROG    (23UL)  /* the "token program" named is not the token program */
+#define ERR_SHARED        (24UL)  /* a vault or LP mint already belongs to another pool */
+#define ERR_LP_MINT       (25UL)  /* LP mint not ours, or it has already minted */
 
 /* --------------------------------------------------------------- storage */
 
@@ -326,43 +339,131 @@ struct __attribute__(( packed )) create_args {
   ushort fee_bps;
 };
 
+/* The LP mint has to be one only this program can mint from, and one that has
+   never minted. A mint whose authority is someone else lets that someone mint
+   LP tokens for nothing and burn them in REMOVE for a share of the reserves;
+   the header comment above promised this check long before the code made it. */
 static void
-do_create( uchar const * data, ulong data_sz ) {
-  if( data_sz < sizeof( struct create_args ) ) tsdk_revert( ERR_BAD_INSTR );
+require_lp_mint( ushort idx ) {
+  if( !tsdk_is_account_idx_valid( idx ) ) tsdk_revert( ERR_BAD_IDX );
+  if( !tsdk_account_exists( idx ) )       tsdk_revert( ERR_NO_ACCOUNT );
 
-  struct create_args a;
-  memcpy( &a, data, sizeof( a ) );
+  tsdk_account_meta_t const * meta = tsdk_get_account_meta( idx );
+  if( meta->data_sz != (uint)TN_TOKEN_MINT_ACCOUNT_SZ ) tsdk_revert( ERR_LP_MINT );
 
-  if( a.fee_bps > FEE_BPS_MAX ) tsdk_revert( ERR_FEE_RANGE );
+  tn_token_mint_t m;
+  memcpy( &m, tsdk_get_account_data_ptr( idx ), sizeof( m ) );
+  tn_pubkey_t const * me = tsdk_get_current_program_acc_addr();
+  if( memcmp( m.mint_authority.key, me->key, 32UL ) != 0 ) tsdk_revert( ERR_LP_MINT );
+  if( m.supply != 0UL ) tsdk_revert( ERR_LP_MINT );
+}
 
-  tn_pubkey_t const * mint_a = account_addr( a.mint_a_idx );
-  tn_pubkey_t const * mint_b = account_addr( a.mint_b_idx );
+/* A vault or LP mint may belong to one pool only.
+ *
+ * Before this check, CREATE accepted vaults some other pool already used. A
+ * second record over the same vaults starts at lp_supply 0, so its first ADD
+ * mints sqrt(a*b) LP for a deposit of a and b, and REMOVE then pays out
+ * lp_amount * vault_balance / lp_supply: the whole vault, including the first
+ * pool's liquidity. Any pool could be emptied that way for the price of a tiny
+ * deposit. Scanning every slot costs at most 256 records, once per pool. */
+static void
+require_unshared( ushort reg_idx, ushort pool_id,
+                  tn_pubkey_t const * vault_a, tn_pubkey_t const * vault_b,
+                  tn_pubkey_t const * lp_mint ) {
+  if( memcmp( vault_a->key, vault_b->key, 32UL ) == 0 ) tsdk_revert( ERR_SHARED );
+
+  uchar const * base = (uchar const *)tsdk_get_account_data_ptr( reg_idx );
+  ulong cap = registry_capacity( (ulong)tsdk_get_account_meta( reg_idx )->data_sz );
+  tn_pubkey_t const * mine[ 3 ] = { vault_a, vault_b, lp_mint };
+
+  for( ulong i=0UL; i<cap; i++ ) {
+    if( i == (ulong)pool_id ) continue;
+    pool_rec_t const * p = (pool_rec_t const *)( base + HDR_SZ + i * POOL_SZ );
+    if( !p->in_use ) continue;
+    tn_pubkey_t const * theirs[ 3 ] = { &p->vault_a, &p->vault_b, &p->lp_mint };
+    for( ulong x=0UL; x<3UL; x++ ) {
+      for( ulong y=0UL; y<3UL; y++ ) {
+        if( memcmp( mine[ x ]->key, theirs[ y ]->key, 32UL ) == 0 ) tsdk_revert( ERR_SHARED );
+      }
+    }
+  }
+}
+
+/* Everything CREATE and CREATE_SEEDED check in common, then the record. The
+   caller decides lp_supply: zero for CREATE, the burned seed for CREATE_SEEDED. */
+static pool_rec_t *
+create_checked( struct create_args const * a ) {
+  if( a->fee_bps > FEE_BPS_MAX ) tsdk_revert( ERR_FEE_RANGE );
+
+  tn_pubkey_t const * mint_a = account_addr( a->mint_a_idx );
+  tn_pubkey_t const * mint_b = account_addr( a->mint_b_idx );
   if( memcmp( mint_a->key, mint_b->key, 32UL ) == 0 ) tsdk_revert( ERR_MINT_MISMATCH );
 
   /* The vaults are checked here, once, so that every later swap can trust the
      recorded pubkeys instead of re-deriving trust from the caller. */
-  require_vault( a.vault_a_idx, mint_a );
-  require_vault( a.vault_b_idx, mint_b );
+  require_vault( a->vault_a_idx, mint_a );
+  require_vault( a->vault_b_idx, mint_b );
+  require_lp_mint( a->lp_mint_idx );
 
-  pool_rec_t * pool = open_registry( a.reg_idx, a.pool_id );
+  pool_rec_t * pool = open_registry( a->reg_idx, a->pool_id );
   if( pool->in_use ) tsdk_revert( ERR_POOL_EXISTS );
+
+  require_unshared( a->reg_idx, a->pool_id,
+                    account_addr( a->vault_a_idx ), account_addr( a->vault_b_idx ),
+                    account_addr( a->lp_mint_idx ) );
 
   pool_rec_t rec;
   memset( &rec, 0, sizeof( rec ) );
   rec.in_use  = 1U;
-  rec.fee_bps = a.fee_bps == 0U ? (ushort)FEE_BPS_DEFAULT : a.fee_bps;
-  memcpy( rec.mint_a.key,  mint_a->key,                  32UL );
-  memcpy( rec.mint_b.key,  mint_b->key,                  32UL );
-  memcpy( rec.vault_a.key, account_addr( a.vault_a_idx )->key, 32UL );
-  memcpy( rec.vault_b.key, account_addr( a.vault_b_idx )->key, 32UL );
-  memcpy( rec.lp_mint.key, account_addr( a.lp_mint_idx )->key, 32UL );
+  rec.fee_bps = a->fee_bps == 0U ? (ushort)FEE_BPS_DEFAULT : a->fee_bps;
+  memcpy( rec.mint_a.key,  mint_a->key,                         32UL );
+  memcpy( rec.mint_b.key,  mint_b->key,                         32UL );
+  memcpy( rec.vault_a.key, account_addr( a->vault_a_idx )->key, 32UL );
+  memcpy( rec.vault_b.key, account_addr( a->vault_b_idx )->key, 32UL );
+  memcpy( rec.lp_mint.key, account_addr( a->lp_mint_idx )->key, 32UL );
   memcpy( pool, &rec, POOL_SZ );
 
-  uchar * base = (uchar *)tsdk_get_account_data_ptr( a.reg_idx );
+  uchar * base = (uchar *)tsdk_get_account_data_ptr( a->reg_idx );
   swap_hdr_t hdr;
   memcpy( &hdr, base, HDR_SZ );
   hdr.pool_count += 1U;
   memcpy( base, &hdr, HDR_SZ );
+  return pool;
+}
+
+static void
+do_create( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct create_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct create_args a;
+  memcpy( &a, data, sizeof( a ) );
+  create_checked( &a );
+}
+
+/* CREATE over vaults that already hold both sides. The price is their ratio,
+   which thrupad set to the curve's final price in the same instruction.
+   lp_supply is set to sqrt(a*b), exactly what a first ADD of the same amounts
+   would have minted before its MIN_LIQUIDITY burn, but no LP token is minted
+   for it. So the seed counts toward every later provider's share and can never
+   be withdrawn by anyone.
+
+   Anyone can call this, not only thrupad. That is harmless: the vaults must be
+   fresh (require_unshared) and hold only what the caller put in, so the most a
+   stranger can do is give their own deposit away to a pool nobody can drain. */
+static void
+do_create_seeded( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct create_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct create_args a;
+  memcpy( &a, data, sizeof( a ) );
+
+  pool_rec_t * pool = create_checked( &a );
+
+  ulong res_a = vault_balance( a.vault_a_idx );
+  ulong res_b = vault_balance( a.vault_b_idx );
+  if( res_a == 0UL || res_b == 0UL ) tsdk_revert( ERR_EMPTY_POOL );
+
+  ulong seed_lp = isqrt128( (uint128)res_a * (uint128)res_b );
+  if( seed_lp <= MIN_LIQUIDITY ) tsdk_revert( ERR_DUST );
+  pool->lp_supply = seed_lp;
 }
 
 /* ------------------------------------------------------- liquidity + swap */
@@ -549,6 +650,7 @@ start( void const * instruction_data,
     case OP_ADD:    do_add   ( data, instruction_data_sz ); break;
     case OP_REMOVE: do_remove( data, instruction_data_sz ); break;
     case OP_SWAP:   do_swap  ( data, instruction_data_sz ); break;
+    case OP_CREATE_SEEDED: do_create_seeded( data, instruction_data_sz ); break;
     default:        tsdk_revert( ERR_BAD_OPCODE );
   }
 
