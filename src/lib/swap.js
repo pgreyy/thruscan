@@ -55,6 +55,19 @@ export const OP_CREATE = 0x01
 export const OP_ADD = 0x02
 export const OP_REMOVE = 0x03
 export const OP_SWAP = 0x04
+export const OP_CREATE_SEEDED = 0x05
+export const OP_SET_CREATOR_FEE = 0x06
+export const OP_CLAIM_CREATOR_FEES = 0x07
+export const OP_EXTEND = 0x08
+export const OP_OPT_IN_CREATOR_FEE = 0x09
+
+/* The creator fee table appended after the pool records (thruswap.c,
+   registry_layout): an 8-byte magic, then one 53-byte entry per slot. */
+export const EXT_MAGIC = 0x3145454652435354n   // "TSCRFEE1"
+export const EXT_HEADER_SIZE = 8
+export const EXT_SIZE = 53
+/** LP fee plus creator fee, together, never more than this. */
+export const TOTAL_FEE_BPS_MAX = 100
 
 export const BPS_DENOM = 10000n
 
@@ -65,10 +78,26 @@ export class SwapDecodeError extends Error {
   }
 }
 
-/** Capacity is whatever INIT allocated, so read it off the account's size. */
-export function poolCapacity(byteLength) {
-  if (byteLength < HEADER_SIZE + POOL_SIZE) return 0
-  return Math.floor((byteLength - HEADER_SIZE) / POOL_SIZE)
+/** Capacity is whatever INIT allocated, so read it off the account's size.
+ *  Without `bytes` this is the plain shape only; pass the bytes to recognise a
+ *  registry with the creator fee table appended. */
+export function poolCapacity(byteLength, bytes = null) {
+  return registryLayout(byteLength, bytes).slots
+}
+
+/** The registry's shape, exactly as thruswap.c's registry_layout reads it: try
+ *  the extended shape and believe it only if the magic sits where it says;
+ *  otherwise every byte after the header is pool records. */
+export function registryLayout(byteLength, bytes = null) {
+  if (byteLength < HEADER_SIZE + POOL_SIZE) return { slots: 0, extAt: null }
+  const body = byteLength - HEADER_SIZE
+  if (bytes && body > EXT_HEADER_SIZE && (body - EXT_HEADER_SIZE) % (POOL_SIZE + EXT_SIZE) === 0) {
+    const s = (body - EXT_HEADER_SIZE) / (POOL_SIZE + EXT_SIZE)
+    const m = HEADER_SIZE + s * POOL_SIZE
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    if (s > 0 && dv.getBigUint64(m, true) === EXT_MAGIC) return { slots: s, extAt: m + EXT_HEADER_SIZE }
+  }
+  return { slots: Math.floor(body / POOL_SIZE), extAt: null }
 }
 
 function base64ToBytes(b64) {
@@ -99,7 +128,7 @@ export function decodeSwapRegistry(input) {
   if (bytes[0] !== SWAP_VERSION) {
     throw new SwapDecodeError(`unknown registry version ${bytes[0]}`)
   }
-  const slots = poolCapacity(bytes.length)
+  const { slots, extAt } = registryLayout(bytes.length, bytes)
   if (slots === 0) {
     throw new SwapDecodeError(`registry is too small at ${bytes.length} bytes`)
   }
@@ -121,6 +150,7 @@ export function decodeSwapRegistry(input) {
       lpMint: readPubkey(bytes, base + 0x83),
       lpSupply: dv.getBigUint64(base + 0xa3, true),
       swapCount: dv.getBigUint64(base + 0xab, true),
+      ...creatorFeeAt(bytes, dv, extAt, i),
     })
   }
 
@@ -129,8 +159,42 @@ export function decodeSwapRegistry(input) {
     poolCount: dv.getUint32(0x01, true),
     sponsor: readPubkey(bytes, 0x05),
     capacity: slots,
+    extended: extAt !== null,
     pools,
   }
+}
+
+/* A pool's creator fee entry: has_creator u8, creator 32, creator_bps u16,
+   max_bps u16, accrued_a u64, accrued_b u64. No table, or no creator, reads as
+   no creator fee and nothing owed. */
+function creatorFeeAt(bytes, dv, extAt, i) {
+  const none = { creator: null, creatorBps: 0, maxCreatorBps: 0, owedA: 0n, owedB: 0n }
+  if (extAt === null) return none
+  const e = extAt + i * EXT_SIZE
+  const owed = { owedA: dv.getBigUint64(e + 37, true), owedB: dv.getBigUint64(e + 45, true) }
+  if (bytes[e] !== 1) return { ...none, ...owed }
+  return {
+    creator: readPubkey(bytes, e + 1),
+    creatorBps: dv.getUint16(e + 33, true),
+    maxCreatorBps: dv.getUint16(e + 35, true),
+    ...owed,
+  }
+}
+
+/** A pool's liquidity: what its vaults hold less what its creator is owed.
+ *  Owed fees sit in the vaults but are not the pool's to trade, exactly as the
+ *  program reads it. `balances` maps vault address to amount. */
+export function poolReserves(pool, balances) {
+  const minus = (held, owed) => (held > owed ? held - owed : 0n)
+  return {
+    a: minus(balances?.[pool.vaultA] ?? 0n, pool.owedA ?? 0n),
+    b: minus(balances?.[pool.vaultB] ?? 0n, pool.owedB ?? 0n),
+  }
+}
+
+/** Every fee a swap through `pool` pays, in basis points. */
+export function totalFeeBps(pool) {
+  return (pool?.feeBps ?? 0) + (pool?.creatorBps ?? 0)
 }
 
 // ---------------------------------------------------------------- pricing
@@ -157,11 +221,11 @@ export function poolFee(amountIn, feeBps) {
   return aIn - (aIn * (BPS_DENOM - BigInt(feeBps))) / BPS_DENOM
 }
 
-export function quoteSwap({ reserveIn, reserveOut, amountIn, feeBps = 30 }) {
+export function quoteSwap({ reserveIn, reserveOut, amountIn, feeBps = 30, creatorBps = 0 }) {
   const rIn = BigInt(reserveIn)
   const rOut = BigInt(reserveOut)
   const aIn = BigInt(amountIn)
-  const fee = BigInt(feeBps)
+  const fee = BigInt(feeBps) + BigInt(creatorBps)
 
   if (rIn <= 0n || rOut <= 0n) return { amountOut: 0n, priceImpactBps: 0n, reason: 'empty pool' }
   if (aIn <= 0n) return { amountOut: 0n, priceImpactBps: 0n, reason: 'zero input' }
@@ -177,7 +241,9 @@ export function quoteSwap({ reserveIn, reserveOut, amountIn, feeBps = 30 }) {
   const idealOut = (aIn * rOut) / rIn
   const impact = idealOut > 0n ? ((idealOut - amountOut) * BPS_DENOM) / idealOut : 0n
 
-  return { amountOut, priceImpactBps: impact, reason: null }
+  // The creator's part of the fee, rounded down as the program rounds it.
+  const creatorFee = (aIn * BigInt(creatorBps)) / BPS_DENOM
+  return { amountOut, priceImpactBps: impact, creatorFee, reason: null }
 }
 
 /** Price of one whole unit of A in terms of B, as a JS number for display. */
@@ -361,6 +427,57 @@ export function buildRemoveLiquidityInstruction({
   w.u64(lpAmount)
   w.u64(0)
   return { data: w.done(), readWrite, readOnly }
+}
+
+/** SET_CREATOR_FEE: the creator, as fee payer, sets the fee to 0..cap. */
+export function buildSetCreatorFeeInstruction({ registry, poolId, creatorBps }) {
+  const w = writer(7)
+  w.u8(OP_SET_CREATOR_FEE)
+  w.u16(2)          // the registry, the only read-write account
+  w.u16(poolId)
+  w.u16(creatorBps)
+  return { data: w.done(), readWrite: [registry], readOnly: [] }
+}
+
+/** CLAIM_CREATOR_FEES: everything owed on both sides, to the creator's own
+ *  token accounts `destA` (pool mint A) and `destB` (mint B). */
+export function buildClaimCreatorFeesInstruction({ registry, poolId, vaultA, vaultB, destA, destB }) {
+  const readWrite = sortAccounts([registry, vaultA, vaultB, destA, destB])
+  const readOnly = [TOKEN_PROGRAM]
+  const at = (a) => 2 + readWrite.indexOf(a)
+  const w = writer(15)
+  w.u8(OP_CLAIM_CREATOR_FEES)
+  w.u16(2 + readWrite.length)
+  w.u16(at(registry))
+  w.u16(poolId)
+  w.u16(at(vaultA))
+  w.u16(at(vaultB))
+  w.u16(at(destA))
+  w.u16(at(destB))
+  return { data: w.done(), readWrite, readOnly }
+}
+
+/** OPT_IN_CREATOR_FEE: a launch's creator gives the pool it graduated into a
+ *  creator fee, once. thrupad's registry is read to prove who they are. */
+export function buildOptInCreatorFeeInstruction({ registry, poolId, padRegistry, launchId, creatorBps }) {
+  const readWrite = [registry]
+  const readOnly = [padRegistry]
+  const w = writer(11)
+  w.u8(OP_OPT_IN_CREATOR_FEE)
+  w.u16(2)
+  w.u16(poolId)
+  w.u16(3)
+  w.u16(launchId)
+  w.u16(creatorBps)
+  return { data: w.done(), readWrite, readOnly }
+}
+
+/** EXTEND: append the creator fee table. Anyone; once. */
+export function buildExtendInstruction({ registry }) {
+  const w = writer(3)
+  w.u8(OP_EXTEND)
+  w.u16(2)
+  return { data: w.done(), readWrite: [registry], readOnly: [] }
 }
 
 export function toHex(bytes) {

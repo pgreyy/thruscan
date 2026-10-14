@@ -65,6 +65,46 @@
  *           for that liquidity is recorded but never minted, so no account
  *           holds a claim on it and nobody can ever withdraw it: the seed is
  *           burned at birth. Later providers ADD against it as normal.
+ *           A 51-byte form adds [creator 32][creator_bps u16]: the pool's
+ *           creator fee, which is how a graduating launch passes its own.
+ *
+ *   SET_CREATOR_FEE    [0x06][reg_idx u16][pool_id u16][creator_bps u16]
+ *           The creator, as fee payer, changes the creator fee to anything
+ *           from 0 up to the cap it was created with. Never above.
+ *
+ *   CLAIM_CREATOR_FEES [0x07][token_prog u16][reg_idx u16][pool_id u16]
+ *                      [vault_a u16][vault_b u16][dest_a u16][dest_b u16]
+ *           The creator, as fee payer, takes out everything accrued on both
+ *           sides. Nothing accrued is a revert, so a second claim fails.
+ *
+ *   EXTEND  [0x08][reg_idx u16]
+ *           Appends the creator fee table to the registry. Anyone may call
+ *           it; it does nothing a second time.
+ *
+ *   OPT_IN_CREATOR_FEE [0x09][reg_idx u16][pool_id u16][pad_reg_idx u16]
+ *                      [launch_id u16][creator_bps u16]
+ *           For a pool a launch graduated into before creator fees existed:
+ *           the launch's creator, as fee payer, gives it a creator fee once,
+ *           no higher than the launch's own curve fee allowed.
+ *
+ * ---------------------------------------------------------------------------
+ * CREATOR FEES
+ *
+ * A swap's fee is the pool's LP fee plus its creator fee, together at most 1%,
+ * both charged on the input. The LP part stays in the pool as before. The
+ * creator part also lands in the input vault, but is booked to the creator:
+ * every reserve this program prices against, adds against or pays out from is
+ * the vault balance LESS what the creator is owed, so owed fees are never
+ * liquidity and no swap, deposit or withdrawal can reach them. Only
+ * CLAIM_CREATOR_FEES moves them, and only to whoever the creator chooses.
+ *
+ * The fee lives in SWAP itself, so it applies to every swap through the pool
+ * whoever builds the transaction: there is no way to swap that skips it.
+ *
+ * The per-pool creator data does not fit in the 179-byte pool records, and
+ * the registry is a fixed table of them, so it lives in a second table
+ * appended after the first (see registry_layout). A registry without it, as
+ * every registry was before, reads as "no creator fee" everywhere.
  *
  * All u16 and u64 fields are little endian and every struct is packed, so the
  * layouts here are exactly the bytes on the wire.
@@ -86,6 +126,36 @@
 #define OP_REMOVE (0x03)
 #define OP_SWAP   (0x04)
 #define OP_CREATE_SEEDED (0x05)
+#define OP_SET_CREATOR_FEE    (0x06)
+#define OP_CLAIM_CREATOR_FEES (0x07)
+#define OP_EXTEND             (0x08)
+#define OP_OPT_IN_CREATOR_FEE (0x09)
+
+/* Every fee on a swap together: LP part plus creator part. */
+#define TOTAL_FEE_BPS_MAX (100U)
+
+/* thrupad, whose launch records OPT_IN_CREATOR_FEE reads to learn who a
+   graduated pool's creator is. Pinned for the same reason thrupad pins this
+   program: whoever could name "the launchpad" could name themselves creator.
+   Betanet's by default; another network builds with -DTHRUPAD_PROGRAM_ADDR. */
+#ifndef THRUPAD_PROGRAM_ADDR
+/* taAqm3-RUXc5JSXyUNN87-rsZtL3hAY85m268B-KwVP-E1 */
+#define THRUPAD_PROGRAM_ADDR { \
+  0x02,0xa9,0xb7,0xf9,0x15,0x17,0x73,0x92,0x52,0x5f,0x25,0x0d,0x37,0xce,0xfe,0xae, \
+  0xc6,0x6d,0x2f,0x78,0x40,0x63,0xce,0x66,0xdb,0xaf,0x01,0xf8,0xac,0x15,0x3f,0xe1 }
+#endif
+static uchar const thrupad_program_addr[ 32 ] = THRUPAD_PROGRAM_ADDR;
+
+/* thrupad's registry, only as far as OPT_IN_CREATOR_FEE reads it. */
+#define PAD_HDR_SZ      (77UL)
+#define PAD_LAUNCH_SZ   (253UL)
+#define PAD_VERSION     ((uchar)2)
+#define PAD_STATE_POOLED ((uchar)3)
+#define PAD_L_FEE_BPS   (0x01UL)
+#define PAD_L_CREATOR   (0x2dUL)
+#define PAD_L_MINT      (0x4dUL)
+#define PAD_L_QUOTE     (0xadUL)
+#define PAD_L_POOL_ID   (0xf5UL)   /* start_slot, which holds the pool id once pooled */
 
 #define SWAP_VERSION ((uchar)1)
 #define REG_ACC_IDX  ((ushort)2)   /* INIT declares exactly one account */
@@ -127,6 +197,12 @@
 #define ERR_TOKEN_PROG    (23UL)  /* the "token program" named is not the token program */
 #define ERR_SHARED        (24UL)  /* a vault or LP mint already belongs to another pool */
 #define ERR_LP_MINT       (25UL)  /* LP mint not ours, or it has already minted */
+#define ERR_NO_EXT        (26UL)  /* the registry has no creator fee table yet: run EXTEND */
+#define ERR_NOT_CREATOR   (27UL)  /* the fee payer is not this pool's creator */
+#define ERR_ABOVE_CAP     (28UL)  /* creator fee above its cap, or LP + creator above 1% */
+#define ERR_NO_FEES       (29UL)  /* nothing accrued to claim */
+#define ERR_ALREADY_SET   (30UL)  /* this pool already has a creator */
+#define ERR_NOT_LAUNCH    (31UL)  /* the launch named did not graduate into this pool */
 
 /* --------------------------------------------------------------- storage */
 
@@ -150,16 +226,51 @@ struct __attribute__(( packed )) pool_rec {
 };
 typedef struct pool_rec pool_rec_t;
 
+/* A pool's creator fee, in the table appended after the pool records. All
+   zero means no creator: that is what a freshly appended table holds. */
+struct __attribute__(( packed )) pool_ext {
+  uchar       has_creator;
+  tn_pubkey_t creator;
+  ushort      creator_bps;   /* charged now */
+  ushort      max_bps;       /* set once, at creation or opt-in; never raised */
+  ulong       accrued_a;     /* owed to the creator, sitting in vault_a */
+  ulong       accrued_b;     /* and in vault_b */
+};
+typedef struct pool_ext pool_ext_t;
+
 #define HDR_SZ  (sizeof( swap_hdr_t ))
 #define POOL_SZ (sizeof( pool_rec_t ))
+#define EXT_SZ  (sizeof( pool_ext_t ))
 
 FD_STATIC_ASSERT( HDR_SZ  == 37UL,  swap_hdr_size );
 FD_STATIC_ASSERT( POOL_SZ == 179UL, pool_rec_size );
+FD_STATIC_ASSERT( EXT_SZ  == 53UL,  pool_ext_size );
 
-static inline ulong
-registry_capacity( ulong data_sz ) {
+/* "TSCRFEE1", marking the start of the creator fee table. */
+#define EXT_MAGIC  (0x3145454652435354UL)
+#define EXT_HDR_SZ (8UL)
+
+/* The registry is   header | slots x pool record | [ magic | slots x pool_ext ].
+ *
+ * Without the table, slots is (size - header) / 179, which is what INIT made
+ * and how every registry was read before. With it, the size alone is not
+ * proof, since a size can fit both shapes; the magic at the exact offset the
+ * second shape implies is. So: try the extended shape, believe it only if the
+ * magic is where it should be, and fall back to the plain one. */
+static ulong
+registry_layout( ulong data_sz, uchar const * base, pool_ext_t ** ext ) {
+  *ext = (pool_ext_t *)0;
   if( data_sz < HDR_SZ ) return 0UL;
-  return ( data_sz - HDR_SZ ) / POOL_SZ;
+  ulong body = data_sz - HDR_SZ;
+  if( body > EXT_HDR_SZ && ( body - EXT_HDR_SZ ) % ( POOL_SZ + EXT_SZ ) == 0UL ) {
+    ulong s = ( body - EXT_HDR_SZ ) / ( POOL_SZ + EXT_SZ );
+    uchar const * m = base + HDR_SZ + s * POOL_SZ;
+    if( s > 0UL && TSDK_LOAD( ulong, m ) == EXT_MAGIC ) {
+      *ext = (pool_ext_t *)( m + EXT_HDR_SZ );
+      return s;
+    }
+  }
+  return body / POOL_SZ;
 }
 
 /* ------------------------------------------------------------- arithmetic */
@@ -243,26 +354,57 @@ vault_balance( ushort idx ) {
   return v;
 }
 
-static pool_rec_t *
-open_registry( ushort reg_idx, ushort pool_id ) {
+/* The registry, writable, with its shape worked out. */
+static uchar *
+open_registry_raw( ushort reg_idx, ulong * slots, pool_ext_t ** ext ) {
   if( !tsdk_is_account_idx_valid( reg_idx ) ) tsdk_revert( ERR_BAD_IDX );
   if( !tsdk_account_exists( reg_idx ) )       tsdk_revert( ERR_NOT_READY );
   if( !tsdk_is_account_owned_by_current_program( reg_idx ) ) tsdk_revert( ERR_NOT_OURS );
-
-  tsdk_account_meta_t const * meta = tsdk_get_account_meta( reg_idx );
-  ulong cap = registry_capacity( (ulong)meta->data_sz );
-  if( cap == 0UL )                tsdk_revert( ERR_NOT_READY );
-  if( (ulong)pool_id >= cap )     tsdk_revert( ERR_POOL_RANGE );
 
   if( tsys_set_account_data_writable( reg_idx ) != TSDK_SUCCESS ) {
     tsdk_revert( ERR_WRITE_DENIED );
   }
 
   uchar * base = (uchar *)tsdk_get_account_data_ptr( reg_idx );
+  ulong data_sz = (ulong)tsdk_get_account_meta( reg_idx )->data_sz;
+  if( data_sz < HDR_SZ ) tsdk_revert( ERR_NOT_READY );
   swap_hdr_t const * hdr = (swap_hdr_t const *)base;
   if( hdr->version != SWAP_VERSION ) tsdk_revert( ERR_NOT_READY );
 
+  *slots = registry_layout( data_sz, base, ext );
+  if( *slots == 0UL ) tsdk_revert( ERR_NOT_READY );
+  return base;
+}
+
+/* One pool's record, and its creator fee entry when the table exists. */
+static pool_rec_t *
+open_pool( ushort reg_idx, ushort pool_id, pool_ext_t ** ext_out ) {
+  ulong slots = 0UL;
+  pool_ext_t * ext = (pool_ext_t *)0;
+  uchar * base = open_registry_raw( reg_idx, &slots, &ext );
+  if( (ulong)pool_id >= slots ) tsdk_revert( ERR_POOL_RANGE );
+  if( ext_out ) *ext_out = ext ? ext + pool_id : (pool_ext_t *)0;
   return (pool_rec_t *)( base + HDR_SZ + (ulong)pool_id * POOL_SZ );
+}
+
+static pool_rec_t *
+open_registry( ushort reg_idx, ushort pool_id ) {
+  return open_pool( reg_idx, pool_id, (pool_ext_t **)0 );
+}
+
+/* What is owed to the creator on each side: zero with no entry. */
+static ulong owed_a( pool_ext_t const * e ) { return e ? e->accrued_a : 0UL; }
+static ulong owed_b( pool_ext_t const * e ) { return e ? e->accrued_b : 0UL; }
+static ulong creator_bps_of( pool_ext_t const * e ) { return e && e->has_creator ? (ulong)e->creator_bps : 0UL; }
+
+/* A vault's balance as liquidity: what it holds less what the creator is
+   owed from it. A vault holding less than is owed means the books are wrong,
+   and nothing should trade against books that are wrong. */
+static ulong
+reserve( ushort vault_idx, ulong owed ) {
+  ulong held = vault_balance( vault_idx );
+  if( held < owed ) tsdk_revert( ERR_EMPTY_POOL );
+  return held - owed;
 }
 
 /* ------------------------------------------------------------------- INIT */
@@ -373,7 +515,8 @@ require_unshared( ushort reg_idx, ushort pool_id,
   if( memcmp( vault_a->key, vault_b->key, 32UL ) == 0 ) tsdk_revert( ERR_SHARED );
 
   uchar const * base = (uchar const *)tsdk_get_account_data_ptr( reg_idx );
-  ulong cap = registry_capacity( (ulong)tsdk_get_account_meta( reg_idx )->data_sz );
+  pool_ext_t * unused_ext;
+  ulong cap = registry_layout( (ulong)tsdk_get_account_meta( reg_idx )->data_sz, base, &unused_ext );
   tn_pubkey_t const * mine[ 3 ] = { vault_a, vault_b, lp_mint };
 
   for( ulong i=0UL; i<cap; i++ ) {
@@ -405,8 +548,12 @@ create_checked( struct create_args const * a ) {
   require_vault( a->vault_b_idx, mint_b );
   require_lp_mint( a->lp_mint_idx );
 
-  pool_rec_t * pool = open_registry( a->reg_idx, a->pool_id );
+  pool_ext_t * ext = (pool_ext_t *)0;
+  pool_rec_t * pool = open_pool( a->reg_idx, a->pool_id, &ext );
   if( pool->in_use ) tsdk_revert( ERR_POOL_EXISTS );
+  /* A slot never used has a zero entry already; zero it anyway, so a new
+     pool can never inherit a creator or a balance from anything. */
+  if( ext ) memset( ext, 0, EXT_SZ );
 
   require_unshared( a->reg_idx, a->pool_id,
                     account_addr( a->vault_a_idx ), account_addr( a->vault_b_idx ),
@@ -449,21 +596,218 @@ do_create( uchar const * data, ulong data_sz ) {
    Anyone can call this, not only thrupad. That is harmless: the vaults must be
    fresh (require_unshared) and hold only what the caller put in, so the most a
    stranger can do is give their own deposit away to a pool nobody can drain. */
+/* The longer CREATE_SEEDED: the 17-byte form, then who the pool's creator is
+   and their fee. The short form, which thrupad sent before creator fees, still
+   works and makes a pool with no creator. */
+struct __attribute__(( packed )) create_creator_args {
+  struct create_args base;
+  tn_pubkey_t        creator;
+  ushort             creator_bps;
+};
+
+static void ensure_ext( ushort reg_idx );
+
 static void
 do_create_seeded( uchar const * data, ulong data_sz ) {
   if( data_sz < sizeof( struct create_args ) ) tsdk_revert( ERR_BAD_INSTR );
-  struct create_args a;
-  memcpy( &a, data, sizeof( a ) );
+  struct create_creator_args a;
+  memset( &a, 0, sizeof( a ) );
+  int with_creator = data_sz >= sizeof( struct create_creator_args );
+  memcpy( &a, data, with_creator ? sizeof( a ) : sizeof( struct create_args ) );
 
-  pool_rec_t * pool = create_checked( &a );
+  /* The table first: resizing the registry moves its data, so it has to
+     happen before anything below holds a pointer into it. */
+  if( with_creator ) ensure_ext( a.base.reg_idx );
 
-  ulong res_a = vault_balance( a.vault_a_idx );
-  ulong res_b = vault_balance( a.vault_b_idx );
+  pool_rec_t * pool = create_checked( &a.base );
+
+  ulong res_a = vault_balance( a.base.vault_a_idx );
+  ulong res_b = vault_balance( a.base.vault_b_idx );
   if( res_a == 0UL || res_b == 0UL ) tsdk_revert( ERR_EMPTY_POOL );
 
   ulong seed_lp = isqrt128( (uint128)res_a * (uint128)res_b );
   if( seed_lp <= MIN_LIQUIDITY ) tsdk_revert( ERR_DUST );
   pool->lp_supply = seed_lp;
+
+  if( with_creator && a.creator_bps > 0U ) {
+    if( (ulong)pool->fee_bps + (ulong)a.creator_bps > TOTAL_FEE_BPS_MAX ) tsdk_revert( ERR_ABOVE_CAP );
+    pool_ext_t * ext = (pool_ext_t *)0;
+    open_pool( a.base.reg_idx, a.base.pool_id, &ext );
+    if( !ext ) tsdk_revert( ERR_NO_EXT );
+    ext->has_creator = 1U;
+    memcpy( ext->creator.key, a.creator.key, 32UL );
+    ext->creator_bps = a.creator_bps;
+    ext->max_bps     = a.creator_bps;
+  }
+}
+
+/* ---------------------------------------------------------- creator fees */
+
+/* Append the creator fee table if it is not there. The registry must be
+   exactly the plain shape, header plus whole pool records; anything else is a
+   registry this code does not understand, and growing it would be a guess. */
+static void
+ensure_ext( ushort reg_idx ) {
+  ulong slots = 0UL;
+  pool_ext_t * ext = (pool_ext_t *)0;
+  open_registry_raw( reg_idx, &slots, &ext );
+  if( ext ) return;
+
+  ulong data_sz = (ulong)tsdk_get_account_meta( reg_idx )->data_sz;
+  ulong plain   = HDR_SZ + slots * POOL_SZ;
+  if( data_sz != plain ) tsdk_revert( ERR_NOT_READY );
+
+  ulong want = plain + EXT_HDR_SZ + slots * EXT_SZ;
+  ulong rc = tsys_account_resize( reg_idx, want );
+  if( rc != TSDK_SUCCESS ) tsdk_revert( 0x8000UL | ( rc & 0xFFUL ) );
+
+  uchar * base = (uchar *)tsdk_get_account_data_ptr( reg_idx );
+  memset( base + plain, 0, want - plain );
+  ulong magic = EXT_MAGIC;
+  memcpy( base + plain, &magic, sizeof( magic ) );
+}
+
+struct __attribute__(( packed )) extend_args {
+  uchar  op;
+  ushort reg_idx;
+};
+
+static void
+do_extend( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct extend_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct extend_args a;
+  memcpy( &a, data, sizeof( a ) );
+  ensure_ext( a.reg_idx );
+}
+
+/* The pool's creator must be the fee payer, which is the one signature a Thru
+   transaction carries. */
+static pool_ext_t *
+creator_entry( ushort reg_idx, ushort pool_id ) {
+  pool_ext_t * ext = (pool_ext_t *)0;
+  pool_rec_t * pool = open_pool( reg_idx, pool_id, &ext );
+  if( !pool->in_use ) tsdk_revert( ERR_NOT_READY );
+  if( !ext )          tsdk_revert( ERR_NO_EXT );
+  if( !ext->has_creator ) tsdk_revert( ERR_NOT_CREATOR );
+  if( memcmp( ext->creator.key, account_addr( 0 )->key, 32UL ) != 0 ) tsdk_revert( ERR_NOT_CREATOR );
+  return ext;
+}
+
+struct __attribute__(( packed )) set_fee_args {
+  uchar  op;
+  ushort reg_idx;
+  ushort pool_id;
+  ushort creator_bps;
+};
+
+static void
+do_set_creator_fee( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct set_fee_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct set_fee_args a;
+  memcpy( &a, data, sizeof( a ) );
+  pool_ext_t * ext = creator_entry( a.reg_idx, a.pool_id );
+  /* max_bps is written once and nothing here changes it: lowering to 0 and
+     coming back up again is allowed, going past where it started is not. */
+  if( a.creator_bps > ext->max_bps ) tsdk_revert( ERR_ABOVE_CAP );
+  ext->creator_bps = a.creator_bps;
+}
+
+struct __attribute__(( packed )) claim_args {
+  uchar  op;
+  ushort token_prog_idx;
+  ushort reg_idx;
+  ushort pool_id;
+  ushort vault_a_idx;
+  ushort vault_b_idx;
+  ushort dest_a_idx;
+  ushort dest_b_idx;
+};
+
+static void
+do_claim_creator_fees( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct claim_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct claim_args a;
+  memcpy( &a, data, sizeof( a ) );
+  if( !tn_token_is_program( a.token_prog_idx ) ) tsdk_revert( ERR_TOKEN_PROG );
+
+  pool_ext_t * ext = creator_entry( a.reg_idx, a.pool_id );
+  pool_rec_t const * pool = open_registry( a.reg_idx, a.pool_id );
+  require_addr( a.vault_a_idx, &pool->vault_a, ERR_WRONG_ACCOUNT );
+  require_addr( a.vault_b_idx, &pool->vault_b, ERR_WRONG_ACCOUNT );
+
+  ulong out_a = ext->accrued_a;
+  ulong out_b = ext->accrued_b;
+  if( out_a == 0UL && out_b == 0UL ) tsdk_revert( ERR_NO_FEES );
+  if( vault_balance( a.vault_a_idx ) < out_a || vault_balance( a.vault_b_idx ) < out_b ) tsdk_revert( ERR_EMPTY_POOL );
+
+  /* Zero the books before paying. A failed transfer reverts all of it, and in
+     between there is no moment where the fees count as both paid and owed. */
+  ext->accrued_a = 0UL;
+  ext->accrued_b = 0UL;
+
+  /* The destinations are the creator's to choose: they sign this. The token
+     program checks each one holds the vault's mint. */
+  if( out_a ) TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.vault_a_idx, a.dest_a_idx, out_a, (tsdk_invoke_auth_t const *)0 ) );
+  if( out_b ) TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.vault_b_idx, a.dest_b_idx, out_b, (tsdk_invoke_auth_t const *)0 ) );
+}
+
+/* OPT_IN_CREATOR_FEE, for pools that graduated before creator fees existed:
+ * the launch's creator gives the pool a creator fee, once.
+ *
+ * Who counts as the creator is read from thrupad's own record, not taken from
+ * the caller: the registry must be thrupad's (pinned above), the launch must
+ * be pooled into exactly this pool id, the pool's mints must be the launch's
+ * token and quote, and the fee payer must be the creator thrupad recorded.
+ * The fee can be no higher than the launch's curve fee, nor take the pool past
+ * 1% in all. After this the entry behaves exactly as one set at creation. */
+struct __attribute__(( packed )) opt_in_args {
+  uchar  op;
+  ushort reg_idx;
+  ushort pool_id;
+  ushort pad_reg_idx;
+  ushort launch_id;
+  ushort creator_bps;
+};
+
+static void
+do_opt_in_creator_fee( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct opt_in_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct opt_in_args a;
+  memcpy( &a, data, sizeof( a ) );
+
+  ensure_ext( a.reg_idx );
+  pool_ext_t * ext = (pool_ext_t *)0;
+  pool_rec_t const * pool = open_pool( a.reg_idx, a.pool_id, &ext );
+  if( !pool->in_use ) tsdk_revert( ERR_NOT_READY );
+  if( !ext )          tsdk_revert( ERR_NO_EXT );
+  if( ext->has_creator ) tsdk_revert( ERR_ALREADY_SET );
+
+  /* The launch, from thrupad's registry. */
+  if( !tsdk_is_account_idx_valid( a.pad_reg_idx ) || !tsdk_account_exists( a.pad_reg_idx ) ) tsdk_revert( ERR_NO_ACCOUNT );
+  tsdk_account_meta_t const * pm = tsdk_get_account_meta( a.pad_reg_idx );
+  if( memcmp( pm->owner.key, thrupad_program_addr, 32UL ) != 0 ) tsdk_revert( ERR_NOT_LAUNCH );
+  uchar const * pb = (uchar const *)tsdk_get_account_data_ptr( a.pad_reg_idx );
+  ulong off = PAD_HDR_SZ + (ulong)a.launch_id * PAD_LAUNCH_SZ;
+  if( (ulong)pm->data_sz < off + PAD_LAUNCH_SZ || pb[ 0 ] != PAD_VERSION ) tsdk_revert( ERR_NOT_LAUNCH );
+  uchar const * l = pb + off;
+  if( l[ 0 ] != PAD_STATE_POOLED )                              tsdk_revert( ERR_NOT_LAUNCH );
+  if( TSDK_LOAD( ulong, l + PAD_L_POOL_ID ) != (ulong)a.pool_id ) tsdk_revert( ERR_NOT_LAUNCH );
+  int mints_match =
+    ( !memcmp( pool->mint_a.key, l + PAD_L_QUOTE, 32UL ) && !memcmp( pool->mint_b.key, l + PAD_L_MINT,  32UL ) ) ||
+    ( !memcmp( pool->mint_a.key, l + PAD_L_MINT,  32UL ) && !memcmp( pool->mint_b.key, l + PAD_L_QUOTE, 32UL ) );
+  if( !mints_match ) tsdk_revert( ERR_NOT_LAUNCH );
+  if( memcmp( l + PAD_L_CREATOR, account_addr( 0 )->key, 32UL ) != 0 ) tsdk_revert( ERR_NOT_CREATOR );
+
+  /* Zero here would use up the one opt-in on nothing, for good. */
+  if( a.creator_bps == 0U ) tsdk_revert( ERR_ZERO_AMOUNT );
+  ulong launch_bps = (ulong)TSDK_LOAD( ushort, l + PAD_L_FEE_BPS );
+  if( (ulong)a.creator_bps > launch_bps ) tsdk_revert( ERR_ABOVE_CAP );
+  if( (ulong)pool->fee_bps + (ulong)a.creator_bps > TOTAL_FEE_BPS_MAX ) tsdk_revert( ERR_ABOVE_CAP );
+
+  ext->has_creator = 1U;
+  memcpy( ext->creator.key, l + PAD_L_CREATOR, 32UL );
+  ext->creator_bps = a.creator_bps;
+  ext->max_bps     = a.creator_bps;
 }
 
 /* ------------------------------------------------------- liquidity + swap */
@@ -487,8 +831,8 @@ struct __attribute__(( packed )) flow_args {
 };
 
 static pool_rec_t *
-load_and_check( struct flow_args const * a ) {
-  pool_rec_t * pool = open_registry( a->reg_idx, a->pool_id );
+load_and_check( struct flow_args const * a, pool_ext_t ** ext ) {
+  pool_rec_t * pool = open_pool( a->reg_idx, a->pool_id, ext );
   if( !pool->in_use ) tsdk_revert( ERR_NOT_READY );
 
   /* The caller told us where the vaults are. The pool record says where they
@@ -511,10 +855,12 @@ do_add( uchar const * data, ulong data_sz ) {
   ulong amount_b = a.amount_1;
   if( amount_a == 0UL || amount_b == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
 
-  pool_rec_t * pool = load_and_check( &a );
+  pool_ext_t * ext = (pool_ext_t *)0;
+  pool_rec_t * pool = load_and_check( &a, &ext );
 
-  ulong res_a = vault_balance( a.vault_a_idx );
-  ulong res_b = vault_balance( a.vault_b_idx );
+  /* Liquidity is what the vaults hold less what the creator is owed. */
+  ulong res_a = reserve( a.vault_a_idx, owed_a( ext ) );
+  ulong res_b = reserve( a.vault_b_idx, owed_b( ext ) );
 
   ulong minted;
   if( pool->lp_supply == 0UL ) {
@@ -556,11 +902,13 @@ do_remove( uchar const * data, ulong data_sz ) {
   ulong lp_amount = a.amount_0;
   if( lp_amount == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
 
-  pool_rec_t * pool = load_and_check( &a );
+  pool_ext_t * ext = (pool_ext_t *)0;
+  pool_rec_t * pool = load_and_check( &a, &ext );
   if( pool->lp_supply == 0UL || lp_amount > pool->lp_supply ) tsdk_revert( ERR_LP_SUPPLY );
 
-  ulong res_a = vault_balance( a.vault_a_idx );
-  ulong res_b = vault_balance( a.vault_b_idx );
+  /* A provider's share is of the liquidity, never of the creator's fees. */
+  ulong res_a = reserve( a.vault_a_idx, owed_a( ext ) );
+  ulong res_b = reserve( a.vault_b_idx, owed_b( ext ) );
 
   ulong out_a = mul_div( lp_amount, res_a, pool->lp_supply );
   ulong out_b = mul_div( lp_amount, res_b, pool->lp_supply );
@@ -596,7 +944,8 @@ do_swap( uchar const * data, ulong data_sz ) {
   ulong min_out   = a.amount_1;
   if( amount_in == 0UL ) tsdk_revert( ERR_ZERO_AMOUNT );
 
-  pool_rec_t * pool = open_registry( a.reg_idx, a.pool_id );
+  pool_ext_t * ext = (pool_ext_t *)0;
+  pool_rec_t * pool = open_pool( a.reg_idx, a.pool_id, &ext );
   if( !pool->in_use ) tsdk_revert( ERR_NOT_READY );
 
   /* Both vaults must belong to this pool, in either order. Accepting either
@@ -614,20 +963,42 @@ do_swap( uchar const * data, ulong data_sz ) {
     tsdk_revert( ERR_WRONG_ACCOUNT );
   }
 
-  ulong res_in  = vault_balance( a.vault_a_idx );
-  ulong res_out = vault_balance( a.vault_b_idx );
+  /* Reserves are what the vaults hold less what the creator is owed, on each
+     side. Owed fees sit in the vaults but are not the pool's to trade. */
+  ulong owed_in  = in_is_a ? owed_a( ext ) : owed_b( ext );
+  ulong owed_out = in_is_a ? owed_b( ext ) : owed_a( ext );
+  ulong res_in   = reserve( a.vault_a_idx, owed_in );
+  ulong res_out  = reserve( a.vault_b_idx, owed_out );
   if( res_in == 0UL || res_out == 0UL ) tsdk_revert( ERR_EMPTY_POOL );
 
-  /* x * y = k, with the fee taken off the input before it touches the curve,
-     so the fee stays in the pool and accrues to liquidity providers. */
-  ulong fee_bps = (ulong)pool->fee_bps;
-  ulong in_less_fee = mul_div( amount_in, BPS_DENOM - fee_bps, BPS_DENOM );
+  /* x * y = k, with the whole fee taken off the input before it touches the
+     curve. The LP part stays in the pool for liquidity providers; the creator
+     part is booked to the creator. The total is rounded UP (by flooring what
+     reaches the curve) and the creator part DOWN, so every rounding unit goes
+     to the pool, never to the swapper, and the creator part can never exceed
+     the fee actually withheld. */
+  ulong lp_bps      = (ulong)pool->fee_bps;
+  ulong creator_bps = creator_bps_of( ext );
+  if( lp_bps + creator_bps > TOTAL_FEE_BPS_MAX && creator_bps > 0UL ) tsdk_revert( ERR_ABOVE_CAP );
+  ulong in_less_fee = mul_div( amount_in, BPS_DENOM - lp_bps - creator_bps, BPS_DENOM );
   if( in_less_fee == 0UL ) tsdk_revert( ERR_DUST );
+  ulong creator_cut = mul_div( amount_in, creator_bps, BPS_DENOM );
 
+  if( res_in > 0xFFFFFFFFFFFFFFFFUL - in_less_fee ) tsdk_revert( ERR_OVERFLOW );
   ulong amount_out = mul_div( res_out, in_less_fee, res_in + in_less_fee );
   if( amount_out == 0UL )      tsdk_revert( ERR_DUST );
   if( amount_out >= res_out )  tsdk_revert( ERR_EMPTY_POOL );
   if( amount_out < min_out )   tsdk_revert( ERR_SLIPPAGE );
+
+  if( creator_cut ) {
+    if( in_is_a ) {
+      if( ext->accrued_a > 0xFFFFFFFFFFFFFFFFUL - creator_cut ) tsdk_revert( ERR_OVERFLOW );
+      ext->accrued_a += creator_cut;
+    } else {
+      if( ext->accrued_b > 0xFFFFFFFFFFFFFFFFUL - creator_cut ) tsdk_revert( ERR_OVERFLOW );
+      ext->accrued_b += creator_cut;
+    }
+  }
 
   TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.user_a_idx, a.vault_a_idx, amount_in,  (tsdk_invoke_auth_t const *)0 ) );
   TOKEN_CALL( tn_token_transfer( a.token_prog_idx, a.vault_b_idx, a.user_b_idx, amount_out, (tsdk_invoke_auth_t const *)0 ) );
@@ -650,7 +1021,11 @@ start( void const * instruction_data,
     case OP_ADD:    do_add   ( data, instruction_data_sz ); break;
     case OP_REMOVE: do_remove( data, instruction_data_sz ); break;
     case OP_SWAP:   do_swap  ( data, instruction_data_sz ); break;
-    case OP_CREATE_SEEDED: do_create_seeded( data, instruction_data_sz ); break;
+    case OP_CREATE_SEEDED:      do_create_seeded     ( data, instruction_data_sz ); break;
+    case OP_SET_CREATOR_FEE:    do_set_creator_fee   ( data, instruction_data_sz ); break;
+    case OP_CLAIM_CREATOR_FEES: do_claim_creator_fees( data, instruction_data_sz ); break;
+    case OP_EXTEND:             do_extend            ( data, instruction_data_sz ); break;
+    case OP_OPT_IN_CREATOR_FEE: do_opt_in_creator_fee( data, instruction_data_sz ); break;
     default:        tsdk_revert( ERR_BAD_OPCODE );
   }
 

@@ -65,6 +65,8 @@
  *            and has thruswap record that pool, all in one instruction. If any
  *            part fails the whole thing reverts, so a launch is never left
  *            frozen without a pool. Anyone may call it. See do_graduate.
+ *            The pool's creator is the launch's creator, and its creator fee
+ *            is the launch's curve fee capped to fit under thruswap's 1%.
  *
  * Every u16 index is a position in the transaction's account list, which Thru
  * sorts ascending by raw public key bytes. Indices are passed in and validated
@@ -638,20 +640,29 @@ struct __attribute__(( packed )) grad_args {
   ulong  min_seed_quote;   /* the caller's slippage bound, from its own quote */
 };
 
-/* thruswap's CREATE_SEEDED, byte for byte as thruswap.c declares create_args.
+/* thruswap's CREATE_SEEDED in its longer form, byte for byte as thruswap.c
+   declares create_creator_args: the pool, then its creator and creator fee.
    Indices are into this same transaction's account list. */
 struct __attribute__(( packed )) swap_create_ix {
-  uchar  op;
-  ushort reg_idx;
-  ushort pool_id;
-  ushort mint_a_idx;
-  ushort mint_b_idx;
-  ushort vault_a_idx;
-  ushort vault_b_idx;
-  ushort lp_mint_idx;
-  ushort fee_bps;
+  uchar       op;
+  ushort      reg_idx;
+  ushort      pool_id;
+  ushort      mint_a_idx;
+  ushort      mint_b_idx;
+  ushort      vault_a_idx;
+  ushort      vault_b_idx;
+  ushort      lp_mint_idx;
+  ushort      fee_bps;
+  tn_pubkey_t creator;
+  ushort      creator_bps;
 };
-FD_STATIC_ASSERT( sizeof( struct swap_create_ix ) == 17UL, swap_create_ix_size );
+FD_STATIC_ASSERT( sizeof( struct swap_create_ix ) == 51UL, swap_create_ix_size );
+
+/* The pool's LP fee (thruswap's default, which fee_bps 0 asks for) and the
+   ceiling on LP plus creator fee together. A launch's curve fee can be up to
+   10%; in its pool the creator keeps whatever of it fits under 1%. */
+#define SWAP_LP_FEE_BPS    (30U)
+#define SWAP_TOTAL_FEE_MAX (100U)
 
 /* A pool vault: a token account of the right mint, owned by thruswap, empty.
    thruswap checks the first two again; empty is ours to insist on, because a
@@ -778,6 +789,9 @@ do_graduate( uchar const * data, ulong data_sz ) {
   ix.vault_b_idx = a.pool_token_vault_idx;
   ix.lp_mint_idx = a.lp_mint_idx;
   ix.fee_bps     = 0U;   /* thruswap's default, 30 basis points */
+  memcpy( ix.creator.key, rec->creator.key, 32UL );
+  ix.creator_bps = rec->fee_bps < (ushort)( SWAP_TOTAL_FEE_MAX - SWAP_LP_FEE_BPS )
+                 ? rec->fee_bps : (ushort)( SWAP_TOTAL_FEE_MAX - SWAP_LP_FEE_BPS );
 
   ulong callee_err = 0UL;
   ulong rc = tsys_invoke( &ix, sizeof( ix ), a.swap_prog_idx, (tsdk_invoke_auth_t const *)0, &callee_err );
