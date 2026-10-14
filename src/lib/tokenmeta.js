@@ -131,6 +131,23 @@ export async function tokenMetaFor(mint, opts) {
   return all[mint] ?? null
 }
 
+/**
+ * What a token's icon shows, decided in one place: its picture when it has
+ * one, otherwise up to two letters of its symbol, otherwise nothing.
+ *
+ * `meta` is what the caller has for the token, if anything; `all` is the
+ * shared map from allTokenMeta(), consulted when the caller passed no meta
+ * at all (undefined, as opposed to null for "has none"). That is what lets a
+ * Swap row show the same picture as the ThruPad list without every caller
+ * having to fetch metadata itself.
+ */
+export function iconSource({ meta, mint, symbol, all }) {
+  const m = meta !== undefined ? meta : (mint && all ? all[mint] : null)
+  const image = (m?.image ?? '').trim()
+  if (image) return { image }
+  return { letters: (symbol || '').replace(/^\$/, '').slice(0, 2).toUpperCase() }
+}
+
 /** Force the next read to go out again, after a write. */
 export function forgetTokenMeta() { cached = null; cachedAt = 0 }
 

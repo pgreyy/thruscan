@@ -21,6 +21,7 @@ import { useUnlockGate, isDismissal } from './Unlock.jsx'
 import { useConfirm } from './Confirm.jsx'
 import {
   saveTokenMeta, tokenMetaFor, cleanMeta, metaProblem, xUrl, telegramUrl, EMPTY_META,
+  allTokenMeta, iconSource,
 } from '../lib/tokenmeta.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 
@@ -33,9 +34,37 @@ import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imag
  * WTHRU an amber circle with "WT", tUSD an ink circle with an amber "tU".
  * Radius 6 up to 40px, 8 at 48, 10 at 64.
  */
+/* Every token's picture, for icons whose caller passed no metadata (the Swap
+   pickers and the Liquidity panel). One read per page, shared by every icon
+   on it: allTokenMeta() caches the request, and this tells each icon when it
+   lands. */
+let sharedMeta = null
+let sharedLoading = false
+const sharedSubs = new Set()
+
+function useSharedMeta(wanted) {
+  const [all, setAll] = useState(sharedMeta)
+  useEffect(() => {
+    if (!wanted) return undefined
+    sharedSubs.add(setAll)
+    if (sharedMeta) setAll(sharedMeta)
+    else if (!sharedLoading) {
+      sharedLoading = true
+      allTokenMeta()
+        .then((m) => { sharedMeta = m; sharedSubs.forEach((fn) => fn(m)) })
+        .finally(() => { sharedLoading = false })
+    }
+    return () => { sharedSubs.delete(setAll) }
+  }, [wanted])
+  return all
+}
+
 export function TokenIcon({ meta, symbol, mint, size = 32, className = '' }) {
+  // Only an icon handed no metadata at all looks it up; null means "has none".
+  const all = useSharedMeta(meta === undefined && !!mint && mint !== 'THRU')
+  const src = iconSource({ meta, mint, symbol, all })
   const [broken, setBroken] = useState(false)
-  useEffect(() => { setBroken(false) }, [meta?.image])
+  useEffect(() => { setBroken(false) }, [src.image])
 
   const radius = size >= 64 ? 10 : size >= 48 ? 8 : 6
   const font = size >= 64 ? 18 : size >= 48 ? 14 : size >= 40 ? 13 : size >= 28 ? 11 : 10
@@ -58,16 +87,16 @@ export function TokenIcon({ meta, symbol, mint, size = 32, className = '' }) {
     )
   }
 
-  if (meta?.image && !broken) {
+  if (src.image && !broken) {
     return (
       <span className={`tok-icon tok-img ${className}`} style={box}>
-        <img src={meta.image} alt="" onError={() => setBroken(true)} />
+        <img src={src.image} alt="" onError={() => setBroken(true)} />
       </span>
     )
   }
   // With no symbol yet there is nothing to letter, so it stays a quiet
   // placeholder rather than a box with a question mark in it.
-  const letters = (symbol || '').replace(/^\$/, '').slice(0, 2).toUpperCase()
+  const letters = src.letters ?? iconSource({ meta: null, symbol }).letters
   return (
     <span className={`tok-icon${letters ? ' tok-letter' : ' tok-blank'} ${className}`} style={box} aria-hidden="true">
       {letters || <span className="tok-blank-in" />}
