@@ -68,6 +68,7 @@ import { TxDialog } from '../components/TxDialog.jsx'
 import { FeeSharingPanel } from '../components/FeeSharing.jsx'
 import { FEE_SHARING } from '../lib/features.js'
 import { useTxFlow, NETWORK_ROW } from '../lib/txflow.js'
+import { launchAgeMs, loadLaunchTime } from '../lib/launchtime.js'
 import { useTab } from '../lib/useTab.js'
 import './launch.css'
 
@@ -2167,7 +2168,9 @@ export function LaunchDetail({ id }) {
   const progress = launch.graduated ? 1 : graduationProgress(raised, threshold)
   const nowPrice = Number(launch.vt) > 0 ? (Number(launch.vq) / 10 ** quoteDecimals) / (Number(launch.vt) / 10 ** DECIMALS) : null
   const supply = launch.vt + launch.tokensSold
-  const ageMs = slot !== null && blockMs ? Math.max(0, Number(slot - BigInt(launch.startSlot))) * blockMs : null
+  // The same launch time as the ThruPad list; see launchtime.js.
+  loadLaunchTime(launch.tokenVault)
+  const ageMs = launchAgeMs(launch, { overview: slot !== null && blockMs ? { finalized: slot, blockTimeMs: blockMs } : null, now })
 
   // The change: against the last trade before 24 hours ago when the history
   // read reaches that far, otherwise against the oldest trade read.

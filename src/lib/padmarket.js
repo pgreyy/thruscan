@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { decodePadRegistry, graduationProgress } from './pad.js'
 import { THRUPAD_REGISTRY, TUSD_MINT, WTHRU_MINT } from './addresses.js'
 import { useChainData } from '../pages/Dex.jsx'
+import { launchAgeMs, loadLaunchTime, onLaunchTime } from './launchtime.js'
 
 export const TOKEN_DECIMALS = 6   // every launch mints at 6
 const QUOTE_DEFAULT = 6
@@ -95,6 +96,10 @@ export function usePadMarket(overview) {
   const { data, balances, tickers, decimals } = pad
   const launches = useMemo(() => data?.launches ?? [], [data])
   const cache = useTradeHistory(launches)
+  // Launch times, read once per launch from the chain; see launchtime.js.
+  const [, bumpTimes] = useState(0)
+  useEffect(() => onLaunchTime(() => bumpTimes((n) => n + 1)), [])
+  useEffect(() => { launches.forEach((l) => loadLaunchTime(l.tokenVault)) }, [launches])
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000)
@@ -108,9 +113,8 @@ export function usePadMarket(overview) {
     const supply = (Number(l.vt) + Number(l.tokensSold)) / 10 ** TOKEN_DECIMALS
     const held = balances?.[l.quoteVault] ?? 0n
     const raised = held > l.creatorFees ? held - l.creatorFees : 0n
-    const ageMs = overview?.finalized && overview?.blockTimeMs && l.startSlot
-      ? Math.max(0, Number(overview.finalized) - Number(l.startSlot)) * overview.blockTimeMs
-      : null
+    // One launch time for every layout that shows this row.
+    const ageMs = launchAgeMs(l, { overview, now })
     return {
       ...l,
       symbol: l.symbol || `#${l.id}`,

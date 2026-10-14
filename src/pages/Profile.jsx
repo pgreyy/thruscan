@@ -54,6 +54,7 @@ import { THRUPAD_REGISTRY as PAD_REGISTRY, THRUSWAP_REGISTRY as SWAP_REGISTRY, W
 import { AVATAR_KEY, PFP_KEY, formatNftPfp, pfpForDomain, EMPTY_PFP, palsSnapshot } from '../lib/pfp.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 import { allTokenMeta } from '../lib/tokenmeta.js'
+import { launchAgeMs, loadLaunchTime } from '../lib/launchtime.js'
 import { toSvg } from '../lib/pals/art.js'
 import './profile.css'
 
@@ -543,9 +544,10 @@ export function ProfilePage() {
   /* Tokens launched by this wallet: the registry is the only record of that,
      so it is a filter over the launches ThruPad already read. */
   const launches = useMemo(() => {
-    const age = (l) => (overview?.finalized && overview?.blockTimeMs && l.startSlot
-      ? Math.max(0, Number(overview.finalized) - Number(l.startSlot)) * overview.blockTimeMs : null)
-    return allLaunches.filter((l) => l.creator === wallet.address).map((l) => ({ ...l, ageMs: age(l) }))
+    // The same launch time as the ThruPad list; see launchtime.js.
+    const mine = allLaunches.filter((l) => l.creator === wallet.address)
+    mine.forEach((l) => loadLaunchTime(l.tokenVault))
+    return mine.map((l) => ({ ...l, ageMs: launchAgeMs(l, { overview }) }))
   }, [allLaunches, wallet.address, overview])
   const scanning = !!PAD_REGISTRY && padLoading
   const created = new Set(launches.map((l) => l.mint))
