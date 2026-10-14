@@ -46,6 +46,7 @@
     "init WALL_ACCOUNT": "tsTeSDelZj9zdqIfY88BJNmeSTKurpRMN83_nWgoedcJvxKRBnMqMcpgPaQQi-chRdan6XLOMbdDfHxpk2nTCjCh8p",
     "init WORDLE_BOARD": "tsXpRm1nFzpclw7NUSiGqUQsz_mn8d0xpACQXc86NYbiOLMAbFfya66LrxicH0Lre_2ceE6ShGO8M3k_TdtDizACIv",
     "init G2048_BOARD": "tsX8ON-aCVkEbruCzdrOmsmcyPVn0OOyZZQ1KUceid4NLrCMp5yhRvMp2o76j3LYxITdOrSoVyegrYW2c3851NDiHV",
-    "init ID_REGISTRY": "ts8VdlWSkwPE_GPfiicMUNwIUv5fQRpCMWMAvtvKtNzZWhzUbkfGWueVXHME8f0jdS6JdpDEyzSs3WQ3NhYu1zDB68"
+    "init ID_REGISTRY": "ts8VdlWSkwPE_GPfiicMUNwIUv5fQRpCMWMAvtvKtNzZWhzUbkfGWueVXHME8f0jdS6JdpDEyzSs3WQ3NhYu1zDB68",
+    "extend THRUSWAP_REGISTRY": "tsyGBDkUv5ZYnmgewkGYUsjhFSeeutoqDv5lFNID8dUqQfoPwAZtG4Lzi0jjriFVvb4swpITHY8BUQuTzSehAjAh3e"
   }
 }

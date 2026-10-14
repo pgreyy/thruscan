@@ -66,8 +66,13 @@ export const OP_OPT_IN_CREATOR_FEE = 0x09
 export const EXT_MAGIC = 0x3145454652435354n   // "TSCRFEE1"
 export const EXT_HEADER_SIZE = 8
 export const EXT_SIZE = 53
-/** LP fee plus creator fee, together, never more than this. */
-export const TOTAL_FEE_BPS_MAX = 100
+/** LP fee plus creator fee, together, never more than this: 10%. */
+export const TOTAL_FEE_BPS_MAX = 1000
+/** The creator's part alone: 9%, the same as a launch's curve fee. */
+export const POOL_CREATOR_BPS_MAX = 900
+/** Every pool created from now on charges this LP fee: 1%. Older pools keep
+ *  the rate stored in their records. */
+export const LP_FEE_BPS = 100
 
 export const BPS_DENOM = 10000n
 

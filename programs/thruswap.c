@@ -55,8 +55,8 @@
  *           Burns LP tokens, returns a proportional share of both reserves.
  *
  *   SWAP    [0x04][...][amount_in u64][min_out u64]
- *           Trades one side for the other along the curve, after a 30 basis
- *           point fee that stays in the pool for liquidity providers.
+ *           Trades one side for the other along the curve, after the pool's
+ *           LP fee (stays in the pool) and creator fee (booked to the creator).
  *
  *   CREATE_SEEDED [0x05][same fields as CREATE]
  *           CREATE for vaults that are already funded, called by thrupad in the
@@ -69,8 +69,8 @@
  *           creator fee, which is how a graduating launch passes its own.
  *
  *   SET_CREATOR_FEE    [0x06][reg_idx u16][pool_id u16][creator_bps u16]
- *           The creator, as fee payer, changes the creator fee to anything
- *           from 0 up to the cap it was created with. Never above.
+ *           The creator, as fee payer, lowers the creator fee or turns it
+ *           off. Never up, not even back to where it started.
  *
  *   CLAIM_CREATOR_FEES [0x07][token_prog u16][reg_idx u16][pool_id u16]
  *                      [vault_a u16][vault_b u16][dest_a u16][dest_b u16]
@@ -90,8 +90,9 @@
  * ---------------------------------------------------------------------------
  * CREATOR FEES
  *
- * A swap's fee is the pool's LP fee plus its creator fee, together at most 1%,
- * both charged on the input. The LP part stays in the pool as before. The
+ * A swap's fee is the pool's LP fee plus its creator fee, both charged on the
+ * input: 1% LP for every pool made now (older pools keep their stored rate),
+ * up to 9% creator, at most 10% together. The LP part stays in the pool as before. The
  * creator part also lands in the input vault, but is booked to the creator:
  * every reserve this program prices against, adds against or pays out from is
  * the vault balance LESS what the creator is owed, so owed fees are never
@@ -131,8 +132,11 @@
 #define OP_EXTEND             (0x08)
 #define OP_OPT_IN_CREATOR_FEE (0x09)
 
-/* Every fee on a swap together: LP part plus creator part. */
-#define TOTAL_FEE_BPS_MAX (100U)
+/* Every fee on a swap together: LP part plus creator part, at most 10%. The
+   creator part alone is at most 9%, the same ceiling thrupad puts on a
+   launch's curve fee, so a launch's fee carries into its pool unchanged. */
+#define TOTAL_FEE_BPS_MAX   (1000U)
+#define CREATOR_BPS_MAX     (900U)
 
 /* thrupad, whose launch records OPT_IN_CREATOR_FEE reads to learn who a
    graduated pool's creator is. Pinned for the same reason thrupad pins this
@@ -161,11 +165,13 @@ static uchar const thrupad_program_addr[ 32 ] = THRUPAD_PROGRAM_ADDR;
 #define REG_ACC_IDX  ((ushort)2)   /* INIT declares exactly one account */
 #define POOLS_MAX    (256UL)
 
-/* 30 basis points, the rate Uniswap v2 settled on and the one liquidity
-   providers on every other chain already understand. It stays in the pool
-   rather than being paid out, so every swap thickens the reserves slightly. */
-#define FEE_BPS_DEFAULT (30U)
-#define FEE_BPS_MAX     (100U)
+/* The LP fee of every pool created from now on: 1%, set here and nowhere
+   else. CREATE's fee_bps field is still on the wire, so older callers keep
+   working, but its value is ignored. Pools made before this keep the fee
+   stored in their records (30 basis points on betanet), untouched. The fee
+   stays in the pool rather than being paid out, so every swap thickens the
+   reserves slightly. */
+#define LP_FEE_BPS (100U)
 #define BPS_DENOM       (10000UL)
 
 /* The smallest pool that can exist. Below this, rounding dominates the curve
@@ -536,7 +542,6 @@ require_unshared( ushort reg_idx, ushort pool_id,
    caller decides lp_supply: zero for CREATE, the burned seed for CREATE_SEEDED. */
 static pool_rec_t *
 create_checked( struct create_args const * a ) {
-  if( a->fee_bps > FEE_BPS_MAX ) tsdk_revert( ERR_FEE_RANGE );
 
   tn_pubkey_t const * mint_a = account_addr( a->mint_a_idx );
   tn_pubkey_t const * mint_b = account_addr( a->mint_b_idx );
@@ -562,7 +567,7 @@ create_checked( struct create_args const * a ) {
   pool_rec_t rec;
   memset( &rec, 0, sizeof( rec ) );
   rec.in_use  = 1U;
-  rec.fee_bps = a->fee_bps == 0U ? (ushort)FEE_BPS_DEFAULT : a->fee_bps;
+  rec.fee_bps = (ushort)LP_FEE_BPS;   /* never the caller's choice */
   memcpy( rec.mint_a.key,  mint_a->key,                         32UL );
   memcpy( rec.mint_b.key,  mint_b->key,                         32UL );
   memcpy( rec.vault_a.key, account_addr( a->vault_a_idx )->key, 32UL );
@@ -630,6 +635,7 @@ do_create_seeded( uchar const * data, ulong data_sz ) {
   pool->lp_supply = seed_lp;
 
   if( with_creator && a.creator_bps > 0U ) {
+    if( (ulong)a.creator_bps > CREATOR_BPS_MAX ) tsdk_revert( ERR_ABOVE_CAP );
     if( (ulong)pool->fee_bps + (ulong)a.creator_bps > TOTAL_FEE_BPS_MAX ) tsdk_revert( ERR_ABOVE_CAP );
     pool_ext_t * ext = (pool_ext_t *)0;
     open_pool( a.base.reg_idx, a.base.pool_id, &ext );
@@ -706,9 +712,10 @@ do_set_creator_fee( uchar const * data, ulong data_sz ) {
   struct set_fee_args a;
   memcpy( &a, data, sizeof( a ) );
   pool_ext_t * ext = creator_entry( a.reg_idx, a.pool_id );
-  /* max_bps is written once and nothing here changes it: lowering to 0 and
-     coming back up again is allowed, going past where it started is not. */
-  if( a.creator_bps > ext->max_bps ) tsdk_revert( ERR_ABOVE_CAP );
+  /* Down only. A creator can lower the fee or turn it off, and can never put
+     it back up, so what a buyer was shown is the most they will ever pay.
+     max_bps, the value it started at, is kept for the record. */
+  if( a.creator_bps > ext->creator_bps ) tsdk_revert( ERR_ABOVE_CAP );
   ext->creator_bps = a.creator_bps;
 }
 
@@ -801,7 +808,8 @@ do_opt_in_creator_fee( uchar const * data, ulong data_sz ) {
   /* Zero here would use up the one opt-in on nothing, for good. */
   if( a.creator_bps == 0U ) tsdk_revert( ERR_ZERO_AMOUNT );
   ulong launch_bps = (ulong)TSDK_LOAD( ushort, l + PAD_L_FEE_BPS );
-  if( (ulong)a.creator_bps > launch_bps ) tsdk_revert( ERR_ABOVE_CAP );
+  if( (ulong)a.creator_bps > launch_bps )      tsdk_revert( ERR_ABOVE_CAP );
+  if( (ulong)a.creator_bps > CREATOR_BPS_MAX ) tsdk_revert( ERR_ABOVE_CAP );
   if( (ulong)pool->fee_bps + (ulong)a.creator_bps > TOTAL_FEE_BPS_MAX ) tsdk_revert( ERR_ABOVE_CAP );
 
   ext->has_creator = 1U;

@@ -57,6 +57,7 @@ export const OP_BUY = 0x02
 export const OP_SELL = 0x03
 export const OP_CLAIM = 0x04
 export const OP_GRADUATE = 0x05
+export const OP_SET_FEE = 0x06
 
 export const STATE_EMPTY = 0
 export const STATE_LIVE = 1
@@ -68,7 +69,8 @@ export const STATE_POOLED = 3
 
 export const NAME_MAX = 32
 export const SYMBOL_MAX = 8
-export const CREATOR_BPS_MAX = 1000  // 10%, the same ceiling Pons uses
+// 9%: with a pool's 1% LP fee, at most 10% a swap after graduation.
+export const CREATOR_BPS_MAX = 900
 
 // The anti-snipe tax opens here and decays to nothing across this many slots.
 // It is paid to NOBODY: it stays in the vault backing the curve. Paying it to
@@ -336,7 +338,7 @@ export function buildLaunchInstruction({
 
   if (nameBytes.length === 0 || nameBytes.length > NAME_MAX) throw new PadDecodeError('name must be 1 to 32 bytes')
   if (symBytes.length === 0 || symBytes.length > SYMBOL_MAX) throw new PadDecodeError('symbol must be 1 to 8 bytes')
-  if (feeBps > CREATOR_BPS_MAX) throw new PadDecodeError('creator fee is capped at 10%')
+  if (feeBps > CREATOR_BPS_MAX) throw new PadDecodeError('creator fee is capped at 9%')
 
   // The mint's supply changes and the token vault receives, so both are written.
   // The quote vault is only validated, so it stays read-only.
@@ -393,7 +395,7 @@ export function launchStep({
   const symBytes = enc.encode(symbol.trim().toUpperCase())
   if (nameBytes.length === 0 || nameBytes.length > NAME_MAX) throw new PadDecodeError('name must be 1 to 32 bytes')
   if (symBytes.length === 0 || symBytes.length > SYMBOL_MAX) throw new PadDecodeError('symbol must be 1 to 8 bytes')
-  if (feeBps > CREATOR_BPS_MAX) throw new PadDecodeError('creator fee is capped at 10%')
+  if (feeBps > CREATOR_BPS_MAX) throw new PadDecodeError('creator fee is capped at 9%')
 
   return {
     program,
@@ -437,6 +439,17 @@ export function buildClaimInstruction({ registry, launchId, quoteVault, dest }) 
   w.u16(at(quoteVault))
   w.u16(at(dest))
   return { data: w.done(), readWrite, readOnly }
+}
+
+/** SET_FEE: the creator, as fee payer, lowers the curve's creator fee. The
+ *  program refuses anything above the current fee. */
+export function buildSetFeeInstruction({ registry, launchId, feeBps }) {
+  const w = writer(7)
+  w.u8(OP_SET_FEE)
+  w.u16(2)          // the registry, the only read-write account
+  w.u16(launchId)
+  w.u16(feeBps)
+  return { data: w.done(), readWrite: [registry], readOnly: [] }
 }
 
 /**
