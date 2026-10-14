@@ -24,7 +24,7 @@ import {
   decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru,
   buildAddLiquidityInstruction, buildRemoveLiquidityInstruction, poolReserves, totalFeeBps,
   buildSetCreatorFeeInstruction, buildClaimCreatorFeesInstruction, buildOptInCreatorFeeInstruction, TOTAL_FEE_BPS_MAX,
-  POOL_CREATOR_BPS_MAX, addressBytes,
+  POOL_CREATOR_BPS_MAX, addressBytes, quickAmount,
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
@@ -42,7 +42,7 @@ import {
 } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { TokenIcon } from '../components/TokenMeta.jsx'
-import { cleanMeta, saveTokenMeta, allTokenMeta } from '../lib/tokenmeta.js'
+import { cleanMeta, saveTokenMeta, allTokenMeta, launchImageProblem } from '../lib/tokenmeta.js'
 import { squareImage, uploadImage, fileProblem, NoStoreError } from '../lib/imagefile.js'
 import { signUserMessage } from '../lib/wallet.js'
 import { TradeChart, useTrades } from '../components/TradeChart.jsx'
@@ -326,6 +326,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
     symbol: !/^[A-Z0-9]{2,8}$/.test(symbol) ? 'Letters and numbers only (2–8)' : null,
     supply: toUnits(form.supply) <= 0n ? 'Supply has to be more than zero.' : null,
     virtQuote: toUnits(form.virtQuote, quoteDecimals) <= 0n ? 'Opening liquidity has to be more than zero.' : null,
+    image: launchImageProblem(image?.url),
     feePct: Number(form.feePct) > CREATOR_BPS_MAX / 100 || Number(form.feePct) < 0 || !/^\d*\.?\d*$/.test(form.feePct.trim()) ? `Between 0 and ${CREATOR_BPS_MAX / 100} percent.` : null,
   }
   const reason = (() => {
@@ -335,13 +336,16 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
     if (fieldError.supply) return 'Set a supply to continue'
     if (fieldError.virtQuote) return 'Set the opening liquidity to continue'
     if (fieldError.feePct) return 'Fix the fee to continue'
+    // A picture is required: the API refuses a launch without one too.
+    if (uploading) return 'Wait for the image to finish uploading'
+    if (fieldError.image) return 'Add a token image to continue'
     return null
   })()
   const show = (k) => (touched[k] || form[k] !== '') && fieldError[k]
 
   const run = async (progress) => {
     progress('accounts')
-    const made = await createLaunchAccounts({ symbol, quoteMint, padProgram: PAD_PROGRAM })
+    const made = await createLaunchAccounts({ symbol, quoteMint, padProgram: PAD_PROGRAM, image: image?.url })
     if (!made.ok) throw new Error(made.error)
     // The vaults land a slot or two after they are submitted, and launching
     // against a vault that is not there yet fails for a reason nobody could
@@ -510,7 +514,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
         <section className="cr-panel">
           <div className="cr-panel-head">
             <span className="cr-n">3</span><h2>Image and links</h2>
-            <span className="cr-optional">optional, editable later with your signature</span>
+            <span className="cr-optional">image required; links optional; both editable later with your signature</span>
           </div>
           <div className="cr-panel-body cr-cols-media">
             <div className="cr-drop-wrap">
@@ -534,7 +538,9 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
                 accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
                 onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) takeFile(f) }}
               />
-              {imageError && <span className="helper bad">{imageError}</span>}
+              {imageError
+                ? <span className="helper bad">{imageError}</span>
+                : !image && <span className="helper">Required to launch.</span>}
             </div>
             <div className="cr-links">
               <div className="cr-field">
@@ -719,7 +725,7 @@ function TokenPicker({ tokens, value, onChange, exclude, label, onAdded, surface
 }
 
 /** The editable amount (2e): white, an ink edge, a 32px mono number. */
-function AmountIn({ label, value, onChange, balance, onMax, children }) {
+function AmountIn({ label, value, onChange, balance, onMax, quick, children }) {
   return (
     <div className="amt amt-in">
       <div className="amt-top">
@@ -735,6 +741,13 @@ function AmountIn({ label, value, onChange, balance, onMax, children }) {
         <input className="amt-num mono" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0" inputMode="decimal" aria-label={label} />
         {children}
       </div>
+      {quick && (
+        <div className="tp-chips">
+          {quick.map((q) => (
+            <button key={q.label} type="button" className="tp-chip" aria-pressed={q.on} onClick={q.pick} disabled={q.disabled}>{q.label}</button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1091,6 +1104,17 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
           label="You pay" value={amount} onChange={setAmount}
           balance={from ? (from.known ? fmt(from.balance, from.decimals) : '—') : undefined}
           onMax={from && from.balance > 0n ? () => setAmount(fromUnits(spendable, from.decimals)) : null}
+          quick={from ? [25, 50, 75, 100].map((pct) => {
+            // A share of what can be spent: for THRU that is the balance less
+            // what the network fee needs, so Max still leaves the fee.
+            const v = quickAmount(spendable, pct)
+            return {
+              label: pct === 100 ? 'Max' : `${pct}%`,
+              on: v > 0n && amountIn === v,
+              disabled: v <= 0n,
+              pick: () => setAmount(fromUnits(v, from.decimals)),
+            }
+          }) : null}
         >
           <TokenPicker tokens={tokens} value={fromMint} onChange={setFromMint} exclude={toMint} label="Select" />
         </AmountIn>

@@ -42,6 +42,7 @@ import { MAX_STATE_UNITS } from '../src/lib/addresses.js'
 import { grpcUrl, addressOf, network } from '../src/lib/networks.js'
 import { decodePadRegistry, graduationSeed, withSlippage, buildGraduateInstruction, STATE_LIVE, STATE_GRADUATED } from '../src/lib/pad.js'
 import { decodeSwapRegistry } from '../src/lib/swap.js'
+import { launchImageProblem } from '../src/lib/tokenmeta.js'
 
 // The faucet now asks the chain whether this account already claimed, which is
 // two extra reads. Ten seconds is not always enough for that plus a mint.
@@ -587,11 +588,16 @@ async function landed(c, address) {
   return Boolean(await getAccount(c, address))
 }
 
-async function padAccounts(c, { owner, symbol, quoteMint, padProgram }) {
+async function padAccounts(c, { owner, symbol, quoteMint, padProgram, image }) {
   const ticker = String(symbol ?? '').trim().toUpperCase()
   if (!/^[A-Z0-9]{2,8}$/.test(ticker)) {
     return { ok: false, error: 'A ticker is 2 to 8 letters or digits.' }
   }
+  // Every launch made through ThruScan carries a picture. The form checks
+  // this too; checking here as well means it cannot be skipped by calling the
+  // API directly. Checked first, before the sponsor spends anything.
+  const noImage = launchImageProblem(image)
+  if (noImage) return { ok: false, error: noImage }
   if (!(await getAccount(c, owner))) {
     return { ok: false, error: 'Register your wallet on chain first.' }
   }

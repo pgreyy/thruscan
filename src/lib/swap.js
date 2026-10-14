@@ -251,6 +251,14 @@ export function quoteSwap({ reserveIn, reserveOut, amountIn, feeBps = 30, creato
   return { amountOut, priceImpactBps: impact, creatorFee, reason: null }
 }
 
+/** `pct` percent of `spendable`, rounded down, for the quick amount buttons.
+ *  Pass what can actually be spent: for native THRU that is the balance less
+ *  what the network fee needs, so even 100% leaves the fee. */
+export function quickAmount(spendable, pct) {
+  const s = BigInt(spendable ?? 0)
+  return s > 0n ? (s * BigInt(pct)) / 100n : 0n
+}
+
 /** Price of one whole unit of A in terms of B, as a JS number for display. */
 export function poolPrice(reserveA, reserveB, decimalsA = 6, decimalsB = 6) {
   const a = Number(reserveA)
