@@ -22,7 +22,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getAccount } from '../lib/rpcClient.js'
 import {
   decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru,
-  buildAddLiquidityInstruction, buildRemoveLiquidityInstruction,
+  buildAddLiquidityInstruction, buildRemoveLiquidityInstruction, poolReserves, totalFeeBps,
+  buildSetCreatorFeeInstruction, buildClaimCreatorFeesInstruction, buildOptInCreatorFeeInstruction, TOTAL_FEE_BPS_MAX,
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
@@ -887,7 +888,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
      the deepest one, by the product of its reserves. */
   const pool = useMemo(() => {
     if (!poolFrom || !poolTo || wrapOnly) return null
-    const depth = (p) => (balances[p.vaultA] ?? 0n) * (balances[p.vaultB] ?? 0n)
+    const depth = (p) => { const r = poolReserves(p, balances); return r.a * r.b }
     return pools
       .filter((p) => (p.mintA === poolFrom && p.mintB === poolTo) || (p.mintB === poolFrom && p.mintA === poolTo))
       .reduce((best, p) => (best === null || depth(p) > depth(best) ? p : best), null)
@@ -896,14 +897,16 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
   const flipped = pool ? pool.mintA !== poolFrom : false
   const vaultIn = pool ? (flipped ? pool.vaultB : pool.vaultA) : null
   const vaultOut = pool ? (flipped ? pool.vaultA : pool.vaultB) : null
-  const reserveIn = pool ? (balances[vaultIn] ?? 0n) : 0n
-  const reserveOut = pool ? (balances[vaultOut] ?? 0n) : 0n
+  // Liquidity, not vault balances: what the creator is owed is not tradeable.
+  const reserves = pool ? poolReserves(pool, balances) : null
+  const reserveIn = pool ? (flipped ? reserves.b : reserves.a) : 0n
+  const reserveOut = pool ? (flipped ? reserves.a : reserves.b) : 0n
 
   const amountIn = toUnits(amount, from?.decimals ?? DECIMALS)
   const quote = useMemo(
     () => (wrapOnly
       ? { amountOut: amountIn, priceImpactBps: 0n }
-      : pool ? quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps }) : null),
+      : pool ? quoteSwap({ reserveIn, reserveOut, amountIn, feeBps: pool.feeBps, creatorBps: pool.creatorBps }) : null),
     [pool, reserveIn, reserveOut, amountIn, wrapOnly],
   )
 
@@ -1039,8 +1042,12 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
     }
     return `1 ${from.ticker} = ${fmt((reserveOut * 10n ** BigInt(from.decimals)) / reserveIn, to.decimals)} ${to.ticker}`
   })()
-  const feeText = pool ? `${(pool.feeBps / 100).toFixed(2)}%` : null
-  const feeAmount = pool && amountIn > 0n ? feeLabel(poolFee(amountIn, pool.feeBps), from.decimals, from.ticker, pool.feeBps) : '–'
+  // The whole fee, and how much of it is the creator's, so the split is never
+  // a surprise: LP part to the pool, creator part to whoever launched it.
+  const feeText = pool
+    ? `${(totalFeeBps(pool) / 100).toFixed(2)}%${pool.creatorBps > 0 ? ` (${(pool.creatorBps / 100).toFixed(2)}% to the creator)` : ''}`
+    : null
+  const feeAmount = pool && amountIn > 0n ? feeLabel(poolFee(amountIn, totalFeeBps(pool)), from.decimals, from.ticker, totalFeeBps(pool)) : '–'
   const outText = quote?.amountOut > 0n && to ? fmt(quote.amountOut, to.decimals ?? DECIMALS) : null
 
   /* What the button says, and why when it cannot be pressed. */
@@ -1162,14 +1169,13 @@ function PoolRow({ pool, balances, tickers, decimalsOf }) {
   const symB = tickers?.[pool.mintB] || short(pool.mintB)
   const dpA = decimalsOf(pool.mintA)
   const dpB = decimalsOf(pool.mintB)
-  const a = balances[pool.vaultA] ?? 0n
-  const b = balances[pool.vaultB] ?? 0n
+  const { a, b } = poolReserves(pool, balances)
 
   return (
     <div className="row" style={{ alignItems: 'flex-start' }}>
       <span>
         <b><Link className="plain-link" to={`/token/${pool.mintA}`}>{symA}</Link> / <Link className="plain-link" to={`/token/${pool.mintB}`}>{symB}</Link></b>{' '}
-        <span className="fine">pool {pool.id} · {pool.feeBps / 100}% · {Number(pool.swapCount)} swaps</span>
+        <span className="fine">pool {pool.id} · {totalFeeBps(pool) / 100}%{pool.creatorBps > 0 ? ` incl. ${pool.creatorBps / 100}% creator` : ''} · {Number(pool.swapCount)} swaps</span>
       </span>
       <span className="mono fine">{fmt(a, dpA)} · {fmt(b, dpB)}</span>
     </div>
@@ -1213,8 +1219,7 @@ function Positions({ pools, balances, tickers, decimalsOf }) {
     .map((p) => {
       const lp = wallet.balances?.[p.lpMint]?.amount ?? 0n
       if (lp <= 0n || p.lpSupply <= 0n) return null
-      const reserveA = balances[p.vaultA] ?? 0n
-      const reserveB = balances[p.vaultB] ?? 0n
+      const { a: reserveA, b: reserveB } = poolReserves(p, balances)
       return {
         pool: p,
         lp,
@@ -1298,8 +1303,7 @@ function LiquidityPanel({ pools, balances, tickers, decimalsOf, reload, onPool }
   const tick = (m) => tickers?.[m] || short(m)
   const dp = (m) => decimalsOf(m)
 
-  const reserveA = pool ? (balances[pool.vaultA] ?? 0n) : 0n
-  const reserveB = pool ? (balances[pool.vaultB] ?? 0n) : 0n
+  const { a: reserveA, b: reserveB } = pool ? poolReserves(pool, balances) : { a: 0n, b: 0n }
   const heldA = pool ? (wallet.balances?.[pool.mintA]?.amount ?? 0n) : 0n
   const heldB = pool ? (wallet.balances?.[pool.mintB]?.amount ?? 0n) : 0n
   const heldLp = pool ? (wallet.balances?.[pool.lpMint]?.amount ?? 0n) : 0n
@@ -1526,8 +1530,9 @@ function PoolPanel({ info, balances, tickers, decimalsOf, liquidity }) {
         <span className="mono dim">#{pool.id}</span>
       </div>
       <div className="pool-rows">
-        <div><span>{tick(pool.mintA)} reserve</span><span className="mono">{fmt(balances[pool.vaultA] ?? 0n, decimalsOf(pool.mintA))}</span></div>
-        <div><span>{tick(pool.mintB)} reserve</span><span className="mono">{fmt(balances[pool.vaultB] ?? 0n, decimalsOf(pool.mintB))}</span></div>
+        <div><span>{tick(pool.mintA)} reserve</span><span className="mono">{fmt(poolReserves(pool, balances).a, decimalsOf(pool.mintA))}</span></div>
+        <div><span>{tick(pool.mintB)} reserve</span><span className="mono">{fmt(poolReserves(pool, balances).b, decimalsOf(pool.mintB))}</span></div>
+        <div><span>Fee per swap</span><span className="mono">{totalFeeBps(pool) / 100}%{pool.creatorBps > 0 ? ` (${pool.feeBps / 100}% providers, ${pool.creatorBps / 100}% creator)` : ' to providers'}</span></div>
         <div><span>Your pool share</span><span className="mono">{wallet.address ? `${share.toFixed(2)}%` : '–'}</span></div>
         <div><span>Swaps</span><span className="mono">{Number(pool.swapCount).toLocaleString('en-US')}</span></div>
         <div><span>Pricing</span><span>Constant product (x·y=k)</span></div>
@@ -2394,6 +2399,139 @@ function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
           landedSub: `${owedText} ${quote} is on its way to your wallet.`,
           failed: 'Claim failed',
         }}
+      />
+    </section>
+  )
+}
+
+/* A Swap pool's creator fee: the rate and what is owed, for everyone; for the
+   creator, Claim and a control to lower the fee or turn it off (never above the
+   cap it started with, which the program enforces). For a launch that
+   graduated before pool creator fees existed, its creator can turn one on,
+   once, up to the launch's own curve fee within the pool's 1% ceiling. */
+export function PoolCreatorFee({ pool, launch, sym, dec, onDone }) {
+  const wallet = useWallet()
+  const gate = useUnlockGate()
+  const claimFlow = useTxFlow()
+  const setFlow = useTxFlow()
+  const [error, setError] = useState(null)
+  const [pct, setPct] = useState('')
+
+  const owedA = pool.owedA ?? 0n
+  const owedB = pool.owedB ?? 0n
+  const owedText = [owedA > 0n && `${fmt(owedA, dec(pool.mintA))} ${sym(pool.mintA)}`, owedB > 0n && `${fmt(owedB, dec(pool.mintB))} ${sym(pool.mintB)}`]
+    .filter(Boolean).join(' + ') || 'nothing'
+
+  // A launch that graduated into exactly this pool, whose pool has no creator yet.
+  const launchHere = launch?.pooled && launch.poolId === pool.id ? launch : null
+  const optInCap = launchHere ? Math.min(launchHere.feeBps, TOTAL_FEE_BPS_MAX - pool.feeBps) : 0
+  const isCreator = !!wallet.address && pool.creator === wallet.address
+  const canOptIn = !pool.creator && !!launchHere && !!wallet.address && wallet.address === launchHere.creator && optInCap > 0
+  const cap = pool.creator ? pool.maxCreatorBps : optInCap
+  const wantBps = Math.round(Number(pct) * 100)
+  const wantOk = pct !== '' && Number.isFinite(wantBps) && wantBps >= 0 && wantBps <= cap && (pool.creator || wantBps > 0)
+
+  const ensure = async (flow) => {
+    setError(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    flow.open()
+  }
+
+  const runClaim = async (progress) => {
+    const dests = {}
+    for (const m of [pool.mintA, pool.mintB]) {
+      const known = wallet.balances?.[m]
+      if (!known?.exists) {
+        progress('accounts')
+        const made = await openTokenAccount(m)
+        if (!made.already) await new Promise((r) => setTimeout(r, 2800))
+      }
+      dests[m] = known?.account ?? await deriveTokenAccount(m, wallet.address)
+    }
+    progress('sign')
+    const built = buildClaimCreatorFeesInstruction({
+      registry: SWAP_REGISTRY, poolId: pool.id, vaultA: pool.vaultA, vaultB: pool.vaultB,
+      destA: dests[pool.mintA], destB: dests[pool.mintB],
+    })
+    const result = await sendBuilt(SWAP_PROGRAM, built, (sig) => progress('sent', sig))
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+    onDone?.()
+    wallet.refresh([pool.mintA, pool.mintB])
+    return { ok: true, signature: result.signature }
+  }
+
+  const runSet = async (progress) => {
+    progress('sign')
+    const built = pool.creator
+      ? buildSetCreatorFeeInstruction({ registry: SWAP_REGISTRY, poolId: pool.id, creatorBps: wantBps })
+      : buildOptInCreatorFeeInstruction({ registry: SWAP_REGISTRY, poolId: pool.id, padRegistry: PAD_REGISTRY, launchId: launchHere.id, creatorBps: wantBps })
+    const result = await sendBuilt(SWAP_PROGRAM, built, (sig) => progress('sent', sig))
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+    setPct('')
+    onDone?.()
+    return { ok: true, signature: result.signature }
+  }
+
+  if (!pool.creator && !canOptIn) {
+    return (
+      <section className="cf cf-public" aria-label="Pool creator fee">
+        <dl className="cf-rows"><div><dt>Pool creator fee</dt><dd className="mono">none · {pool.feeBps / 100}% to providers</dd></div></dl>
+      </section>
+    )
+  }
+
+  return (
+    <section className="cf cf-public" aria-label="Pool creator fee">
+      {gate.modal}
+      <dl className="cf-rows">
+        <div><dt>Pool creator fee</dt><dd className="mono">{pool.creator ? `${pool.creatorBps / 100}% (cap ${pool.maxCreatorBps / 100}%)` : 'off'} · {pool.feeBps / 100}% to providers</dd></div>
+        {pool.creator && <div><dt>Owed to the creator</dt><dd className="mono">{owedText}</dd></div>}
+      </dl>
+      {(isCreator || canOptIn) && (
+        <div className="cf-row">
+          {isCreator && (
+            <div className="cf-cell cf-action">
+              <button className="btn" onClick={() => ensure(claimFlow)} disabled={owedA <= 0n && owedB <= 0n}>
+                {owedA <= 0n && owedB <= 0n ? 'Nothing to claim yet' : `Claim ${owedText}`}
+              </button>
+            </div>
+          )}
+          <div className="cf-cell">
+            <span className="cf-k">{canOptIn ? `Turn on a creator fee, once (up to ${cap / 100}%)` : `Change the fee (0 to ${cap / 100}%)`}</span>
+            <span className="field mono">
+              <input value={pct} onChange={(e) => setPct(e.target.value)} placeholder={canOptIn ? `${cap / 100}` : '0'} inputMode="decimal" aria-label="Creator fee percent" />%
+            </span>
+            <button className="btn sm secondary" onClick={() => ensure(setFlow)} disabled={!wantOk}>
+              {canOptIn ? 'Turn on' : wantBps === 0 ? 'Turn off' : 'Set'}
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <p className="notice bad">{error}</p>}
+
+      <TxDialog
+        flow={claimFlow}
+        title="Claim pool creator fees"
+        receive={{ label: 'You receive', value: owedText, exact: true }}
+        rows={[{ k: 'From', v: `Swap pool #${pool.id}`, plain: true }, NETWORK_ROW]}
+        technical={{ program: SWAP_PROGRAM, extra: [{ k: 'Pool', v: `#${pool.id}` }, { k: 'Instruction', v: 'claim creator fees' }] }}
+        note="Your wallet will ask you to sign. The program pays only the pool's recorded creator."
+        needsAccounts={![pool.mintA, pool.mintB].every((m) => wallet.balances?.[m]?.exists)}
+        run={runClaim}
+        words={{ pendingTitle: 'Claim submitted', type: 'fees', landed: 'Creator fees claimed', landedSub: `${owedText} is on its way to your wallet.`, failed: 'Claim failed' }}
+      />
+      <TxDialog
+        flow={setFlow}
+        title={canOptIn ? 'Turn on the pool creator fee' : 'Change the pool creator fee'}
+        receive={{ label: 'New creator fee', value: `${wantBps / 100}%`, exact: true }}
+        rows={[{ k: 'Pool', v: `#${pool.id}`, plain: true }, NETWORK_ROW]}
+        technical={{ program: SWAP_PROGRAM, extra: [{ k: 'Instruction', v: canOptIn ? 'opt in creator fee' : 'set creator fee' }] }}
+        note={canOptIn ? 'This can be done once. The cap you set now is the most the fee can ever be.' : 'You can lower it or turn it off at any time, and raise it again up to its cap, never above.'}
+        run={runSet}
+        words={{ pendingTitle: 'Submitted', type: 'fee', landed: 'Creator fee updated', landedSub: `Now ${wantBps / 100}%.`, failed: 'Update failed' }}
       />
     </section>
   )

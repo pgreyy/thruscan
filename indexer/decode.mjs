@@ -160,6 +160,11 @@ export function makeDecoder(addresses) {
     2: ['liquidity', 'Added liquidity'],
     3: ['liquidity', 'Removed liquidity'],
     4: ['swap', 'Swapped'],
+    5: ['pool', 'Created a pool'],
+    6: ['pool', 'Changed a pool creator fee'],
+    7: ['claim', 'Claimed pool creator fees'],
+    8: ['pool', 'Extended the pool registry'],
+    9: ['pool', 'Turned on a pool creator fee'],
   }
 
   /* What one call to one program is, read from its first byte.

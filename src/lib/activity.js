@@ -123,7 +123,7 @@ export function describe(item, me) {
 
   switch (item.program) {
     case THRUSWAP_PROGRAM:
-      return { label: ({ 0: 'Opened Swap', 1: 'Created a pool', 2: 'Added liquidity', 3: 'Removed liquidity', 4: 'Swap' })[op] ?? 'Swap program' }
+      return { label: ({ 0: 'Opened Swap', 1: 'Created a pool', 2: 'Added liquidity', 3: 'Removed liquidity', 4: 'Swap', 5: 'Created a pool', 6: 'Changed a pool creator fee', 7: 'Claimed pool creator fees', 8: 'Extended the pool registry', 9: 'Turned on a pool creator fee' })[op] ?? 'Swap program' }
     case THRUPAD_PROGRAM:
       return { label: ({ 0: 'Opened ThruPad', 1: 'Launched a token', 2: 'Bought on ThruPad', 3: 'Sold on ThruPad', 4: 'Claimed creator fees', 5: 'Graduated a launch' })[op] ?? 'ThruPad' }
     case WALL_PROGRAM:

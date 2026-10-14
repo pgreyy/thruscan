@@ -10,6 +10,7 @@
 import { writeFileSync } from 'node:fs'
 import handler from '../../api/rpc.js'
 import { decodePadRegistry } from '../../src/lib/pad.js'
+import { decodeSwapRegistry } from '../../src/lib/swap.js'
 import { Pubkey } from '@thru/sdk'
 import { addressOf } from '../../src/lib/networks.js'
 
@@ -53,6 +54,20 @@ for (const sym of ['GIL', 'BNPROOF']) {
     out += arr(`K_${sym}_${name}`, key(address))
     out += arr(`D_${sym}_${name}`, await bytesOf(address))
   }
+}
+// Every pool in thruswap now: its vaults and mints, for the creator fee cases.
+const pools = decodeSwapRegistry(swapReg.toString('base64')).pools
+out += `#define POOL_COUNT (${pools.length})\n`
+for (const p of pools) {
+  for (const [name, address] of [['VA', p.vaultA], ['VB', p.vaultB], ['MA', p.mintA], ['MB', p.mintB]]) {
+    out += arr(`K_POOL${p.id}_${name}`, key(address))
+    out += arr(`D_POOL${p.id}_${name}`, await bytesOf(address))
+  }
+}
+for (const sym of ['GIL', 'BNPROOF']) {
+  const l = reg.launches.find((x) => x.symbol.toUpperCase() === sym)
+  out += arr(`K_${sym}_CREATOR`, key(l.creator))
+  out += `#define ${sym}_FEE_BPS (${l.feeBps})\n#define ${sym}_POOL_ID (${l.poolId ?? 65535})\n`
 }
 writeFileSync(process.argv[2], out)
 console.log(`wrote ${process.argv[2]}: pad registry ${padReg.length} bytes, swap registry ${swapReg.length} bytes, threshold ${reg.gradThreshold}`)

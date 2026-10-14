@@ -16,6 +16,7 @@ import { TokenIcon, TokenLinks } from '../components/TokenMeta.jsx'
 import { tokenMetaFor } from '../lib/tokenmeta.js'
 import { isFavourite, toggleFavourite, onFavouritesChange } from '../lib/favourites.js'
 import { Search } from './Home.jsx'
+import { PoolCreatorFee } from './Dex.jsx'
 import './home.css'
 
 const short = (s) => (s ? `${s.slice(0, 6)}…${s.slice(-4)}` : '')
@@ -45,6 +46,8 @@ function Addr({ value }) {
 export function TokenPage() {
   const { mint } = useParams()
   const [state, setState] = useState({ loading: true })
+  // Bumped after a creator fee claim or change, to read the pools again.
+  const [reads, setReads] = useState(0)
   const [meta, setMeta] = useState(null)
   const [fav, setFav] = useState(false)
 
@@ -86,7 +89,7 @@ export function TokenPage() {
       if (alive) setState({ loading: false, info, pools, launch, mints })
     })()
     return () => { alive = false }
-  }, [mint])
+  }, [mint, reads])
 
   const { info, pools = [], launch, mints = {} } = state
   const sym = (m) => mints[m]?.ticker || short(m)
@@ -179,8 +182,8 @@ export function TokenPage() {
           const quoteMint = pricingThis ? other : mint
           const tokenIsA = tokenMint === p.mintA
           return (
+            <div key={p.id}>
             <TradeChart
-              key={p.id}
               title={`${sym(p.mintA)} / ${sym(p.mintB)} pool`}
               quoteVault={tokenIsA ? p.vaultB : p.vaultA}
               tokenVault={tokenIsA ? p.vaultA : p.vaultB}
@@ -189,6 +192,8 @@ export function TokenPage() {
               quoteDecimals={dec(quoteMint)}
               tokenDecimals={dec(tokenMint)}
             />
+            <PoolCreatorFee pool={p} launch={launch} sym={sym} dec={dec} onDone={() => setReads((n) => n + 1)} />
+            </div>
           )
         })}
 
