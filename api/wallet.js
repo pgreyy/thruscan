@@ -774,8 +774,11 @@ async function graduate(c, { launchId }) {
 }
 
 /** Every launch that is past its threshold and not yet pooled, graduated in
- *  turn, at most `max` per run. For the cron. */
-export async function graduateReady({ max = 3 } = {}) {
+ *  turn. For the cron, which has one function's time: no new graduation is
+ *  started once `budgetMs` has gone, and whatever is left is picked up by the
+ *  next run or, sooner, by the nudge the app sends after a buy. */
+export async function graduateReady({ max = Infinity, budgetMs = 40_000 } = {}) {
+  const started = Date.now()
   if (!process.env.THRU_SPONSOR_PUBKEY || !process.env.THRU_SPONSOR_PRIVKEY) return { ok: false, error: 'no sponsor key' }
   if (!PAD_REGISTRY_ADDR) return { ok: true, graduated: [] }
   const c = client()
@@ -786,6 +789,7 @@ export async function graduateReady({ max = 3 } = {}) {
   for (const l of reg.launches) {
     if (results.length >= max) break
     if (l.pooled || (l.state !== STATE_LIVE && l.state !== STATE_GRADUATED)) continue
+    if (Date.now() - started > budgetMs) { results.push({ id: l.id, symbol: l.symbol, ok: false, deferred: true }); continue }
     const st = await graduationState(c, l.id)
     if (!st.ok || st.already) continue
     try {

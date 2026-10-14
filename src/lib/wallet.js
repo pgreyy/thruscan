@@ -997,6 +997,39 @@ export async function requestGraduation(launchId) {
   return api('graduate', { launchId })
 }
 
+/* Ask the keeper to graduate one launch, without anyone waiting on it.
+ *
+ * Called right after a buy that leaves a launch past its threshold, and by the
+ * launch page whenever it shows one. It never throws and is never awaited by
+ * the caller, so it cannot fail or slow a buy. A failure is logged and tried
+ * again a few times with a growing gap; a refusal that says the launch is not
+ * ready (or is already pooled) ends it, since retrying cannot change that.
+ * One attempt chain per launch per page. */
+const nudging = new Set()
+export function nudgeGraduation(launchId, { attempts = 4 } = {}) {
+  const id = Number(launchId)
+  if (!Number.isInteger(id) || nudging.has(id)) return
+  nudging.add(id)
+  const attempt = async (n) => {
+    try {
+      const r = await api('graduate', { launchId: id })
+      nudging.delete(id)
+      return r
+    } catch (e) {
+      const why = String(e?.message ?? e)
+      if (/threshold|cannot graduate|No launch/i.test(why) || n + 1 >= attempts) {
+        if (n + 1 >= attempts) console.warn(`graduation nudge for launch ${id} gave up: ${why}`)
+        nudging.delete(id)
+        return null
+      }
+      console.warn(`graduation nudge for launch ${id} failed, retrying: ${why}`)
+      setTimeout(() => { attempt(n + 1) }, 15_000 * (n + 1))
+      return null
+    }
+  }
+  attempt(0)
+}
+
 /* ---------- names ----------
    Claiming is sponsored, because registering under a root needs that root's
    authority and ThruScan holds it. Records are not: the name service checks the

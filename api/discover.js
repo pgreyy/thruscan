@@ -286,12 +286,12 @@ export default async function handler(req, res) {
   // The ThruPad keeper rides on this cron, because the Hobby plan allows one
   // daily cron and twelve functions. It graduates launches that are past their
   // threshold into swap pools; see graduate in api/wallet.js. It runs first,
-  // and a failure here is reported, not allowed to stop discovery. One launch
-  // per run: a graduation can take four landed transactions, and this function
-  // has 60 seconds in all. The Open pool button covers anything waiting.
+  // and a failure here is reported, not allowed to stop discovery. Every ready
+  // launch is taken in turn until 40 of this function's 60 seconds are used;
+  // anything deferred is taken by the next run or by the app's post-buy nudge.
   let keeper
   try {
-    keeper = await graduateReady({ max: 1 })
+    keeper = await graduateReady({ budgetMs: 40_000 })
   } catch (e) {
     keeper = { ok: false, error: String(e?.message ?? e).slice(0, 300) }
   }

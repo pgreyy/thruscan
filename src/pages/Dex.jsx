@@ -38,7 +38,7 @@ import { customMints, customMeta, onCustomMintsChange } from '../lib/customToken
 import { displayDecimals } from '../lib/wthru.js'
 import {
   deriveTokenAccount, openTokenAccount, hasWallet, createLaunchAccounts,
-  burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances, requestGraduation,
+  burnToken, returnNativeThru, wrapThru, unwrapThru, waitForResult, tokenBalances, requestGraduation, nudgeGraduation,
 } from '../lib/wallet.js'
 import { useUnlockGate, isDismissal } from '../components/Unlock.jsx'
 import { TokenIcon } from '../components/TokenMeta.jsx'
@@ -62,7 +62,7 @@ import {
 } from '../lib/addresses.js'
 import { useDismiss } from '../lib/dismiss.js'
 import { connectWallet } from '../lib/connect.js'
-import { Icon } from '../components/Icon.jsx'
+import { Icon, Spinner } from '../components/Icon.jsx'
 import { StoreLink } from '../components/StoreLink.jsx'
 import { TxDialog } from '../components/TxDialog.jsx'
 import { FeeSharingPanel } from '../components/FeeSharing.jsx'
@@ -2184,7 +2184,7 @@ export function LaunchDetail({ id }) {
     <TradePanel
       launch={launch} quote={quote} quoteMint={quoteMint} quoteDecimals={quoteDecimals}
       slot={slot} onTraded={() => reload(true)} mode={mode} initialSide={initialSide}
-      onClose={() => setSheet(null)}
+      onClose={() => setSheet(null)} raised={raised} threshold={threshold}
     />
   )
 
@@ -2654,11 +2654,29 @@ function poolLink(quoteMint, mint) {
 }
 
 /* Graduation, as the launch page states it. Three honest cases: still on the
-   curve, past the threshold with no pool yet (anyone may open it), or pooled. */
+   curve, past the threshold and graduating, or pooled.
+
+   Past the threshold, graduation is the keeper's job, not the visitor's: the
+   page asks for it as soon as it sees the launch ready (the buy that crossed
+   it has usually asked already), then reads the chain again until the pool is
+   there. Only if it is still pending after a few minutes does a small Open
+   pool link appear, as a fallback. */
+const GRADUATION_FALLBACK_MS = 3 * 60 * 1000
+
 function Graduation({ launch, raised, threshold, quoteMint, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const ready = !launch.pooled && raised >= threshold
+  const [readySince] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!ready) return undefined
+    nudgeGraduation(launch.id)
+    const t = setInterval(() => { setNow(Date.now()); onDone?.() }, 15_000)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, launch.id])
 
   const open = async () => {
     setBusy(true); setError(null)
@@ -2681,12 +2699,13 @@ function Graduation({ launch, raised, threshold, quoteMint, onDone }) {
     )
   }
   if (ready) {
+    const late = now - readySince > GRADUATION_FALLBACK_MS
     return (
       <div className="ld-caveat">
-        <Icon name="warning" size={16} />
+        <Spinner size={16} />
         <span>
-          Past its graduation threshold. Opening the pool closes the curve and moves its reserves into a Swap pool at the curve's last price, in one transaction. Anyone can do it, and it runs daily on its own.
-          {' '}<button className="btn sm secondary" onClick={open} disabled={busy}>{busy ? 'Opening pool…' : 'Open pool'}</button>
+          <b>Graduating.</b> The curve is closing and its reserves are opening a Swap pool at the curve's last price. This page updates when the pool is open.
+          {late && <> Still pending? <button className="btn plain" onClick={open} disabled={busy}>{busy ? 'Opening pool…' : 'Open pool'}</button></>}
           {error && <span className="helper bad"> {error}</span>}
         </span>
       </div>
@@ -2700,7 +2719,7 @@ function Graduation({ launch, raised, threshold, quoteMint, onDone }) {
   )
 }
 
-function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, onTraded, mode = 'panel', initialSide = 'buy', onClose }) {
+function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, onTraded, mode = 'panel', initialSide = 'buy', onClose, raised, threshold }) {
   const [side, setSide] = useState(initialSide)
   const [amount, setAmount] = useState('')
   const [error, setError] = useState(null)
@@ -2758,6 +2777,13 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
   })()
 
   const traded = () => {
+    // A buy that leaves the launch past its threshold hands it straight to the
+    // keeper, for this launch only. Fire and forget: nudgeGraduation never
+    // throws and is not awaited, so it cannot fail or hold up the buy.
+    if (side === 'buy' && threshold !== undefined && raised !== undefined
+      && BigInt(raised) + amountIn - (q.creatorFee ?? 0n) >= BigInt(threshold)) {
+      nudgeGraduation(launch.id)
+    }
     setAmount(''); onTraded?.()
     wallet.refresh([quoteMint, launch.mint])
   }
