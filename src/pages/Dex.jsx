@@ -24,10 +24,12 @@ import {
   decodeSwapRegistry, quoteSwap, poolFee, buildSwapInstruction, buildSwapPayingInThru,
   buildAddLiquidityInstruction, buildRemoveLiquidityInstruction, poolReserves, totalFeeBps,
   buildSetCreatorFeeInstruction, buildClaimCreatorFeesInstruction, buildOptInCreatorFeeInstruction, TOTAL_FEE_BPS_MAX,
+  POOL_CREATOR_BPS_MAX, addressBytes,
 } from '../lib/swap.js'
 import {
   decodePadRegistry, quoteBuy, quoteSell, snipeBps, graduationProgress,
   buildBuyInstruction, buildSellInstruction, buildLaunchInstruction, buildClaimInstruction, withSlippage,
+  buildSetFeeInstruction, CREATOR_BPS_MAX,
 } from '../lib/pad.js'
 
 import { decodeMintAccount } from '../lib/token.js'
@@ -314,7 +316,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
   const setSoc = (k) => (e) => setSocial((s) => ({ ...s, [k]: e.target.value }))
   const touch = (k) => () => setTouched((t) => ({ ...t, [k]: true }))
   const symbol = form.symbol.trim().toUpperCase().slice(0, 8)
-  const feeBps = Math.round(Math.min(10, Math.max(0, Number(form.feePct) || 0)) * 100)
+  const feeBps = Math.round(Math.min(CREATOR_BPS_MAX / 100, Math.max(0, Number(form.feePct) || 0)) * 100)
   const name = form.name.trim()
 
   /* Each field's own problem, shown under it once it has been touched, and the
@@ -324,7 +326,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
     symbol: !/^[A-Z0-9]{2,8}$/.test(symbol) ? 'Letters and numbers only (2–8)' : null,
     supply: toUnits(form.supply) <= 0n ? 'Supply has to be more than zero.' : null,
     virtQuote: toUnits(form.virtQuote, quoteDecimals) <= 0n ? 'Opening liquidity has to be more than zero.' : null,
-    feePct: Number(form.feePct) > 10 || Number(form.feePct) < 0 || !/^\d*\.?\d*$/.test(form.feePct.trim()) ? 'Between 0 and 10 percent.' : null,
+    feePct: Number(form.feePct) > CREATOR_BPS_MAX / 100 || Number(form.feePct) < 0 || !/^\d*\.?\d*$/.test(form.feePct.trim()) ? `Between 0 and ${CREATOR_BPS_MAX / 100} percent.` : null,
   }
   const reason = (() => {
     if (registryDown) return 'Paused until the registry can be read'
@@ -486,7 +488,7 @@ export function CreateLaunchCard({ nextId, registry, threshold, registryDown, on
                   <input id="cr-fee" className="mono" value={form.feePct} onChange={set('feePct')} onBlur={touch('feePct')} inputMode="decimal" />
                   <span className="mono">%</span>
                 </span>
-                {show('feePct') ? <span className="helper bad"><Icon name="failed" size={14} stroke={2} />{fieldError.feePct}</span> : <span className="helper">On every trade, up to 10%. Claim it any time.</span>}
+                {show('feePct') ? <span className="helper bad"><Icon name="failed" size={14} stroke={2} />{fieldError.feePct}</span> : <span className="helper">On every trade, up to {CREATOR_BPS_MAX / 100}%, and the same in its Swap pool after graduation. You can lower it later, never raise it.</span>}
               </div>
               <div className="cr-field">
                 <span className="label"><span className="term" title="Once the WTHRU raised on the curve reaches this, anyone can graduate the launch: the curve closes and its reserves open a Swap pool at the curve's last price, in one transaction.">Graduation</span></span>
@@ -1042,12 +1044,21 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
     }
     return `1 ${from.ticker} = ${fmt((reserveOut * 10n ** BigInt(from.decimals)) / reserveIn, to.decimals)} ${to.ticker}`
   })()
-  // The whole fee, and how much of it is the creator's, so the split is never
-  // a surprise: LP part to the pool, creator part to whoever launched it.
-  const feeText = pool
-    ? `${(totalFeeBps(pool) / 100).toFixed(2)}%${pool.creatorBps > 0 ? ` (${(pool.creatorBps / 100).toFixed(2)}% to the creator)` : ''}`
-    : null
-  const feeAmount = pool && amountIn > 0n ? feeLabel(poolFee(amountIn, totalFeeBps(pool)), from.decimals, from.ticker, totalFeeBps(pool)) : '–'
+  /* The fee, as three lines a buyer cannot miss: the liquidity providers'
+     part, the creator's part, and the two together. Amounts are the program's
+     own: the total withheld rounds up, the creator's part rounds down, and the
+     providers get the difference. */
+  const totalBps = pool ? totalFeeBps(pool) : 0
+  const totalFee = pool && amountIn > 0n ? poolFee(amountIn, totalBps) : 0n
+  const creatorFee = pool && amountIn > 0n ? (quote?.creatorFee ?? 0n) : 0n
+  const pctText = (bps) => `${(bps / 100).toFixed(2)}%`
+  const amtText = (v) => (pool && amountIn > 0n ? `${fmt(v, from.decimals)} ${from.ticker}` : '–')
+  const feeLines = pool ? [
+    { k: `Liquidity provider fee (${pctText(pool.feeBps)})`, v: amtText(totalFee - creatorFee) },
+    { k: `Creator fee (${pctText(pool.creatorBps ?? 0)})`, v: (pool.creatorBps ?? 0) > 0 ? amtText(creatorFee) : 'none' },
+    { k: `Total fee (${pctText(totalBps)})`, v: amtText(totalFee) },
+  ] : []
+  const minReceived = quote?.amountOut > 0n && to ? `${fmt(withSlippage(quote.amountOut), to.decimals ?? DECIMALS)} ${to.ticker} (1% slippage)` : '–'
   const outText = quote?.amountOut > 0n && to ? fmt(quote.amountOut, to.decimals ?? DECIMALS) : null
 
   /* What the button says, and why when it cannot be pressed. */
@@ -1094,7 +1105,7 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
 
         <div className="swap-rows">
           <div><span>Rate</span><span className="mono">{rate}</span></div>
-          {!wrapOnly && <div><span>Pool fee{feeText ? ` (${feeText}, paid to LPs)` : ''}</span><span className="mono">{feeAmount}</span></div>}
+          {!wrapOnly && feeLines.map((f) => <div key={f.k}><span>{f.k}</span><span className="mono">{f.v}</span></div>)}
           <div><span>Network fee</span><span className="mono">shown by your wallet</span></div>
         </div>
 
@@ -1118,8 +1129,8 @@ function SwapPanel({ pools, balances, tickers, decimalsOf, reload, registryDown,
         rows={[
           { k: 'Rate', v: rate },
           ...(wrapOnly ? [] : [
-            { k: `Pool fee (${feeText}, to LPs)`, v: feeAmount },
-            { k: 'Minimum received', v: 'No minimum set' },
+            ...feeLines,
+            { k: 'Minimum received', v: minReceived },
           ]),
           NETWORK_ROW,
         ]}
@@ -2313,8 +2324,12 @@ function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
   const flow = useTxFlow()
+  const lowerFlow = useTxFlow()
   const [error, setError] = useState(null)
-  const mine = !!wallet.address && wallet.address === launch.creator
+  const [lowerPct, setLowerPct] = useState('')
+  const mine = sameKey(wallet.address, launch.creator)
+  const lowerBps = Math.round(Number(lowerPct) * 100)
+  const lowerOk = launch.state === 1 && lowerPct !== '' && /^\d*\.?\d*$/.test(lowerPct.trim()) && lowerBps >= 0 && lowerBps < launch.feeBps
   const owed = launch.creatorFees ?? 0n
   const owedText = fmt(owed, quoteDecimals)
   const earned = earnedFrom(trades, launch.feeBps)
@@ -2357,6 +2372,24 @@ function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
     flow.open()
   }
 
+  const runLower = async (progress) => {
+    progress('sign')
+    const built = buildSetFeeInstruction({ registry: PAD_REGISTRY, launchId: launch.id, feeBps: lowerBps })
+    const result = await sendBuilt(PAD_PROGRAM, built, (sig) => progress('sent', sig))
+    if (result.settled && !result.succeeded) return { ok: false, signature: result.signature, error: explainRevert(result) }
+    setLowerPct('')
+    onClaimed?.()
+    return { ok: true, signature: result.signature }
+  }
+  const lower = async () => {
+    setError(null)
+    try { await gate.ensure() } catch (e) {
+      if (!isDismissal(e)) setError(String(e?.message ?? e))
+      return
+    }
+    lowerFlow.open()
+  }
+
   const nothing = owed <= 0n
   return (
     <section className="cf" id="creator-fees" aria-labelledby="cf-title">
@@ -2379,7 +2412,29 @@ function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
           <button className="btn lg" onClick={claim} disabled={nothing}>{nothing ? 'Nothing to claim yet' : `Claim ${owedText} ${quote}`}</button>
         </div>
       </div>
+      {launch.state === 1 && launch.feeBps > 0 && (
+        <div className="cf-row">
+          <div className="cf-cell">
+            <span className="cf-k">Lower your fee (below {pct}; 0 turns it off). It can never go back up, and it is the fee your pool starts with at graduation.</span>
+            <span className="field mono">
+              <input value={lowerPct} onChange={(e) => setLowerPct(e.target.value)} placeholder="0" inputMode="decimal" aria-label="New creator fee percent" />%
+            </span>
+            <button className="btn sm secondary" onClick={lower} disabled={!lowerOk}>{lowerBps === 0 ? 'Turn off' : 'Lower'}</button>
+          </div>
+        </div>
+      )}
       {error && <p className="notice bad">{error}</p>}
+
+      <TxDialog
+        flow={lowerFlow}
+        title={`Lower the ${launch.symbol} creator fee`}
+        receive={{ label: 'New creator fee', value: `${(lowerBps / 100).toFixed(2)}%`, exact: true }}
+        rows={[{ k: 'Now', v: pct, plain: true }, NETWORK_ROW]}
+        technical={{ program: PAD_PROGRAM, extra: [{ k: 'Launch', v: `#${launch.id}` }, { k: 'Instruction', v: 'set fee' }] }}
+        note="The fee can only go down. Once lowered it cannot be raised again."
+        run={runLower}
+        words={{ pendingTitle: 'Submitted', type: 'fee', landed: 'Creator fee lowered', landedSub: `Now ${(lowerBps / 100).toFixed(2)}%.`, failed: 'Update failed' }}
+      />
 
       {FEE_SHARING && <FeeSharingPanel launch={launch} />}
 
@@ -2404,11 +2459,23 @@ function CreatorFees({ launch, quote, quoteDecimals, trades, onClaimed }) {
   )
 }
 
-/* A Swap pool's creator fee: the rate and what is owed, for everyone; for the
-   creator, Claim and a control to lower the fee or turn it off (never above the
-   cap it started with, which the program enforces). For a launch that
-   graduated before pool creator fees existed, its creator can turn one on,
-   once, up to the launch's own curve fee within the pool's 1% ceiling. */
+/* A Swap pool's fees, for everyone, as separate lines: the liquidity
+   providers' part, the creator's part and the total. For the creator, Claim
+   and a control to lower the creator fee or turn it off (down only, which the
+   program enforces). For a launch that graduated before pool creator fees
+   existed, its creator can turn one on, once, up to the launch's own fee.
+
+   Who counts as the creator is compared by key, not by spelling, and when the
+   connected wallet is not the creator the panel says so and names both, so a
+   creator looking at the wrong wallet sees why, instead of seeing nothing. */
+const sameKey = (a, b) => {
+  if (!a || !b) return false
+  try {
+    const x = addressBytes(a), y = addressBytes(b)
+    return x.length === y.length && x.every((v, i) => v === y[i])
+  } catch { return false }
+}
+
 export function PoolCreatorFee({ pool, launch, sym, dec, onDone }) {
   const wallet = useWallet()
   const gate = useUnlockGate()
@@ -2422,14 +2489,24 @@ export function PoolCreatorFee({ pool, launch, sym, dec, onDone }) {
   const owedText = [owedA > 0n && `${fmt(owedA, dec(pool.mintA))} ${sym(pool.mintA)}`, owedB > 0n && `${fmt(owedB, dec(pool.mintB))} ${sym(pool.mintB)}`]
     .filter(Boolean).join(' + ') || 'nothing'
 
-  // A launch that graduated into exactly this pool, whose pool has no creator yet.
+  // The launch that graduated into exactly this pool, if any.
   const launchHere = launch?.pooled && launch.poolId === pool.id ? launch : null
-  const optInCap = launchHere ? Math.min(launchHere.feeBps, TOTAL_FEE_BPS_MAX - pool.feeBps) : 0
-  const isCreator = !!wallet.address && pool.creator === wallet.address
-  const canOptIn = !pool.creator && !!launchHere && !!wallet.address && wallet.address === launchHere.creator && optInCap > 0
-  const cap = pool.creator ? pool.maxCreatorBps : optInCap
+  // Who may manage this pool's creator fee: its recorded creator, or, before
+  // one is recorded, the creator of the launch that made the pool.
+  const owner = pool.creator ?? launchHere?.creator ?? null
+  const isOwner = sameKey(wallet.address, owner)
+  const optInCap = launchHere ? Math.min(launchHere.feeBps, POOL_CREATOR_BPS_MAX, TOTAL_FEE_BPS_MAX - pool.feeBps) : 0
+  const canOptIn = !pool.creator && !!launchHere && isOwner && optInCap > 0
+  const isCreator = !!pool.creator && isOwner
+  // Down only: once on, the most it can be set to is what it is now.
+  const cap = pool.creator ? (pool.creatorBps ?? 0) : optInCap
   const wantBps = Math.round(Number(pct) * 100)
-  const wantOk = pct !== '' && Number.isFinite(wantBps) && wantBps >= 0 && wantBps <= cap && (pool.creator || wantBps > 0)
+  const wantOk = pct !== '' && /^\d*\.?\d*$/.test(pct.trim()) && Number.isFinite(wantBps) && wantBps >= 0
+    && (pool.creator ? wantBps < cap : wantBps > 0 && wantBps <= cap)
+
+  const lpBps = pool.feeBps
+  const crBps = pool.creatorBps ?? 0
+  const pctText = (bps) => `${(bps / 100).toFixed(2)}%`
 
   const ensure = async (flow) => {
     setError(null)
@@ -2475,22 +2552,26 @@ export function PoolCreatorFee({ pool, launch, sym, dec, onDone }) {
     return { ok: true, signature: result.signature }
   }
 
-  if (!pool.creator && !canOptIn) {
-    return (
-      <section className="cf cf-public" aria-label="Pool creator fee">
-        <dl className="cf-rows"><div><dt>Pool creator fee</dt><dd className="mono">none · {pool.feeBps / 100}% to providers</dd></div></dl>
-      </section>
-    )
-  }
-
+  const manage = isCreator || canOptIn
   return (
-    <section className="cf cf-public" aria-label="Pool creator fee">
+    <section className="cf cf-public" aria-label="Pool fees">
       {gate.modal}
       <dl className="cf-rows">
-        <div><dt>Pool creator fee</dt><dd className="mono">{pool.creator ? `${pool.creatorBps / 100}% (cap ${pool.maxCreatorBps / 100}%)` : 'off'} · {pool.feeBps / 100}% to providers</dd></div>
+        <div><dt>Liquidity provider fee</dt><dd className="mono">{pctText(lpBps)}</dd></div>
+        <div><dt>Creator fee</dt><dd className="mono">{crBps > 0 ? pctText(crBps) : 'none'}</dd></div>
+        <div><dt>Total per swap</dt><dd className="mono">{pctText(lpBps + crBps)}</dd></div>
         {pool.creator && <div><dt>Owed to the creator</dt><dd className="mono">{owedText}</dd></div>}
       </dl>
-      {(isCreator || canOptIn) && (
+
+      {owner && !manage && !isOwner && (
+        <p className="why">
+          {wallet.address
+            ? <>Only the creator ({short(owner)}) can manage this fee. The wallet in use here is {short(wallet.address)}; switch to the creator&rsquo;s wallet to see the controls.</>
+            : <>Only the creator ({short(owner)}) can manage this fee. Connect that wallet to see the controls.</>}
+        </p>
+      )}
+
+      {manage && (
         <div className="cf-row">
           {isCreator && (
             <div className="cf-cell cf-action">
@@ -2500,13 +2581,17 @@ export function PoolCreatorFee({ pool, launch, sym, dec, onDone }) {
             </div>
           )}
           <div className="cf-cell">
-            <span className="cf-k">{canOptIn ? `Turn on a creator fee, once (up to ${cap / 100}%)` : `Change the fee (0 to ${cap / 100}%)`}</span>
-            <span className="field mono">
-              <input value={pct} onChange={(e) => setPct(e.target.value)} placeholder={canOptIn ? `${cap / 100}` : '0'} inputMode="decimal" aria-label="Creator fee percent" />%
-            </span>
-            <button className="btn sm secondary" onClick={() => ensure(setFlow)} disabled={!wantOk}>
-              {canOptIn ? 'Turn on' : wantBps === 0 ? 'Turn off' : 'Set'}
-            </button>
+            <span className="cf-k">{canOptIn ? `Turn on a creator fee, once (up to ${pctText(cap)}, your launch fee)` : cap > 0 ? `Lower the creator fee (below ${pctText(cap)}; 0 turns it off)` : 'The creator fee is off for good'}</span>
+            {(canOptIn || cap > 0) && (
+              <>
+                <span className="field mono">
+                  <input value={pct} onChange={(e) => setPct(e.target.value)} placeholder={canOptIn ? `${cap / 100}` : '0'} inputMode="decimal" aria-label="Creator fee percent" />%
+                </span>
+                <button className="btn sm secondary" onClick={() => ensure(setFlow)} disabled={!wantOk}>
+                  {canOptIn ? 'Turn on' : wantBps === 0 ? 'Turn off' : 'Lower'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2525,17 +2610,18 @@ export function PoolCreatorFee({ pool, launch, sym, dec, onDone }) {
       />
       <TxDialog
         flow={setFlow}
-        title={canOptIn ? 'Turn on the pool creator fee' : 'Change the pool creator fee'}
-        receive={{ label: 'New creator fee', value: `${wantBps / 100}%`, exact: true }}
-        rows={[{ k: 'Pool', v: `#${pool.id}`, plain: true }, NETWORK_ROW]}
+        title={canOptIn ? 'Turn on the pool creator fee' : 'Lower the pool creator fee'}
+        receive={{ label: 'New creator fee', value: pctText(wantBps), exact: true }}
+        rows={[{ k: 'Pool', v: `#${pool.id}`, plain: true }, { k: 'Total per swap after this', v: pctText(lpBps + wantBps) }, NETWORK_ROW]}
         technical={{ program: SWAP_PROGRAM, extra: [{ k: 'Instruction', v: canOptIn ? 'opt in creator fee' : 'set creator fee' }] }}
-        note={canOptIn ? 'This can be done once. The cap you set now is the most the fee can ever be.' : 'You can lower it or turn it off at any time, and raise it again up to its cap, never above.'}
+        note={canOptIn ? 'This can be done once, and the rate you set is the most it can ever be. After this it can only go down.' : 'The fee can only go down. Once lowered, it cannot be raised again, not even to where it was.'}
         run={runSet}
-        words={{ pendingTitle: 'Submitted', type: 'fee', landed: 'Creator fee updated', landedSub: `Now ${wantBps / 100}%.`, failed: 'Update failed' }}
+        words={{ pendingTitle: 'Submitted', type: 'fee', landed: 'Creator fee updated', landedSub: `Now ${pctText(wantBps)}.`, failed: 'Update failed' }}
       />
     </section>
   )
 }
+
 
 /** Buy and sell, for one launch (the 3j panel, and the 3k sheet). */
 /** Swap, opened on the pair a graduated launch trades in. */
@@ -2776,7 +2862,7 @@ function TradePanel({ launch, quote, quoteMint, quoteDecimals = DECIMALS, slot, 
           <div className="swap-rows tp-rows">
             <div><span>Average price</span><span className="mono">{avg !== null ? fullPrice(avg) : '–'}</span></div>
             <div><span>Price after</span><span className="mono">{after !== null ? fullPrice(after) : '–'}</span></div>
-            <div><span className="term" title="Set by the creator at launch, up to 10%, taken on every trade.">Creator fee</span><span className="mono">{(launch.feeBps / 100).toFixed(2)}%{amountIn > 0n && out > 0n ? ` · ${feeLabel(q.creatorFee, quoteDecimals, quote, launch.feeBps)}` : ''}</span></div>
+            <div><span className="term" title="Set by the creator at launch, up to 9%, taken on every trade. The creator can lower it, never raise it.">Creator fee</span><span className="mono">{(launch.feeBps / 100).toFixed(2)}%{amountIn > 0n && out > 0n ? ` · ${feeLabel(q.creatorFee, quoteDecimals, quote, launch.feeBps)}` : ''}</span></div>
             {side === 'buy' && tax > 0n && (
               <div><span>Anti-snipe tax</span><span className="mono">{(Number(tax) / 100).toFixed(1)}%{q.snipeTax > 0n ? ` · ${fmt(q.snipeTax, quoteDecimals)} ${quote}` : ''}</span></div>
             )}

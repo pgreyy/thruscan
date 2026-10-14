@@ -144,6 +144,7 @@ export function makeDecoder(addresses) {
     3: ['sell', 'Sold on ThruPad'],
     4: ['claim', 'Claimed creator fees'],
     5: ['graduate', 'Graduated a launch'],
+    6: ['pad', 'Lowered a creator fee'],
     6: ['migrate', 'Migrated to the AMM'],
   }
 

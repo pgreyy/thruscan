@@ -28,9 +28,11 @@
  *
  * Two, and they are different things.
  *
- * The creator fee is set once at launch, capped at 10% to match Pons, and
- * accrues to the creator on every buy and sell. It is the reason to launch
- * something and keep it alive.
+ * The creator fee is chosen at launch, at most 9%, and accrues to the
+ * creator on every buy and sell. It is the reason to launch something and
+ * keep it alive. Afterwards the creator can lower it (SET_FEE) but never raise
+ * it, and at graduation the same rate becomes the pool's creator fee, on top
+ * of the pool's 1% LP fee: at most 10% a swap, which thruswap enforces.
  *
  * The anti-snipe tax is temporary and belongs to nobody. It starts high and
  * decays to zero over the opening slots, so being first in the block is worth
@@ -59,6 +61,9 @@
  *            choosing. Anyone may call it; the money only ever goes to the
  *            recorded creator's destination.
  *
+ *   SET_FEE  [0x06][reg_idx u16][launch_id u16][fee_bps u16]
+ *            The creator, as fee payer, lowers the curve fee. Never up.
+ *
  *   GRADUATE [0x05][...][min_seed_quote u64]
  *            Once enough quote has been raised: freezes the curve, moves its
  *            reserves into a fresh thruswap pool at the curve's final price,
@@ -66,7 +71,7 @@
  *            part fails the whole thing reverts, so a launch is never left
  *            frozen without a pool. Anyone may call it. See do_graduate.
  *            The pool's creator is the launch's creator, and its creator fee
- *            is the launch's curve fee capped to fit under thruswap's 1%.
+ *            is the launch's curve fee (at most 9%), on top of the 1% LP fee.
  *
  * Every u16 index is a position in the transaction's account list, which Thru
  * sorts ascending by raw public key bytes. Indices are passed in and validated
@@ -89,6 +94,7 @@
 #define OP_SELL     (0x03)
 #define OP_CLAIM    (0x04)
 #define OP_GRADUATE (0x05)
+#define OP_SET_FEE  (0x06)
 
 #define PAD_VERSION  ((uchar)2)
 #define REG_ACC_IDX  ((ushort)2)   /* INIT declares one read-write account */
@@ -125,7 +131,7 @@ static uchar const thruswap_program_addr[ 32 ] = THRUSWAP_PROGRAM_ADDR;
 #define SYMBOL_MAX (8UL)
 
 #define BPS_DENOM      (10000UL)
-#define CREATOR_BPS_MAX (1000U)   /* 10%, the same ceiling Pons uses */
+#define CREATOR_BPS_MAX (900U)    /* 9%: with the pool's 1% LP fee, 10% at most */
 
 /* The snipe tax starts here and decays linearly to zero across SNIPE_SLOTS.
    Slots rather than seconds because a slot is what a program can read, and
@@ -658,11 +664,10 @@ struct __attribute__(( packed )) swap_create_ix {
 };
 FD_STATIC_ASSERT( sizeof( struct swap_create_ix ) == 51UL, swap_create_ix_size );
 
-/* The pool's LP fee (thruswap's default, which fee_bps 0 asks for) and the
-   ceiling on LP plus creator fee together. A launch's curve fee can be up to
-   10%; in its pool the creator keeps whatever of it fits under 1%. */
-#define SWAP_LP_FEE_BPS    (30U)
-#define SWAP_TOTAL_FEE_MAX (100U)
+/* thruswap's ceiling on a pool's creator fee. A launch made under this
+   program is already within it; one made before the 9% limit, when 10% was
+   allowed, carries 9% into its pool. thruswap sets the 1% LP fee itself. */
+#define SWAP_CREATOR_BPS_MAX (900U)
 
 /* A pool vault: a token account of the right mint, owned by thruswap, empty.
    thruswap checks the first two again; empty is ours to insist on, because a
@@ -790,8 +795,7 @@ do_graduate( uchar const * data, ulong data_sz ) {
   ix.lp_mint_idx = a.lp_mint_idx;
   ix.fee_bps     = 0U;   /* thruswap's default, 30 basis points */
   memcpy( ix.creator.key, rec->creator.key, 32UL );
-  ix.creator_bps = rec->fee_bps < (ushort)( SWAP_TOTAL_FEE_MAX - SWAP_LP_FEE_BPS )
-                 ? rec->fee_bps : (ushort)( SWAP_TOTAL_FEE_MAX - SWAP_LP_FEE_BPS );
+  ix.creator_bps = rec->fee_bps < (ushort)SWAP_CREATOR_BPS_MAX ? rec->fee_bps : (ushort)SWAP_CREATOR_BPS_MAX;
 
   ulong callee_err = 0UL;
   ulong rc = tsys_invoke( &ix, sizeof( ix ), a.swap_prog_idx, (tsdk_invoke_auth_t const *)0, &callee_err );
@@ -813,6 +817,32 @@ do_graduate( uchar const * data, ulong data_sz ) {
   if( TSDK_LOAD( ulong, p + 0xa3 ) == 0UL ) tsdk_revert( ERR_SEED );
 }
 
+/* ---------------------------------------------------------------- SET_FEE */
+
+struct __attribute__(( packed )) set_fee_args {
+  uchar  op;
+  ushort reg_idx;
+  ushort launch_id;
+  ushort fee_bps;
+};
+
+/* The creator, as fee payer, lowers the curve's creator fee or turns it off.
+   Down only: nobody, the creator included, can raise it once anyone has
+   traded at it. On a pooled launch the curve is closed, so this changes
+   nothing there; the pool's own fee is lowered in thruswap. */
+static void
+do_set_fee( uchar const * data, ulong data_sz ) {
+  if( data_sz < sizeof( struct set_fee_args ) ) tsdk_revert( ERR_BAD_INSTR );
+  struct set_fee_args a;
+  memcpy( &a, data, sizeof( a ) );
+
+  launch_rec_t * rec = open_launch( a.reg_idx, a.launch_id, (uchar **)0 );
+  if( rec->state != STATE_LIVE ) tsdk_revert( ERR_NOT_LIVE );
+  if( memcmp( rec->creator.key, account_addr( 0 )->key, 32UL ) != 0 ) tsdk_revert( ERR_WRONG_ACCOUNT );
+  if( a.fee_bps > rec->fee_bps ) tsdk_revert( ERR_FEE_RANGE );
+  rec->fee_bps = a.fee_bps;
+}
+
 /* ------------------------------------------------------------- entrypoint */
 
 TSDK_ENTRYPOINT_FN void
@@ -829,6 +859,7 @@ start( void const * instruction_data,
     case OP_SELL:     do_sell    ( data, instruction_data_sz ); break;
     case OP_CLAIM:    do_claim   ( data, instruction_data_sz ); break;
     case OP_GRADUATE: do_graduate( data, instruction_data_sz ); break;
+    case OP_SET_FEE:  do_set_fee ( data, instruction_data_sz ); break;
     default:          tsdk_revert( ERR_BAD_OPCODE );
   }
 
