@@ -113,7 +113,7 @@
 .ld-price-k { font-size: 13px; color: var(--text-secondary); }
 .ld-price-v { font-size: 32px; line-height: 38px; font-weight: 500; letter-spacing: -0.02em; white-space: nowrap; }
 .ld-price-v small { font-size: 16px; color: var(--text-secondary); letter-spacing: 0; }
-.ld-chg { font-size: 14px; color: var(--text-secondary); }
+.ld-chg { font-size: 14px; color: var(--text-secondary); white-space: nowrap; }
 .ld-chg.up { color: var(--status-positive); }
 .ld-chg.down { color: var(--status-negative); }
 
